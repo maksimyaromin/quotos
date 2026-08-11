@@ -1,0 +1,33 @@
+/* Host page for the popover window: fully transparent, just enough padding
+   for the Panel's own shadow and beak to render without clipping. The
+   window itself carries no chrome — Panel supplies the whole visual shell. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  padding-top: 14px;
+  color: var(--text-primary);
+}
+
+#root {
+  display: flex;
+  justify-content: center;
+}
+
+.quotos-empty {
+  padding: var(--space-4);
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
