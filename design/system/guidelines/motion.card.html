@@ -1,0 +1,17 @@
+<!-- @dsCard group="Elevation" viewport="700x170" name="Motion" subtitle="Quick, flat, no overshoot — a system utility, not a toy" -->
+<!DOCTYPE html><html data-appearance="dark"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>body{margin:0;background:var(--bg-base);font-family:var(--font-sans);padding:20px;color:var(--text-primary)}
+.r{display:flex;align-items:center;gap:14px;padding:6px 0;border-bottom:0.5px solid var(--border-subtle)}
+.tok{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);width:120px}
+.v{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);width:70px}
+.u{font-size:12px;color:var(--text-tertiary)}
+.track{flex:1;height:4px;background:var(--cap-track);border-radius:999px;overflow:hidden}
+.dot{width:10px;height:100%;background:var(--teal);border-radius:999px;animation:run 2.4s var(--ease-standard) infinite}
+@keyframes run{0%{margin-left:0}50%{margin-left:calc(100% - 10px)}100%{margin-left:0}}</style></head>
+<body data-appearance="dark">
+<div class="r"><span class="tok">--dur-instant</span><span class="v">90ms</span><span class="u">press settle</span></div>
+<div class="r"><span class="tok">--dur-fast</span><span class="v">140ms</span><span class="u">hover, focus</span></div>
+<div class="r"><span class="tok">--dur-base</span><span class="v">200ms</span><span class="u">state change, fades</span></div>
+<div class="r"><span class="tok">--dur-slow</span><span class="v">320ms</span><span class="u">bar fill</span></div>
+<div class="r"><span class="tok">--ease-standard</span><span class="track"><span class="dot"></span></span></div>
+</body></html>

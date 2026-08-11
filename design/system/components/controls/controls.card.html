@@ -1,0 +1,68 @@
+<!-- @dsCard group="Components" viewport="700x180" name="Controls" subtitle="Button variants & sizes, icon buttons, text field" -->
+<!DOCTYPE html>
+<html data-appearance="dark">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body{margin:0;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-sans);padding:20px}
+  #root{width:100%}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .lbl{font-size:11px;color:var(--text-quaternary);width:64px;flex:0 0 auto;letter-spacing:.02em}
+  svg.lucide{stroke-width:1.8}
+</style>
+</head>
+<body data-appearance="dark">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Button, IconButton, TextField } = window.QuotosDesignSystem_52e720;
+function Icon({ name, size = 14 }) {
+  const r = React.useRef(null);
+  React.useLayoutEffect(() => {
+    if (!r.current || !window.lucide) return;
+    r.current.innerHTML = "";
+    const i = document.createElement("i"); i.setAttribute("data-lucide", name);
+    r.current.appendChild(i);
+    window.lucide.createIcons({ attrs: { width: size, height: size } });
+  });
+  return <span ref={r} style={{ display: "inline-flex", width: size, height: size }} />;
+}
+function App() {
+  const [v, setV] = React.useState("");
+  return (
+    <div>
+      <div className="row">
+        <span className="lbl">Variants</span>
+        <Button variant="primary">Add subscription</Button>
+        <Button variant="secondary">Refresh</Button>
+        <Button variant="ghost">Try another way</Button>
+        <Button variant="danger">Remove</Button>
+        <Button variant="secondary" disabled>Disabled</Button>
+      </div>
+      <div className="row">
+        <span className="lbl">Sizes</span>
+        <Button size="sm" variant="secondary">Small</Button>
+        <Button size="base" variant="secondary">Base</Button>
+        <Button size="lg" variant="primary" icon={<Icon name="plus" />}>Large + icon</Button>
+      </div>
+      <div className="row">
+        <span className="lbl">Icon</span>
+        <IconButton label="Refresh"><Icon name="refresh-cw" /></IconButton>
+        <IconButton label="Add"><Icon name="plus" /></IconButton>
+        <IconButton label="Settings"><Icon name="settings" /></IconButton>
+        <IconButton label="Pin" active><Icon name="pin" /></IconButton>
+        <IconButton label="Close"><Icon name="x" /></IconButton>
+        <TextField placeholder="sk-ant-…" mono value={v} onChange={e => setV(e.target.value)} style={{ width: 220, marginLeft: 8 }} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

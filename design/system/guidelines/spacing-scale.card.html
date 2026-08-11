@@ -1,0 +1,10 @@
+<!-- @dsCard group="Spacing" viewport="700x210" name="Spacing scale" subtitle="Tight 2px base — density is a feature here" -->
+<!DOCTYPE html><html data-appearance="dark"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>body{margin:0;background:var(--bg-base);font-family:var(--font-sans);padding:20px;color:var(--text-primary)}
+.r{display:flex;align-items:center;gap:14px;margin-bottom:7px}
+.tok{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);width:96px}
+.px{font-family:var(--font-mono);font-size:11px;color:var(--text-quaternary);width:40px}
+.bar{height:12px;background:var(--teal);border-radius:2px}</style></head>
+<body data-appearance="dark">
+<script>[['--space-0-5','2px'],['--space-1','4px'],['--space-1-5','6px'],['--space-2','8px'],['--space-2-5','10px'],['--space-3','12px'],['--space-4','16px'],['--space-5','20px'],['--space-6','24px'],['--space-8','32px']].forEach(([t,v])=>document.write(`<div class="r"><span class="tok">${t}</span><span class="px">${v}</span><span class="bar" style="width:${v}"></span></div>`))</script>
+</body></html>
