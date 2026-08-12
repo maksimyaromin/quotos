@@ -22,12 +22,34 @@ fn home_dir() -> Option<PathBuf> {
 /// `~/.claude` plus any `~/.claude-<name>` sibling (e.g. `~/.claude-team`).
 /// This is the "scan the machine" step of the add-subscription flow for the
 /// Claude provider.
+///
+/// The captain's own words, after `~/.claude-shared` — a plain folder he made
+/// so chat memory could be shared between his real subscriptions — showed up
+/// as an invented third subscription: **a folder in a certain place is not a
+/// subscription.** A config directory only qualifies when it actually
+/// resolves to a usable credential (a Keychain entry exists for its derived
+/// service name); a directory that merely matches the naming pattern does
+/// not. Verified ground truth on the captain's machine: exactly two Keychain
+/// services exist (`Claude Code-credentials`,
+/// `Claude Code-credentials-67d45c83`), so correct discovery yields exactly
+/// two subscriptions, not three.
 pub fn discover_accounts() -> Vec<AccountDescriptor> {
     let Some(home) = home_dir() else { return vec![] };
+    discover_accounts_in(&home, credential_exists_in_keychain)
+}
+
+/// The pure, testable core of discovery: which `~/.claude*` directories under
+/// `home` qualify, given a predicate for "does a Keychain credential exist
+/// for this config dir". Split out from [`discover_accounts`] so the
+/// qualification logic can be unit-tested without touching the real Keychain.
+fn discover_accounts_in(
+    home: &Path,
+    has_credential: impl Fn(&Path) -> bool,
+) -> Vec<AccountDescriptor> {
     let mut found = vec![];
 
     let default_dir = home.join(".claude");
-    if default_dir.is_dir() {
+    if default_dir.is_dir() && has_credential(&default_dir) {
         found.push(AccountDescriptor {
             id: "claude:claude".to_string(),
             provider: "claude".to_string(),
@@ -35,15 +57,20 @@ pub fn discover_accounts() -> Vec<AccountDescriptor> {
         });
     }
 
-    if let Ok(entries) = std::fs::read_dir(&home) {
-        for entry in entries.flatten() {
+    if let Ok(entries) = std::fs::read_dir(home) {
+        let mut candidates: Vec<_> = entries.flatten().collect();
+        // Deterministic ordering: directory iteration order is not
+        // guaranteed by the OS, and the account list should not reshuffle
+        // between runs for no reason.
+        candidates.sort_by_key(|e| e.file_name());
+        for entry in candidates {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if name == ".claude" || !name.starts_with(".claude-") {
                 continue;
             }
             let path = entry.path();
-            if !path.is_dir() {
+            if !path.is_dir() || !has_credential(&path) {
                 continue;
             }
             let slug = name.trim_start_matches('.').to_string();
@@ -56,6 +83,20 @@ pub fn discover_accounts() -> Vec<AccountDescriptor> {
     }
 
     found
+}
+
+/// Existence-only Keychain lookup: no secret material is read, just whether
+/// an item is present for the service name a config dir would derive.
+fn credential_exists_in_keychain(config_dir: &Path) -> bool {
+    let service = keychain_service_for_config_dir(config_dir);
+    let Ok(user) = std::env::var("USER") else {
+        return false;
+    };
+    Command::new("security")
+        .args(["find-generic-password", "-s", &service, "-a", &user])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Keychain service name for a config directory, per the mechanism verified
@@ -223,5 +264,96 @@ pub async fn fetch_profile(
         Some(result.body)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// A throwaway home directory under the OS temp dir, cleaned up on drop.
+    /// Avoids pulling in a `tempfile` dependency for one test module.
+    struct TempHome {
+        path: PathBuf,
+    }
+
+    impl TempHome {
+        fn new() -> Self {
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "quotos-discover-test-{}-{n}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("create temp home");
+            Self { path }
+        }
+
+        fn mkdir(&self, name: &str) -> PathBuf {
+            let p = self.path.join(name);
+            std::fs::create_dir_all(&p).expect("create temp subdir");
+            p
+        }
+    }
+
+    impl Drop for TempHome {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// B4: exactly two Keychain-backed config dirs must yield exactly two
+    /// subscriptions — a plain folder that merely matches the `.claude-*`
+    /// naming pattern (the captain's `~/.claude-shared`) must never appear,
+    /// because it resolves no credential.
+    #[test]
+    fn only_credentialed_config_dirs_become_subscriptions() {
+        let home = TempHome::new();
+        let claude = home.mkdir(".claude");
+        let team = home.mkdir(".claude-team");
+        home.mkdir(".claude-shared"); // no credential — must be excluded
+        home.mkdir(".not-claude-at-all"); // wrong naming pattern entirely
+
+        let credentialed: HashSet<PathBuf> = [claude.clone(), team.clone()].into_iter().collect();
+        let found = discover_accounts_in(&home.path, |dir| credentialed.contains(dir));
+
+        let mut ids: Vec<String> = found.iter().map(|a| a.id.clone()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["claude:claude".to_string(), "claude:claude-team".to_string()]);
+    }
+
+    /// The exact regression from B4: a directory in the right place with no
+    /// credential behind it must not become a subscription, full stop.
+    #[test]
+    fn plain_folder_without_credential_is_not_a_subscription() {
+        let home = TempHome::new();
+        home.mkdir(".claude-shared");
+
+        let found = discover_accounts_in(&home.path, |_| false);
+
+        assert!(found.is_empty(), "a folder in a certain place is not a subscription");
+    }
+
+    /// A credentialed default `~/.claude` alone is still discovered.
+    #[test]
+    fn default_dir_alone_is_discovered_when_credentialed() {
+        let home = TempHome::new();
+        home.mkdir(".claude");
+
+        let found = discover_accounts_in(&home.path, |_| true);
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "claude:claude");
+    }
+
+    /// No `.claude*` directories at all: no subscriptions, no panic.
+    #[test]
+    fn empty_home_yields_nothing() {
+        let home = TempHome::new();
+        let found = discover_accounts_in(&home.path, |_| true);
+        assert!(found.is_empty());
     }
 }
