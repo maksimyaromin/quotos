@@ -1,8 +1,14 @@
 /** Browser-only demo data, used when the app is opened in a plain browser
  * (e.g. `npm run dev` + Chrome) rather than inside the Tauri shell, where
  * `invoke()` has nothing to talk to. This exists purely so every state in
- * the brief can be driven and screenshotted without packaging the app —
- * it never runs inside the real Tauri build. See RESULT.md. */
+ * the feedback can be driven and screenshotted without packaging the app —
+ * it never runs inside the real Tauri build. See RESULT.md.
+ *
+ * `listAccounts()` here stands in for discovery (B4: only ever returns
+ * accounts that "have a credential" — no phantom folders) and is
+ * deliberately decoupled from what's tracked/shown (I6: the tracked list,
+ * persisted in localStorage via lib/persistence.ts, starts empty and is the
+ * only thing the panel renders). */
 import type { AccountDescriptor, FetchError, RawSnapshot } from "../types/entities";
 
 const DELAY_MS = 500;
@@ -50,6 +56,9 @@ function profilePayload(name: string, orgType: string) {
   return { organization: { name, organization_type: orgType, subscription_status: "active" } };
 }
 
+// What discovery finds on this (fake) machine — B4: every entry here would
+// have resolved a real Keychain credential; a folder-only phantom like the
+// captain's "claude-shared" never reaches this list at all.
 const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:claude", provider: "claude", config_dir: "~/.claude" },
   { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" },
@@ -106,8 +115,20 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
     case "claude:demo-idle":
       return fail({ kind: "not_connected", message: "No Claude Code credentials in the Keychain for this account." });
     case "claude:demo-broken":
-      return fail({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" });
+      // B6: the first read surfaces the real, diagnosable failure (an
+      // expired login). Every read after that — simulating the shared
+      // rate budget running dry from repeated automatic retries — comes
+      // back rate_limited instead. The health state must NOT decay into
+      // "waiting"; it must still read Broken/expired-login on the 2nd,
+      // 3rd, ... call.
+      if (n === 1) {
+        return fail({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" });
+      }
+      return fail({ kind: "rate_limited", retry_after_secs: 214 });
     case "claude:demo-waiting":
+      // Never successfully read even once, and rate-limited from the very
+      // first attempt — the "no health data yet, only a budget wait"
+      // edge case.
       return fail({ kind: "rate_limited", retry_after_secs: 214 });
     case "claude:demo-behind":
       if (n === 1) {
@@ -137,4 +158,14 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
 
 export async function setTrayTitle(_title: string): Promise<void> {
   // no-op in the browser — there is no real tray to update
+}
+
+export async function setDetached(_detached: boolean): Promise<void> {
+  // no-op in the browser — there is no real window chrome to change
+}
+
+export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
+  return Object.fromEntries(
+    Array.from(callCounts.entries()).map(([id, n]) => [id, { used: Math.min(n, 5), max: 5, retry_after_secs: null }]),
+  );
 }

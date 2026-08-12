@@ -22,7 +22,7 @@ export function providerDisplayName(provider: string): string {
 export function normalizeFor(provider: string, usage: unknown, profile: unknown, fallbackLabel: string): NormalizedRead {
   const normalizer = PROVIDER_NORMALIZERS[provider];
   if (!normalizer) {
-    return { label: fallbackLabel, account: null, windows: [], remaining: null, resetsAt: null };
+    return { label: fallbackLabel, account: null, windows: [], used: null, resetsAt: null };
   }
   return normalizer(usage, profile, fallbackLabel);
 }

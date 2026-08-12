@@ -1,6 +1,11 @@
 /** Generic, provider-agnostic entities. Nothing above this line, and nothing
  * that renders UI, is allowed to know the word "claude" — see brief section 2. */
 
+/** A subscription's own health — never touched by our rate-limit budget.
+ * B6: a diagnosable failure (e.g. an expired login) must never be
+ * overwritten by a self-inflicted wait; health and "are we currently
+ * allowed to poll" are separate concerns (see `rateLimitedUntil` below),
+ * and health always wins the display. */
 export type SubscriptionState =
   | "idle" // not connected — needs one more step
   | "connecting" // verifying a new connection
@@ -8,12 +13,12 @@ export type SubscriptionState =
   | "reading" // refresh in flight, previous numbers still shown
   | "behind" // refresh failed, older data held
   | "repairing" // recoverable problem being fixed automatically
-  | "broken" // cannot be read at all
-  | "waiting"; // provider refused a too-frequent read
+  | "broken"; // cannot be read at all
 
 export interface LimitWindowEntity {
   name: string;
-  remaining: number | null;
+  /** Percent of this window *consumed*, 0-100 (I2: everywhere is "used", not "left"). */
+  used: number | null;
   resetsAt: string | null;
   scope: string | null;
   isActive: boolean;
@@ -24,15 +29,24 @@ export interface Subscription {
   provider: string;
   providerName: string;
   label: string;
+  /** Set only once the user has renamed it inline (I6); overrides the
+   * provider-derived label whenever present. */
+  labelOverride: string | null;
   account: string | null;
   state: SubscriptionState;
-  remaining: number | null;
+  /** Percent of the headline (most-consumed active) window *consumed*, 0-100. */
+  used: number | null;
   resetsAt: string | null;
   lastReadAt: string | null;
   windows: LimitWindowEntity[];
   reason: string | null;
   pinned: boolean;
   configDir: string;
+  /** Set while our own rate budget (not the subscription's health) is the
+   * only thing blocking a read; null once it's free to poll again. B5/B6:
+   * this must never replace `state` — it is rendered as a quiet fact
+   * alongside whatever health state already holds. */
+  rateLimitedUntil: string | null;
 }
 
 /** Wire shape returned by the Rust `list_accounts` command. */
@@ -74,6 +88,7 @@ export interface NormalizedRead {
   label: string;
   account: string | null;
   windows: LimitWindowEntity[];
-  remaining: number | null;
+  /** Percent of the headline window *consumed*, 0-100 (I2). */
+  used: number | null;
   resetsAt: string | null;
 }

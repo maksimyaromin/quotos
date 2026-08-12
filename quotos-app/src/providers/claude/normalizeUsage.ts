@@ -54,11 +54,10 @@ function windowFromLimit(limit: RawLimit): LimitWindowEntity {
   const name = KNOWN_KIND_LABELS[kind] ?? humanizeKind(kind);
   const scopeModel = asString(limit.scope?.model?.display_name);
   const scopeSurface = asString(limit.scope?.surface);
-  const used = clampPercent(limit.percent);
   return {
     name,
     scope: scopeModel ?? scopeSurface,
-    remaining: used === null ? null : 100 - used,
+    used: clampPercent(limit.percent),
     resetsAt: asString(limit.resets_at),
     isActive: limit.is_active === true,
   };
@@ -68,11 +67,10 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
   // A null window means "the account has no such window" — hidden, not zero.
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as { utilization?: unknown; resets_at?: unknown };
-  const used = clampPercent(record.utilization);
   return {
     name: FIXED_WINDOW_LABELS[key] ?? humanizeKind(key),
     scope: null,
-    remaining: used === null ? null : 100 - used,
+    used: clampPercent(record.utilization),
     resetsAt: asString(record.resets_at),
     // The fixed top-level shape carries no is_active flag; treat every
     // present window as a headline candidate.
@@ -81,25 +79,26 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
 }
 
 /** Pick the headline: the most-consumed *active* window, per the brief. */
-function pickHeadline(windows: LimitWindowEntity[]): { remaining: number | null; resetsAt: string | null } {
-  const candidates = windows.filter((w) => w.isActive && w.remaining !== null);
-  const pool = candidates.length > 0 ? candidates : windows.filter((w) => w.remaining !== null);
-  if (pool.length === 0) return { remaining: null, resetsAt: null };
-  const binding = pool.reduce((min, w) => ((w.remaining ?? 100) < (min.remaining ?? 100) ? w : min));
-  return { remaining: binding.remaining, resetsAt: binding.resetsAt };
+function pickHeadline(windows: LimitWindowEntity[]): { used: number | null; resetsAt: string | null } {
+  const candidates = windows.filter((w) => w.isActive && w.used !== null);
+  const pool = candidates.length > 0 ? candidates : windows.filter((w) => w.used !== null);
+  if (pool.length === 0) return { used: null, resetsAt: null };
+  const binding = pool.reduce((max, w) => ((w.used ?? 0) > (max.used ?? 0) ? w : max));
+  return { used: binding.used, resetsAt: binding.resetsAt };
 }
 
 export interface NormalizedUsage {
   windows: LimitWindowEntity[];
-  remaining: number | null;
+  used: number | null;
   resetsAt: string | null;
 }
 
-const EMPTY: NormalizedUsage = { windows: [], remaining: null, resetsAt: null };
+const EMPTY: NormalizedUsage = { windows: [], used: null, resetsAt: null };
 
 /** Turn a raw `/api/oauth/usage` response into the generic window list plus
- * headline. Defensive throughout: tolerates unknown keys, absent fields,
- * non-array `limits`, and a completely empty/null response — never throws. */
+ * headline — everywhere in "percent consumed" terms (I2), never "remaining".
+ * Defensive throughout: tolerates unknown keys, absent fields, non-array
+ * `limits`, and a completely empty/null response — never throws. */
 export function normalizeUsage(raw: unknown): NormalizedUsage {
   if (raw === null || raw === undefined || typeof raw !== "object") {
     return EMPTY;
@@ -127,7 +126,7 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
           windows.push({
             name: "Extra usage",
             scope: null,
-            remaining: 100 - used,
+            used,
             resetsAt: null,
             isActive: true,
           });
@@ -137,5 +136,5 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
   }
 
   const headline = pickHeadline(windows);
-  return { windows, remaining: headline.remaining, resetsAt: headline.resetsAt };
+  return { windows, used: headline.used, resetsAt: headline.resetsAt };
 }

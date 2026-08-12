@@ -12,3 +12,5 @@ export const fetchSnapshot = client.fetchSnapshot;
 export const hidePanel = client.hidePanel;
 export const onPanelVisibility = client.onPanelVisibility;
 export const setTrayTitle = client.setTrayTitle;
+export const setDetached = client.setDetached;
+export const debugRateLimitSnapshot = client.debugRateLimitSnapshot;

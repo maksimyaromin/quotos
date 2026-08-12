@@ -5,9 +5,9 @@ import { Badge } from "../indicators/Badge.jsx";
 /** One limit window inside a subscription's detail list. The list is variable:
  *  a window may lack a percentage or a reset time, and its name is the
  *  provider's own wording (rendered verbatim, possibly truncated). Renders
- *  gracefully whether there are 1 or 8 of these. */
-export function LimitWindow({ name, remaining = null, resetLabel = null, scope = null, stale = false, style }) {
-  const hasPct = typeof remaining === "number";
+ *  gracefully whether there are 1 or 8 of these. Consumed, not remaining (I2). */
+export function LimitWindow({ name, used = null, resetLabel = null, scope = null, stale = false, style }) {
+  const hasPct = typeof used === "number";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", padding: "var(--space-1-5) 0", ...style }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1-5)" }}>
@@ -30,9 +30,9 @@ export function LimitWindow({ name, remaining = null, resetLabel = null, scope =
           color: hasPct ? "var(--text-primary)" : "var(--text-quaternary)",
           minWidth: 34,
           textAlign: "right",
-        }}>{hasPct ? `${remaining}%` : "—"}</span>
+        }}>{hasPct ? `${used}%` : "—"}</span>
       </div>
-      {hasPct ? <CapacityBar remaining={remaining} stale={stale} height="3px" /> : null}
+      {hasPct ? <CapacityBar used={used} stale={stale} height="3px" /> : null}
       {resetLabel ? (
         <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
           {resetLabel}

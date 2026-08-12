@@ -8,7 +8,6 @@ const STATE_COLOR = {
   behind: "var(--status-behind)",
   repairing: "var(--status-progress)",
   broken: "var(--status-broken)",
-  waiting: "var(--status-waiting)",
 };
 
 const PULSING = new Set(["connecting", "reading", "repairing"]);
@@ -24,7 +23,7 @@ export function StatusDot({ state = "working", size = 7, style }) {
         width: size,
         height: size,
         borderRadius: "var(--radius-pill)",
-        background: STATE_COLOR[state] || "var(--status-idle)",
+        backgroundColor: STATE_COLOR[state] || "var(--status-idle)",
         boxShadow: state === "idle" ? "inset 0 0 0 1.5px var(--status-idle)" : "none",
         backgroundClip: state === "idle" ? "content-box" : "border-box",
         opacity: state === "idle" ? 0.9 : 1,

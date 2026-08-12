@@ -14,17 +14,49 @@ export function formatRelativePast(iso: string | null, now: Date = new Date()): 
   return `${days}d ago`;
 }
 
-/** "resets in 3h" for an ISO timestamp in the future. */
-export function formatRelativeFuture(iso: string | null, now: Date = new Date()): string | null {
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const WEEKDAY_TIME_FMT = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
+const DATE_TIME_FMT = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** Bare clock time, e.g. "4:05 PM" — used for compact labels like a
+ * disabled refresh control's "available at …" tooltip. */
+export function formatClockTime(iso: string | null): string | null {
   if (!iso) return null;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  const seconds = Math.round((then - now.getTime()) / 1000);
-  if (seconds <= 0) return "resets shortly";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `resets in ${Math.max(1, minutes)}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `resets in ${hours}h`;
-  const days = Math.round(hours / 24);
-  return `resets in ${days}d`;
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return null;
+  return TIME_FMT.format(then);
+}
+
+/** I3: the exact moment a window resets, not a relative offset the person has
+ * to do arithmetic on. "Today at 4:05 PM" / "Tomorrow at 10:00 AM" / "Wed at
+ * 10:00 AM" / "Aug 17 at 10:00 AM" depending on how far out it is — close
+ * enough to need the day named, far enough to need the date. */
+export function formatExactReset(iso: string | null, now: Date = new Date()): string | null {
+  if (!iso) return null;
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return null;
+
+  const time = TIME_FMT.format(then);
+  if (then.getTime() <= now.getTime()) return `Resets shortly (${time})`;
+
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  if (isSameDay(then, now)) return `Resets today at ${time}`;
+  if (isSameDay(then, tomorrow)) return `Resets tomorrow at ${time}`;
+
+  const daysAway = Math.round((then.getTime() - now.getTime()) / 86_400_000);
+  if (daysAway < 7) return `Resets ${WEEKDAY_TIME_FMT.format(then)}`;
+  return `Resets ${DATE_TIME_FMT.format(then)}`;
 }

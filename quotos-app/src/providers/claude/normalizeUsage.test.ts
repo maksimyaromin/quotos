@@ -11,7 +11,7 @@ describe("normalizeUsage", () => {
     });
     expect(result.windows).toHaveLength(1);
     expect(result.windows[0].name).toBe("Session");
-    expect(result.windows[0].remaining).toBe(98);
+    expect(result.windows[0].used).toBe(2);
   });
 
   it("handles an arbitrary-length window list (1, 3, 8)", () => {
@@ -33,16 +33,16 @@ describe("normalizeUsage", () => {
       limits: [{ kind: "nimbus_quill_experimental", percent: 12, resets_at: null, scope: null, is_active: true }],
     });
     expect(result.windows[0].name).toBe("Nimbus Quill Experimental");
-    expect(result.windows[0].remaining).toBe(88);
+    expect(result.windows[0].used).toBe(12);
   });
 
-  it("keeps a window with a name but no percentage — remaining is null, not zero", () => {
+  it("keeps a window with a name but no percentage — used is null, not zero", () => {
     const result = normalizeUsage({
       limits: [{ kind: "session", percent: null, resets_at: null, scope: null, is_active: true }],
     });
     expect(result.windows).toHaveLength(1);
-    expect(result.windows[0].remaining).toBeNull();
-    expect(result.remaining).toBeNull();
+    expect(result.windows[0].used).toBeNull();
+    expect(result.used).toBeNull();
   });
 
   it("carries a model scope separately from the window name", () => {
@@ -100,12 +100,12 @@ describe("normalizeUsage", () => {
   });
 
   it("returns an empty, non-throwing result for a completely empty response", () => {
-    expect(normalizeUsage({})).toEqual({ windows: [], remaining: null, resetsAt: null });
+    expect(normalizeUsage({})).toEqual({ windows: [], used: null, resetsAt: null });
   });
 
   it("returns an empty, non-throwing result for null/undefined", () => {
-    expect(normalizeUsage(null)).toEqual({ windows: [], remaining: null, resetsAt: null });
-    expect(normalizeUsage(undefined)).toEqual({ windows: [], remaining: null, resetsAt: null });
+    expect(normalizeUsage(null)).toEqual({ windows: [], used: null, resetsAt: null });
+    expect(normalizeUsage(undefined)).toEqual({ windows: [], used: null, resetsAt: null });
   });
 
   it("handles a subscription with no windows at all (all fixed fields null, no limits)", () => {
@@ -118,10 +118,13 @@ describe("normalizeUsage", () => {
       extra_usage: { is_enabled: false },
     });
     expect(result.windows).toHaveLength(0);
-    expect(result.remaining).toBeNull();
+    expect(result.used).toBeNull();
   });
 
-  it("computes the headline as the most-consumed currently-active window", () => {
+  // I2: everywhere is "consumed", not "remaining" — the raw provider
+  // percent (already a percent-used figure) must pass through unmodified,
+  // never inverted into a remaining figure.
+  it("computes the headline as the most-consumed currently-active window, in used terms", () => {
     const result = normalizeUsage({
       limits: [
         { kind: "session", percent: 2, resets_at: "2026-08-11T23:20:00Z", scope: null, is_active: true },
@@ -130,7 +133,7 @@ describe("normalizeUsage", () => {
       ],
     });
     // weekly_scoped is inactive, so it's excluded even though it's the most consumed.
-    expect(result.remaining).toBe(40);
+    expect(result.used).toBe(60);
     expect(result.resetsAt).toBe("2026-08-17T10:00:00Z");
   });
 
@@ -141,7 +144,7 @@ describe("normalizeUsage", () => {
         { kind: "weekly_all", percent: 20, resets_at: null, scope: null, is_active: false },
       ],
     });
-    expect(result.remaining).toBe(30);
+    expect(result.used).toBe(70);
   });
 
   it("tolerates malformed entries inside limits[] without throwing", () => {
@@ -149,13 +152,13 @@ describe("normalizeUsage", () => {
       limits: [null, "not an object", 42, { kind: "session", percent: 5, is_active: true }],
     });
     expect(result.windows).toHaveLength(1);
-    expect(result.windows[0].remaining).toBe(95);
+    expect(result.windows[0].used).toBe(5);
   });
 
   it("clamps out-of-range percentages defensively", () => {
     const result = normalizeUsage({
       limits: [{ kind: "session", percent: 150, is_active: true }],
     });
-    expect(result.windows[0].remaining).toBe(0);
+    expect(result.windows[0].used).toBe(100);
   });
 });

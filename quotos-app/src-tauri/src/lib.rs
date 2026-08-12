@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_positioner::{Position, WindowExt};
 
 use providers::{AccountDescriptor, FetchError, RawSnapshot};
-use ratelimit::RateLimiter;
+use ratelimit::{RateLimitStatus, RateLimiter};
 
 struct AppState {
     http: reqwest::Client,
@@ -80,6 +80,15 @@ async fn fetch_snapshot(
     })
 }
 
+/// P7 stretch: read-only introspection of the shared rate budget, for the
+/// frontend's dev-only state dump (App.tsx, gated on `import.meta.env.DEV`
+/// so this never ships in a production build's UI — the command itself is
+/// harmless either way, since it's read-only and touches no credentials).
+#[tauri::command]
+fn debug_rate_limit_snapshot(state: tauri::State<'_, AppState>) -> HashMap<String, RateLimitStatus> {
+    state.rate_limiter.snapshot()
+}
+
 #[tauri::command]
 fn hide_panel(window: tauri::WebviewWindow) {
     let _ = window.hide();
@@ -87,13 +96,19 @@ fn hide_panel(window: tauri::WebviewWindow) {
 }
 
 /// Sets the text shown beside the tray glyph (macOS `NSStatusItem` title) —
-/// the pinned-subscriptions stretch goal. Empty string clears it back to
-/// just the glyph.
+/// the pinned-subscriptions feature. Empty string clears it back to just the
+/// glyph.
+///
+/// B2/B3: the underlying `tray-icon` crate's macOS `set_title` only calls
+/// `NSStatusItem`'s `setTitle` when given `Some(..)` — passing `None` is a
+/// silent no-op that leaves whatever title was last set stuck on screen
+/// forever (see `tray-icon` v0.24.2 `platform_impl/macos/mod.rs`). That is
+/// exactly why unpinning left the stale percentage in the tray and frozen:
+/// clearing must always send `Some("")`, never `None`.
 #[tauri::command]
 fn set_tray_title(app: tauri::AppHandle, title: String) -> Result<(), String> {
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let value = if title.is_empty() { None } else { Some(title.as_str()) };
-        tray.set_title(value).map_err(|e| e.to_string())?;
+        tray.set_title(Some(title.as_str())).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -161,6 +176,7 @@ pub fn run() {
             hide_panel,
             set_tray_title,
             set_detached,
+            debug_rate_limit_snapshot,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

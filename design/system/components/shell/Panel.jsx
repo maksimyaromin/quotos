@@ -45,11 +45,14 @@ export function Panel({
           }}>{title}</span>
           {headerActions}
         </div>
-        {/* body */}
+        {/* body — scrollbarGutter reserves the track whether or not it is
+            needed, so a row expanding past maxBodyHeight never reflows the
+            panel by having a scrollbar suddenly appear (I4). */}
         <div style={{
           display: "flex", flexDirection: "column", gap: "var(--space-0-5)",
           padding: "var(--space-1-5)",
           maxHeight: maxBodyHeight, overflowY: "auto",
+          scrollbarGutter: "stable",
         }}>
           {children}
         </div>

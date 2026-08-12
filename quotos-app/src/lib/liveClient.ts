@@ -25,3 +25,11 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
 export async function setTrayTitle(title: string): Promise<void> {
   return invoke("set_tray_title", { title });
 }
+
+export async function setDetached(detached: boolean): Promise<void> {
+  return invoke("set_detached", { detached });
+}
+
+export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
+  return invoke("debug_rate_limit_snapshot");
+}

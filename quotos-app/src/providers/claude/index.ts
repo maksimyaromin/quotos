@@ -9,7 +9,7 @@ export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel:
     label: profile.label ?? fallbackLabel,
     account: profile.account,
     windows: usage.windows,
-    remaining: usage.remaining,
+    used: usage.used,
     resetsAt: usage.resetsAt,
   };
 }
