@@ -11,7 +11,7 @@ import { hidePanel, setDetached as setDetachedIpc, debugRateLimitSnapshot } from
 import "./app.css";
 
 const ACTIONABLE_STATES = new Set(["idle", "broken"]);
-const APP_LABEL = import.meta.env.VITE_APP_LABEL || "Quotos";
+const APP_LABEL = "Quotos";
 const NOW_TICK_MS = 30_000;
 
 function isBlocked(rateLimitedUntil: string | null, now: number): boolean {

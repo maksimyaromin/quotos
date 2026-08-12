@@ -3,6 +3,6 @@
   "productName": "Quotos 2",
   "identifier": "com.quotos.desktop.v2",
   "build": {
-    "beforeBuildCommand": "npm run build:v2"
+    "beforeBuildCommand": "npm run build"
   }
 }

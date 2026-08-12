@@ -319,3 +319,19 @@ the packaged build.
 
 Nothing was cut silently. I1 (re-login from inside Quotos) is the one item
 not attempted, for the permission-prompt-risk reason stated above under I1.
+
+## Update: in-app "Quotos 2" caption removed
+
+The captain rejected the "Quotos 2" panel header — he never asked for it; it
+was invented in the prior round as a way to eyeball which build he was
+looking at while comparing v1 and v2. Removed at his instruction:
+`VITE_APP_LABEL` and the `APP_LABEL` fallback logic in `App.tsx` are gone
+entirely (not just unset) — the panel now always renders "Quotos", and
+`build:v2`/`beforeBuildCommand` just run the same `npm run build` as v1.
+v1/v2 now diverge only at the bundle level (`productName` /
+`identifier` in `src-tauri/tauri.v2.conf.json`), never inside the app's own
+interface or source — the captain confirmed this is the only place that
+distinction should live. Verified in a browser via `npm run dev` (mock
+client) before and after: header read "Quotos" after the change (a11y
+snapshot). `~/Downloads/Quotos 2.app` was rebuilt and replaced with this
+change; `~/Downloads/Quotos.app` (v1) was left untouched.

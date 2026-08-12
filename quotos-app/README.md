@@ -50,11 +50,9 @@ This runs `tauri build` with `src-tauri/tauri.v2.conf.json` merged on top of
   alongside a `com.quotos.desktop` build at the same time, and so their
   Application Support / WebKit storage never collide (macOS scopes both by
   `CFBundleIdentifier`);
-- points `beforeBuildCommand` at `npm run build:v2`, which sets
-  `VITE_APP_LABEL="Quotos 2"` for the frontend build — the only in-source
-  effect, read by `App.tsx` as the Panel's displayed title (falls back to
-  `"Quotos"` when unset). This is how the panel header makes it unmistakable
-  which build is which — see `RESULT.md` for why nothing else needed to change.
+- points `beforeBuildCommand` at `npm run build`, the same frontend build v1
+  uses. The panel header always reads "Quotos" — `productName` and
+  `identifier` are the only things that distinguish the two builds.
 
 The resulting bundle is `src-tauri/target/release/bundle/macos/Quotos 2.app`.
 Copy it to `~/Downloads/Quotos 2.app` to run beside `~/Downloads/Quotos.app`.
