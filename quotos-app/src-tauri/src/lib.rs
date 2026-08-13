@@ -45,6 +45,28 @@ struct AppState {
     /// button, not a tray event, so it needs this cached value to know where
     /// to reposition to. `None` until the first tray event ever arrives.
     last_tray_rect: Mutex<Option<(f64, f64)>>,
+    /// R3-1 fix: the pixel width of the tray image most recently handed to
+    /// `set_icon` (see `tray_render`'s `render`/`plain_glyph_rgba` — always
+    /// at the fixed "2x of an 18pt-tall image" convention, so this value / 2
+    /// is the image's real width in Cocoa points, independent of the
+    /// monitor's own scale factor). `compute_docked_layout` needs this to
+    /// work out how much of the tray item's own measured width is macOS's
+    /// own margin around the image versus the image itself — see its doc
+    /// comment for why that margin, not a hand-measured constant, is what
+    /// makes the glyph's on-screen center knowable rather than guessed.
+    last_icon_width_px: Mutex<u32>,
+    /// A11: whether the panel is currently visible — the only input to the
+    /// tray's "panel open" highlight (`tray_render::render`'s `highlighted`
+    /// param) that isn't already known at repaint time from `segments`
+    /// alone. Flipped by `set_tray_highlighted`, called from `show_panel`/
+    /// `hide_panel`/the click-away and detached-toggle hide paths.
+    tray_highlighted: Mutex<bool>,
+    /// A11: the segments `set_tray_status` last received, cached so
+    /// toggling `tray_highlighted` (from native show/hide, which never goes
+    /// through `set_tray_status` itself) can repaint with the *same* digits
+    /// rather than needing the frontend to resend them on every visibility
+    /// change.
+    last_tray_segments: Mutex<Vec<TraySegmentDto>>,
 }
 
 #[tauri::command]
@@ -226,12 +248,13 @@ fn debug_rate_limit_snapshot(state: tauri::State<'_, AppState>) -> HashMap<Strin
 }
 
 #[tauri::command]
-fn hide_panel(window: tauri::WebviewWindow) {
+fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {
     let _ = window.hide();
     let _ = window.emit("panel-visibility", false);
+    set_tray_highlighted(&app, false);
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct TraySegmentDto {
     text: String,
@@ -240,7 +263,34 @@ struct TraySegmentDto {
 
 /// Sets what's shown beside the tray glyph — the pinned-subscriptions
 /// feature (R2-2). Empty `segments` clears it back to just the plain,
-/// theme-tinted glyph.
+/// theme-tinted glyph (unless the panel is currently open — see
+/// `repaint_tray_icon`, A11).
+#[tauri::command]
+fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Result<(), String> {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return Ok(());
+    };
+    *app.state::<AppState>().last_tray_segments.lock().expect("last_tray_segments mutex poisoned") = segments;
+    repaint_tray_icon(&app, &tray)
+}
+
+/// A11: flips the tray icon's "panel open" highlight on or off and repaints.
+/// Called from `show_panel`/`hide_panel`/the click-away and hide branches —
+/// never from the frontend directly, since it's a pure reflection of native
+/// window visibility, not app data.
+fn set_tray_highlighted(app: &tauri::AppHandle, highlighted: bool) {
+    let Some(tray) = app.tray_by_id("main-tray") else { return };
+    *app.state::<AppState>().tray_highlighted.lock().expect("tray_highlighted mutex poisoned") = highlighted;
+    let _ = repaint_tray_icon(app, &tray);
+}
+
+/// The one place the tray icon actually gets redrawn — shared by both of
+/// this icon's independent inputs, the pinned-subscription digits
+/// (`set_tray_status`, called by the frontend on data changes) and A11's
+/// "panel open" highlight (`set_tray_highlighted`, called natively on
+/// show/hide) — neither knows the other's current value, so this always
+/// reads both fresh from `AppState` rather than taking either as a
+/// parameter, and repaints with whichever combination is current.
 ///
 /// B2/B3: the underlying `tray-icon` crate's macOS `set_title` only calls
 /// `NSStatusItem`'s `setTitle` when given `Some(..)` — passing `None` is a
@@ -251,14 +301,16 @@ struct TraySegmentDto {
 /// digits themselves are now drawn into the icon image, not the title.
 ///
 /// R2-2: colored digits have no path through `set_title` at all (see
-/// `tray_render.rs`'s module doc) — with any segments present this drops
-/// `icon_as_template` and paints a composed bitmap instead; with none, it
-/// reverts to the plain template glyph exactly as before.
-#[tauri::command]
-fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Result<(), String> {
-    let Some(tray) = app.tray_by_id("main-tray") else {
-        return Ok(());
-    };
+/// `tray_render.rs`'s module doc) — with any segments present, or A11's
+/// highlight active, this drops `icon_as_template` and paints a composed
+/// bitmap instead (a plain template image can't carry its own background
+/// tint — see `tray_render::render`'s doc comment); with neither, it reverts
+/// to the plain template glyph exactly as before.
+fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let segments = state.last_tray_segments.lock().expect("last_tray_segments mutex poisoned").clone();
+    let highlighted = *state.tray_highlighted.lock().expect("tray_highlighted mutex poisoned");
+
     tray.set_title(Some("")).map_err(|e| e.to_string())?;
 
     // I7: the composited image carries no text a screen reader can read —
@@ -272,44 +324,134 @@ fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Resu
     };
     tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
 
-    if segments.is_empty() {
+    let icon_width_px = if segments.is_empty() && !highlighted {
         let (rgba, w, h) = tray_render::plain_glyph_rgba();
         tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
         tray.set_icon_as_template(true).map_err(|e| e.to_string())?;
-        return Ok(());
-    }
+        w
+    } else {
+        let segs: Vec<tray_render::TraySegment> = segments
+            .into_iter()
+            .map(|s| tray_render::TraySegment {
+                text: s.text,
+                color: match s.color.as_str() {
+                    "amber" => tray_render::TrayColor::Amber,
+                    "red" => tray_render::TrayColor::Red,
+                    _ => tray_render::TrayColor::Neutral,
+                },
+            })
+            .collect();
+        let (rgba, w, h) = tray_render::render(&segs, highlighted);
+        tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
+        tray.set_icon_as_template(false).map_err(|e| e.to_string())?;
+        w
+    };
+    *state.last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned") = icon_width_px;
 
-    let segs: Vec<tray_render::TraySegment> = segments
-        .into_iter()
-        .map(|s| tray_render::TraySegment {
-            text: s.text,
-            color: match s.color.as_str() {
-                "amber" => tray_render::TrayColor::Amber,
-                "red" => tray_render::TrayColor::Red,
-                _ => tray_render::TrayColor::Neutral,
-            },
-        })
-        .collect();
-    let (rgba, w, h) = tray_render::render(&segs);
-    tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
-    tray.set_icon_as_template(false).map_err(|e| e.to_string())?;
+    // R3-1 fix: pinning/unpinning a subscription (or A11's highlight
+    // toggling) lands here and can change the tray item's own width
+    // (`tray_render::render`'s composited image grows per digit segment,
+    // though the highlight itself never changes the width) — which on macOS
+    // shifts the *item's own* on-screen x position too (status items lay
+    // out right-to-left, so widening ours moves our own left edge left;
+    // narrowing moves it back right). Nothing about that resize goes
+    // through `TrayIconEvent` (there is no tray click involved), so
+    // `compute_docked_layout`'s `tray_x` — captured from the last actual
+    // click/hover — goes stale the instant this runs, and the beak/panel
+    // silently drift off the glyph until the next real tray event. Re-dock
+    // right here whenever the panel is open and attached — this is what
+    // makes pin/unpin a no-op for beak position instead of a drift. See
+    // `schedule_resync_after_icon_change`'s doc comment for why this can't
+    // just be one synchronous `tray.rect()` call.
+    schedule_resync_after_icon_change(app, tray.clone());
     Ok(())
 }
 
+/// Re-reads the tray item's *current* rect and, if the panel is visible and
+/// still docked (never while detached — the window isn't under the icon at
+/// all then), re-applies the docked position/beak-offset from it. See
+/// `set_tray_status`'s call site for why this needs to exist at all: pin/
+/// unpin changes the icon's width (and therefore its on-screen x) with no
+/// tray click to refresh `last_tray_rect` from. Returns whether it actually
+/// repositioned anything, so `schedule_resync_after_icon_change` knows
+/// whether a retry is still needed.
+fn resync_docked_position_after_icon_change(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Option<(f64, f64)> {
+    let window = app.get_webview_window("main")?;
+    if !window.is_visible().unwrap_or(false) {
+        return None;
+    }
+    let state = app.state::<AppState>();
+    let detached = state.detached.lock().map(|d| *d).unwrap_or(false);
+    if detached {
+        return None;
+    }
+    let rect = tray.rect().ok().flatten()?;
+    let (tray_x, tray_y) = match rect.position {
+        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+        tauri::Position::Logical(p) => (p.x, p.y),
+    };
+    *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") = Some((tray_x, tray_y));
+    reposition_under_tray(app, &window, tray_x, tray_y);
+    Some((tray_x, tray_y))
+}
+
+/// `resync_docked_position_after_icon_change`'s single synchronous call,
+/// tried on its own first, was verified live (via a temporary diagnostic
+/// build, `RESULT.md`) to read a *stale* rect: right after `set_icon()`
+/// changes the composited image's width, `tray.rect()` — called immediately
+/// after, on the same main-thread dispatch — still reported the item's
+/// *previous* width/position for one to a few runloop turns, only catching
+/// up a beat later. (`set_icon`'s own main-thread dispatch guarantees the
+/// image is *set*, not that `NSStatusItem`'s width-driven layout pass has
+/// already run by the time the call returns — those are two different
+/// things on macOS, and nothing in the crate exposes a way to force the
+/// layout pass synchronously.) So one immediate attempt plus a couple of
+/// short-delay retries — the same shape as `schedule_position_correction`'s
+/// fix for a different, unrelated AppKit-async-layout race — rather than
+/// trusting the first read: each retry just re-reads and re-applies,
+/// harmless if the previous attempt already landed on the right numbers.
+fn schedule_resync_after_icon_change(app: &tauri::AppHandle, tray: tauri::tray::TrayIcon) {
+    if resync_docked_position_after_icon_change(app, &tray).is_none() {
+        return; // not visible/docked — nothing to correct, no retry needed either
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for delay_ms in [30, 120] {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            resync_docked_position_after_icon_change(&app, &tray);
+        }
+    });
+}
+
 /// I7: tear the panel off into a real, freestanding window (`detached =
-/// true`) or fold it back into a popover (`false`). Detached mode gets a
-/// title bar (so it can be dragged and is unmistakably a window, not a
-/// popover), stays out of the hide-on-blur path, and shows up in Cmd+Tab —
-/// the captain's stated need is to park it on screen and watch it while
-/// working elsewhere, which a thing that vanishes on focus loss cannot do.
+/// true`) or fold it back into a popover (`false`). Detached mode stays out
+/// of the hide-on-blur path and shows up in Cmd+Tab — the captain's stated
+/// need is to park it on screen and watch it while working elsewhere, which
+/// a thing that vanishes on focus loss cannot do.
+///
+/// R3-3 fix: this used to also call `window.set_decorations(true)` while
+/// detached, on the theory that a title bar was needed to make the window
+/// "unmistakably a window" and draggable. That was the whole bug the captain
+/// photographed: with `titleBarStyle: Overlay` (tauri.conf.json) turning
+/// decorations on paints real traffic lights over the content *and* a native
+/// title-bar strip macOS renders regardless of the window's own transparency,
+/// which is exactly "kнопки системные" on a frame visibly bigger than the
+/// 332px panel floating inset inside it. The handoff has no system chrome in
+/// either state ("Кнопки нет... В отцепленном состоянии в шапке появляется
+/// стрелка") — decorations must stay off always; dragging comes from
+/// `App.tsx`'s own header-drag calling `startDragging()`, which needs no
+/// native title bar at all. Whether decorations were the actual reason the
+/// drag itself didn't respond was never isolated (the screenshot alone can't
+/// tell it apart from "the frame just looks wrong"), but there is no reason
+/// left to keep them and the handoff explicitly rules them out either way.
 #[tauri::command]
 fn set_detached(
+    app: tauri::AppHandle,
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
     detached: bool,
 ) -> Result<(), String> {
     *state.detached.lock().expect("detached mutex poisoned") = detached;
-    window.set_decorations(detached).map_err(|e| e.to_string())?;
     window.set_skip_taskbar(!detached).map_err(|e| e.to_string())?;
     window.set_always_on_top(true).map_err(|e| e.to_string())?;
     if detached {
@@ -324,7 +466,7 @@ fn set_detached(
         // first tray event of the app's lifetime, which can't happen here
         // since detaching itself requires the panel to already be open.
         if let Some((tray_x, tray_y)) = *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") {
-            let layout = reposition_under_tray(&window, tray_x, tray_y);
+            let layout = reposition_under_tray(&app, &window, tray_x, tray_y);
             schedule_position_correction(&window, layout);
         }
     }
@@ -408,16 +550,61 @@ fn forget_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
 /// Also returns the beak's horizontal offset (logical/CSS px, relative to
 /// the panel's own left edge) so the caller can tell the frontend where to
 /// draw it. B3/B5: the beak must stay centered under the tray glyph's own
-/// center, not the whole button's center — the button's width grows with
-/// each pinned digit segment (`tray_render.rs`), but the glyph is always
-/// the leftmost 18 CSS-px inside it, after the button's own 6px padding
-/// (handoff's A1/A3), so this is a fixed offset from the *icon's* left edge
-/// regardless of how many segments follow it. When the panel's left edge
-/// gets clamped away from `icon_left - 6` (B5's "at the right screen edge…
-/// the beak keeps following the icon"), this offset grows to compensate,
-/// clamped to stay clear of the panel's own 12px corner radius plus half
-/// the 12px beak so it never renders outside the panel body.
-fn compute_docked_layout(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
+/// center, not the whole button's center.
+///
+/// R3-1 fix: this used to assume the glyph sat a fixed "6px button padding"
+/// inside the item, i.e. `icon_left + 15pt` — a number carried over from a
+/// design-system mockup, never checked against a real tray item. Measuring
+/// the real thing (a pixel-precise screenshot of the bare glyph, cross-checked
+/// against `CGWindowListCopyWindowInfo` and the item's own Accessibility
+/// rect — see `RESULT.md`) found the *actual* glyph center sitting almost
+/// exactly at the item's own geometric center instead, ~18pt from its left
+/// edge, not 15 — because `NSStatusItem` centers the whole composited image
+/// (glyph, or glyph+digits once pinned) within a button that's wider than
+/// the image by a small system-chosen margin on each side. Pinning a second
+/// data point (item width 36pt bare vs 64pt with one pinned segment, right
+/// edge unchanged either way — status items lay out right-to-left) confirmed
+/// that margin isn't the same fixed distance from the item's own left edge
+/// once digits are added, since digits only widen the image, not the glyph
+/// portion of it.
+///
+/// So rather than hardcode a second (equally guessable) constant, this now
+/// derives the margin fresh from the two pieces of ground truth Quotos
+/// actually has: the item's own current width (`tray.rect()`, queried here
+/// so it's paired with the same call's position rather than a value cached
+/// at a different instant) and the composited image's own known width
+/// (`AppState.last_icon_width_px`, set by `set_tray_status` right before
+/// `set_icon` — always at the fixed "2x of an 18pt-tall image" convention,
+/// so `/2` gives its real width in points regardless of monitor scale). The
+/// glyph is always that image's leftmost 18pt (`tray_render.rs`'s `render`
+/// draws digits only after it) — assuming `NSStatusItem` centers the image
+/// (confirmed above), half of whatever's left over after the image is the
+/// left margin, and the glyph's own center is 9pt further in from there.
+/// This is exact for however many digits are pinned, not just the bare-glyph
+/// case it was checked against, because it's computed from the actual
+/// numbers each time rather than assumed constant.
+///
+/// If `tray.rect()` is unavailable (already `None` in this same run's other
+/// call — see `resync_docked_position_after_icon_change`), this falls back
+/// to treating the glyph as flush with the item's own left edge (no margin)
+/// rather than failing outright — a plausible-worst-case position, not a
+/// crash.
+fn glyph_center_offset_from_item_left_physical(item_width_physical: Option<f64>, icon_width_px: f64, scale: f64) -> f64 {
+    const GLYPH_WIDTH_LOGICAL: f64 = 18.0; // fixed: tray_render's glyph is always drawn at this size first
+    let image_width_physical = (icon_width_px / 2.0) * scale;
+    let margin_physical = item_width_physical.map(|w| ((w - image_width_physical) / 2.0).max(0.0)).unwrap_or(0.0);
+    margin_physical + (GLYPH_WIDTH_LOGICAL / 2.0) * scale
+}
+
+/// The window's own fixed logical size, from `tauri.conf.json`'s `width`/
+/// `height` — duplicated here (rather than read back from the window, which
+/// would just report whatever size it currently, possibly wrongly, is) so
+/// the Resized-event guard in `run`'s `setup` has a ground truth to snap
+/// back to.
+const PANEL_WINDOW_WIDTH_LOGICAL: f64 = 360.0;
+const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
+
+fn compute_docked_layout(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
     let monitor = window.monitor_from_point(tray_x, tray_y).ok().flatten().or_else(|| window.current_monitor().ok().flatten())?;
 
     let scale = monitor.scale_factor();
@@ -436,15 +623,54 @@ fn compute_docked_layout(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64
     let y = monitor_pos.y + top_px;
 
     const PANEL_WIDTH_LOGICAL: f64 = 332.0;
-    const GLYPH_CENTER_FROM_ICON_LEFT_LOGICAL: f64 = 6.0 + 18.0 / 2.0; // button padding + half glyph width
-    const BEAK_SAFE_MARGIN_LOGICAL: f64 = 18.0; // 12px corner radius + half the 12px beak
+    // Panel.jsx's beak is a 12x12 box rotated in place (default transform
+    // origin, so its own visual center never moves off `left + 6`) — the
+    // frontend assigns whatever this function returns straight to that
+    // box's CSS `left`, i.e. the box's own *left edge*, not its center. And
+    // `left` is relative to the panel's own container, which itself sits
+    // inset inside the (wider, for shadow-blur margin — see app.css/B9)
+    // window: `body`'s `padding-top`-plus-flex-center leaves `(window width
+    // − panel width) / 2` of empty margin on each side. Both of those were
+    // previously missing from this math — the value computed above only
+    // ever matched the *window's* left edge, not the panel's, and was fed
+    // in as a center when the frontend treats it as a left edge — so the
+    // beak rendered up to ~20pt off from the glyph even when the glyph
+    // center itself (`glyph_center_physical`, above) was correct. See
+    // `RESULT.md` for the live screenshot measurements that caught this.
+    const BEAK_BOX_WIDTH_LOGICAL: f64 = 12.0;
+    const BEAK_HALF_WIDTH_LOGICAL: f64 = BEAK_BOX_WIDTH_LOGICAL / 2.0;
+    let panel_inset_logical = (PANEL_WINDOW_WIDTH_LOGICAL - PANEL_WIDTH_LOGICAL) / 2.0;
 
-    let glyph_center_physical = tray_x + GLYPH_CENTER_FROM_ICON_LEFT_LOGICAL * scale;
-    let beak_offset_logical = (glyph_center_physical - x as f64) / scale;
-    let beak_offset_logical =
-        beak_offset_logical.clamp(BEAK_SAFE_MARGIN_LOGICAL, PANEL_WIDTH_LOGICAL - BEAK_SAFE_MARGIN_LOGICAL);
+    let item_width_physical = app
+        .tray_by_id("main-tray")
+        .and_then(|t| t.rect().ok().flatten())
+        .map(|r| match r.size {
+            tauri::Size::Physical(s) => s.width as f64,
+            tauri::Size::Logical(s) => s.width * scale,
+        });
+    let icon_width_px = *app.state::<AppState>().last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned") as f64;
+    let glyph_offset_physical = glyph_center_offset_from_item_left_physical(item_width_physical, icon_width_px, scale);
 
-    Some((x, y, beak_offset_logical))
+    let glyph_center_physical = tray_x + glyph_offset_physical;
+    let panel_left_physical = x as f64 + panel_inset_logical * scale;
+    let beak_center_logical = (glyph_center_physical - panel_left_physical) / scale;
+    let beak_left_logical = beak_center_logical - BEAK_HALF_WIDTH_LOGICAL;
+    // Docked at `icon_left - 6` (unclamped by the screen edge), the glyph
+    // sits close to the panel's own left edge by design — the handoff's own
+    // words are "клюв прижат к левому краю" (beak pressed to the left
+    // edge) — so this only needs to keep the 12px box's *source* rect
+    // within the panel's own width, not enforce some larger cosmetic
+    // minimum (an earlier version of this clamp did that, using bounds
+    // meant for a *center* value on what was actually a raw, uncorrected
+    // left-edge value — see this function's earlier bug, above — which
+    // fought the "pressed to the left edge" design on every normal, non-
+    // clamped-by-screen-edge open). B5's right-screen-edge case is what
+    // actually needs headroom: there, `x` above already clamped the panel's
+    // own left edge, so `beak_center_logical` grows well past this range on
+    // its own to keep tracking the glyph.
+    let beak_left_logical = beak_left_logical.clamp(0.0, PANEL_WIDTH_LOGICAL - BEAK_BOX_WIDTH_LOGICAL);
+
+    Some((x, y, beak_left_logical))
 }
 
 /// Applies an already-computed docked position/beak-offset — split out from
@@ -464,8 +690,8 @@ fn apply_docked_position(window: &tauri::WebviewWindow, x: i32, y: i32, beak_off
 /// Returns what it applied (or `None` if no monitor could be resolved) so
 /// callers can schedule a same-numbers correction — see `show_panel`'s doc
 /// comment on `set_popover_collection_behavior` for why that's needed.
-fn reposition_under_tray(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
-    let layout = compute_docked_layout(window, tray_x, tray_y)?;
+fn reposition_under_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
+    let layout = compute_docked_layout(app, window, tray_x, tray_y)?;
     apply_docked_position(window, layout.0, layout.1, layout.2);
     Some(layout)
 }
@@ -536,12 +762,13 @@ fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "macos"))]
 fn set_popover_collection_behavior(_window: &tauri::WebviewWindow) {}
 
-fn show_panel(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
+fn show_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
     let _ = window.show();
     let _ = window.set_focus();
-    let layout = reposition_under_tray(window, tray_x, tray_y);
+    let layout = reposition_under_tray(app, window, tray_x, tray_y);
     let _ = window.emit("panel-visibility", true);
     schedule_position_correction(window, layout);
+    set_tray_highlighted(app, true);
 }
 
 /// `NSWindowCollectionBehaviorMoveToActiveSpace` (see
@@ -575,13 +802,14 @@ fn schedule_position_correction(window: &tauri::WebviewWindow, layout: Option<(i
 /// instead of hiding it — closing a window the captain deliberately parked
 /// on screen must be an explicit action, not an accidental side effect of
 /// clicking the tray glyph again.
-fn toggle_panel(window: &tauri::WebviewWindow, detached: bool, tray_x: f64, tray_y: f64) {
+fn toggle_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, detached: bool, tray_x: f64, tray_y: f64) {
     let visible = window.is_visible().unwrap_or(false);
     if visible && !detached {
         let _ = window.hide();
         let _ = window.emit("panel-visibility", false);
+        set_tray_highlighted(app, false);
     } else {
-        show_panel(window, tray_x, tray_y);
+        show_panel(app, window, tray_x, tray_y);
     }
 }
 
@@ -622,6 +850,12 @@ pub fn run() {
             // isn't available until setup — see persistence.rs for why a
             // plain, `fsync`'d file is what R2-5's reproduction called for.
             let tracked_path = app.path().app_config_dir()?.join("tracked.json");
+            // Computed here (rather than down by the tray builder, where it
+            // used to live) so `AppState.last_icon_width_px` can start at the
+            // exact same width as the icon the builder below actually sets —
+            // both reuse this one `(rgba, w, h)` rather than each calling
+            // `plain_glyph_rgba()` separately and risking the two drifting.
+            let (initial_rgba, initial_w, initial_h) = tray_render::plain_glyph_rgba();
             app.manage(AppState {
                 http: reqwest::Client::builder()
                     .timeout(Duration::from_secs(10))
@@ -634,6 +868,9 @@ pub fn run() {
                 scheduler: Scheduler::new(),
                 sign_in: signin::SignInRegistry::new(),
                 last_tray_rect: Mutex::new(None),
+                last_icon_width_px: Mutex::new(initial_w),
+                tray_highlighted: Mutex::new(false),
+                last_tray_segments: Mutex::new(Vec::new()),
             });
             spawn_scheduler(app.handle().clone());
 
@@ -647,17 +884,48 @@ pub fn run() {
                 let blur_window = window.clone();
                 let blur_app = app.handle().clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(false) = event {
-                        let detached = blur_app
-                            .state::<AppState>()
-                            .detached
-                            .lock()
-                            .map(|d| *d)
-                            .unwrap_or(false);
-                        if !detached {
-                            let _ = blur_window.hide();
-                            let _ = blur_window.emit("panel-visibility", false);
+                    match event {
+                        tauri::WindowEvent::Focused(false) => {
+                            let detached = blur_app
+                                .state::<AppState>()
+                                .detached
+                                .lock()
+                                .map(|d| *d)
+                                .unwrap_or(false);
+                            if !detached {
+                                let _ = blur_window.hide();
+                                let _ = blur_window.emit("panel-visibility", false);
+                                set_tray_highlighted(&blur_app, false);
+                            }
                         }
+                        // R3-3 (Magnet question): `resizable: false` in
+                        // tauri.conf.json only disables the *native*
+                        // resize-handle drag — it does not stop a third-party
+                        // window manager like Magnet, which resizes windows
+                        // by calling the Accessibility API's `kAXSizeAttribute`
+                        // setter directly (that goes straight to `-setFrame:`,
+                        // bypassing the style-mask resizable bit entirely).
+                        // Quotos never asked Magnet's snap actions to be
+                        // driven here — this only reasons about what the
+                        // window's own configuration permits — but a snap
+                        // action landing on this window would otherwise
+                        // silently resize a fixed-size popover whose layout
+                        // math (panel width, shadow margin, beak offset) all
+                        // assumes exactly 360x560 logical, which cannot
+                        // reflow. Snapping the size straight back is what
+                        // "resist being resized into nonsense" means for a
+                        // window with no resizable layout to fall back to;
+                        // it does not fight a *move* (a Magnet action that
+                        // only repositions is left alone), only a resize.
+                        tauri::WindowEvent::Resized(size) => {
+                            let scale = blur_window.scale_factor().unwrap_or(1.0);
+                            let expected_w = (PANEL_WINDOW_WIDTH_LOGICAL * scale).round() as u32;
+                            let expected_h = (PANEL_WINDOW_HEIGHT_LOGICAL * scale).round() as u32;
+                            if size.width != expected_w || size.height != expected_h {
+                                let _ = blur_window.set_size(tauri::PhysicalSize::new(expected_w, expected_h));
+                            }
+                        }
+                        _ => {}
                     }
                 });
             }
@@ -669,8 +937,8 @@ pub fn run() {
             // (see `tray_render::plain_glyph_rgba`'s doc comment) rather than
             // a static bundled asset, so there is no window between launch
             // and the first `set_tray_status` call where a stale/blurry
-            // fixed-size icon could show.
-            let (initial_rgba, initial_w, initial_h) = tray_render::plain_glyph_rgba();
+            // fixed-size icon could show. `initial_rgba`/`initial_w`/
+            // `initial_h` were computed up above, alongside `AppState`.
             let tray = TrayIconBuilder::with_id("main-tray")
                 .icon(Image::new_owned(initial_rgba, initial_w, initial_h))
                 .icon_as_template(true)
@@ -728,7 +996,7 @@ pub fn run() {
                                 .lock()
                                 .map(|d| *d)
                                 .unwrap_or(false);
-                            toggle_panel(&window, detached, tray_x, tray_y);
+                            toggle_panel(app, &window, detached, tray_x, tray_y);
                         }
                     }
                 })
@@ -739,4 +1007,55 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod glyph_offset_tests {
+    use super::glyph_center_offset_from_item_left_physical;
+
+    // R3-1 regression guard: these numbers are the real measurements taken
+    // against a live tray item (see RESULT.md) — a bare-glyph item measured
+    // 36pt wide with a bare 36px-wide (=18pt) composited image, and the
+    // item's own visual center (glyph ink centroid, from a pixel-precise
+    // screenshot) landed almost exactly on the item's geometric center, i.e.
+    // 18pt in from its own left edge, not the old hardcoded 15pt.
+    #[test]
+    fn bare_glyph_offset_matches_the_measured_item_center() {
+        let scale = 2.0;
+        let item_width_physical = 36.0 * scale;
+        let icon_width_px = 36.0; // GLYPH_PX: bare glyph, no digits
+        let offset = glyph_center_offset_from_item_left_physical(Some(item_width_physical), icon_width_px, scale);
+        assert!((offset - 18.0 * scale).abs() < 0.01, "expected ~18pt offset, got {}pt", offset / scale);
+    }
+
+    // A wider (pinned-digits) image still centers correctly as long as the
+    // item's own measured width and the image's own known width are both
+    // fresh — this is the whole point of deriving the margin instead of
+    // reusing a single constant: it has to hold for any segment count, not
+    // just the bare-glyph case above.
+    #[test]
+    fn pinned_digits_offset_scales_with_the_wider_image_not_a_fixed_constant() {
+        let scale = 2.0;
+        // Real measurement: item widened from 36pt to 64pt after pinning one
+        // segment, while its right edge (and therefore the implied margin)
+        // stayed put — see compute_docked_layout's doc comment.
+        let item_width_physical = 64.0 * scale;
+        let icon_width_px = 46.0 * 2.0; // a wider composited image (glyph + one segment), at the fixed 2x convention
+        let offset = glyph_center_offset_from_item_left_physical(Some(item_width_physical), icon_width_px, scale);
+        // Same 18pt margin as the bare case (by construction of these two
+        // measurements — right edge held fixed), so the glyph's offset from
+        // the item's own *current* left edge is unchanged even though the
+        // item itself is much wider now.
+        assert!((offset - 18.0 * scale).abs() < 0.01, "expected ~18pt offset, got {}pt", offset / scale);
+    }
+
+    #[test]
+    fn missing_item_rect_falls_back_to_glyph_flush_with_the_left_edge() {
+        let scale = 2.0;
+        let icon_width_px = 36.0;
+        let offset = glyph_center_offset_from_item_left_physical(None, icon_width_px, scale);
+        // No margin data available: half the glyph's own width is the best
+        // available answer, not a crash or a wildly wrong guess.
+        assert!((offset - 9.0 * scale).abs() < 0.01);
+    }
 }

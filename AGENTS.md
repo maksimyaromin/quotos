@@ -235,6 +235,44 @@ rewritten each round, not appended to.
   (Cargo.toml, `lib.rs`'s plugin registration, the `on_tray_event` cache
   priming) rather than kept around for some other position mode — nothing
   else in the codebase used it.
+- **R3-1: the glyph's on-screen offset inside the tray item must be derived
+  fresh each time from measured numbers, never hardcoded — and even a
+  single `tray.rect()` call right after `set_icon()` reads a stale rect.**
+  Two independent bugs, both found only by pixel-measuring a real tray item
+  (`screencapture` + centroid analysis, cross-checked against
+  `CGWindowListCopyWindowInfo` and the item's own Accessibility rect — see
+  `RESULT.md`'s round-3 entry for the exact numbers), caused the beak to
+  drift off the glyph on pin/unpin exactly as the captain described. First:
+  a prior round's `GLYPH_CENTER_FROM_ICON_LEFT_LOGICAL = 6px padding + 9px`
+  constant was never actually checked against a real tray item — the true
+  center sits at ~18pt in, not 15, because `NSStatusItem` centers the
+  *whole* composited image (glyph, or glyph+digits) inside a button wider
+  than the image by a system margin that isn't fixed once digits widen the
+  image. `compute_docked_layout` now derives that margin fresh every call
+  from two things Quotos actually knows — the item's *current* measured
+  width (`tray.rect()`) and the composited image's own known width
+  (`AppState.last_icon_width_px`, set by `set_tray_status` right before
+  `set_icon`, always at the buffer's fixed "2x of an 18pt image" convention
+  so `/2` gives real points regardless of monitor scale) — via
+  `glyph_center_offset_from_item_left_physical`, rather than trusting any
+  single constant again. Second: `set_tray_status` (pin/unpin) never
+  re-docked the panel at all — no `TrayIconEvent` fires for a same-app icon
+  resize, so the position captured at the last real tray click just went
+  stale the instant the item's width (and therefore its on-screen left
+  edge — status items lay out right-to-left, confirmed live: 36pt→64pt
+  after pinning one segment, right edge unchanged) changed. Fixed by
+  re-querying and re-docking on every `set_tray_status` call
+  (`schedule_resync_after_icon_change`), but a *single* synchronous
+  `tray.rect()` call made immediately after `set_icon()` was itself found
+  to read a stale rect (AppKit's own layout pass for the new width hadn't
+  caught up for one to a few runloop turns) — needs the same short-delay-retry
+  shape as `schedule_position_correction`'s unrelated Space-transition fix,
+  not a single attempt. Also found and fixed in the same pass: the computed
+  glyph *center* was being fed straight into `Panel.jsx`'s `beakLeft` as if
+  it were the beak box's own CSS `left` (its *left edge*, off by half the
+  12px box), and the 14px inset between the window's own edge and the
+  panel's edge (`app.css`'s shadow-blur margin, B9) was never subtracted —
+  both silently wrong even when the glyph-center math itself was correct.
 - **This machine is live and shared — not a clean test box — and
   screenshotting this app's own windows only ever shows whatever's on the
   *currently active macOS Space*, which is frequently not where a tray
@@ -355,16 +393,76 @@ rewritten each round, not appended to.
   (`TARGET_INK_DIAMETER_CSS_PX`) is independently guarded by a test,
   `glyph_ink_bounding_box_is_in_the_target_band`, that measures the real
   composited output rather than trusting the constant alone.
-- I7's `set_detached` IPC command is unchanged, but its trigger moved:
-  round 2 removed the detach *button* — dragging the header is now the only
-  way to detach (`App.tsx`'s `handleHeaderPointerDown`), matching the
-  handoff's "first movement detaches" rule. In the real app this calls
-  `getCurrentWindow().startDragging()` from `@tauri-apps/api/window` after
-  the first `mousemove` past mousedown (a plain click does nothing); the
-  browser/mock harness has no OS window to move, so it simulates the same
-  interaction by fixed-positioning the Panel via CSS instead (see
-  `position`/`docked` props) — this is why dragging is fully testable via
-  `npm run dev` even though `startDragging()` itself isn't.
+- **A11 (tray "panel open" highlight) is drawn into the same composited
+  bitmap as the glyph/digits, not reached via any native `NSStatusItem`
+  highlighted state** — `tray_render.rs`'s `draw_highlight_background`
+  paints the handoff's exact translucent rounded rect
+  (`rgba(255,255,255,0.20)` dark / `rgba(0,0,0,0.14)` light) behind
+  everything else, composited with real "src-over" alpha blending
+  (`blend_pixel`, which replaced the old `put_pixel`'s flat overwrite —
+  needed the moment two translucent layers can occupy the same pixel, since
+  an overwrite would silently discard the highlight everywhere the glyph or
+  a digit covers it). Driven by `AppState.tray_highlighted` (set from
+  `show_panel`/`hide_panel`/the click-away and detached-toggle hide paths —
+  never from the frontend) plus a cached `AppState.last_tray_segments` (so
+  toggling the highlight alone, with no new pinned data, can still repaint
+  with the *same* digits) — both read fresh by `repaint_tray_icon`, the one
+  place `set_icon` is actually called now, shared by `set_tray_status` and
+  `set_tray_highlighted`. Verified live by pixel-diffing the same tray icon
+  closed vs. open (`fm-quotos-click.sh peek`): zero difference anywhere
+  except an 18×18 region exactly over the glyph.
+- I7's `set_detached` IPC command has no detach *button* — dragging the
+  header is the only way to detach (`App.tsx`'s `handleHeaderPointerDown`),
+  matching the handoff's "first movement detaches" rule. The browser/mock
+  harness has no OS window to move, so it simulates the same interaction by
+  fixed-positioning the Panel via CSS instead (see `position`/`docked`
+  props) — this is why dragging is testable via `npm run dev` even though
+  the native path below isn't, from here.
+- **R3-3: `startDragging()` must be called synchronously on the real
+  mousedown, not after waiting for the first `mousemove` — the latter is
+  what silently broke native dragging entirely (the captain: "the window
+  doesn't drag at all").** `getCurrentWindow().startDragging()` →
+  `tauri-runtime-wry`'s `WindowMessage::DragWindow` → `tao`'s
+  `drag_window()` → `NSWindow.performWindowDragWithEvent`, which hands
+  AppKit whatever `NSApp.currentEvent()` is *at the moment the Rust side
+  actually runs it* (`tao`'s `platform_impl/macos/window.rs` only
+  synthesizes a substitute event for one narrow stale-event case, not the
+  general one). Waiting for a `mousemove` before calling `invoke()` adds a
+  full webview→IPC→main-thread round trip on top of the movement itself, so
+  by the time it lands, `currentEvent` is essentially never still the
+  mouseDown Apple's docs say to call this from. Fixed in `App.tsx`'s
+  `handleHeaderPointerDown`: `startDragging()` is now called immediately,
+  unconditionally, on `mousedown` itself (harmless on a click that never
+  moves — AppKit's own tracking loop treats a stationary mouseDown-then-up
+  as a no-op) — the *visible* detach (beak gone, snap-back arrow, no
+  close-on-click-away) still only flips on the first real `mousemove`,
+  separately, so C3 ("a plain click does not detach") is unaffected. Also
+  removed `set_detached`'s `window.set_decorations(true)` while detached —
+  with `titleBarStyle: Overlay`, turning decorations on for *any* reason
+  paints real traffic lights plus a native title-bar strip regardless of
+  the window's own transparency, which was the captain's other complaint
+  (system chrome, oversized frame) — decorations must stay off in both
+  states, always; dragging needs no native title bar. **Not provable
+  end-to-end from here**: a synthetic mousedown+drag (`CGEventPost`, same
+  mechanism as `fm-quotos-click.sh`) correctly drove this component's own
+  movement tracking (confirmed the snap-back arrow appears) but produced
+  zero native `WindowEvent::Moved` events, with or without this fix —
+  checked directly with a temporary logger. Consistent with, but not proof
+  of, the same synthetic-input limitation already documented above for tray
+  clicks; get the captain to confirm with a real drag before assuming
+  either way.
+- **Third-party window managers (Magnet) can resize this window despite
+  `resizable: false`.** That flag only disables the *native* resize-handle
+  drag; a window manager that resizes via the Accessibility API's
+  `kAXSizeAttribute` setter goes straight to `-setFrame:`, which doesn't
+  consult the style-mask resizable bit at all. `lib.rs`'s
+  `on_window_event` now also matches `WindowEvent::Resized` and snaps the
+  size back to the fixed 360×560 logical whenever it drifts (in either
+  docked or detached state) — deliberately only fights a *resize*, not a
+  *move*, so a Magnet move/snap-position action still works. Reasoned from
+  `tao`/AppKit's documented behavior, not observed against a live Magnet
+  action (out of bounds for an agent here — Magnet must never be driven
+  directly).
 - **`--shadow-popover`'s blur radius must stay inside the transparent
   window's own margin** around the panel (`--panel-width` vs the window
   width in `tauri.conf.json`, currently a 14px margin per side via

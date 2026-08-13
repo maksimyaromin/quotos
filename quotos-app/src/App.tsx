@@ -151,14 +151,38 @@ export default function App() {
   };
 
   // Dragging the header is the only way to detach — there is no detach
-  // button. The first movement (not the mousedown itself) is what detaches,
-  // so a plain click on the header does nothing. In the real app, the OS
-  // window takes over via startDragging(); in the browser harness (no real
-  // window to move) the panel instead follows the cursor via a fixed
-  // position, so the whole interaction stays reachable for QA.
+  // button. The *visible* detach (losing the beak, gaining the snap-back
+  // arrow, no longer closing on click-away) still only happens on the first
+  // real movement, not the mousedown itself, so a plain click on the header
+  // does nothing — that part is unchanged.
+  //
+  // R3-3 fix: starting the *native* drag itself used to wait for that same
+  // first-movement signal, calling `startDragging()` from the `mousemove`
+  // handler. On macOS that is what silently broke dragging entirely — the
+  // captain's "the window doesn't drag at all." `startDragging()` calls into
+  // tao's `drag_window()`, which hands `NSWindow.performWindowDragWithEvent`
+  // whatever `NSApp.currentEvent()` happens to be *when the Rust side gets
+  // around to running it* (it only substitutes a synthesized event for one
+  // narrow stale-event case, not the general one) — and that call arrives
+  // over an async `invoke()` IPC round-trip, so by the time it lands,
+  // `currentEvent` is essentially never still the original mouseDown.
+  // Apple's own docs say to call `performWindowDragWithEvent` from
+  // `mouseDown:` itself; that only works here if `startDragging()` is fired
+  // synchronously on the real mousedown, not deferred to a later movement
+  // event — confirmed live: deferring it (the old code) left the window
+  // stationary through an entire synthetic drag even though this component's
+  // own movement tracking correctly saw it and flipped to detached; calling
+  // it immediately here is what actually moves the window (see RESULT.md).
+  // Calling it on a click that never moves is harmless — AppKit's own
+  // tracking loop treats a mouseDown immediately followed by mouseUp with no
+  // movement as a no-op, so C3 ("a plain click does not detach") still holds
+  // for the *visible* state below, which is untouched by this.
   const handleHeaderPointerDown = (event: React.MouseEvent) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
+    if (isTauri) {
+      void getCurrentWindow().startDragging();
+    }
     const startX = event.clientX;
     const startY = event.clientY;
     const panelEl = document.querySelector("[data-quotos-panel]");
@@ -177,7 +201,6 @@ export default function App() {
         void setDetachedIpc(true);
         if (isTauri) {
           cleanup();
-          void getCurrentWindow().startDragging();
           return;
         }
       }

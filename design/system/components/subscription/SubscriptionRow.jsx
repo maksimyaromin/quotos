@@ -174,7 +174,11 @@ export function SubscriptionRow({
               onBlur={commitRename}
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitRename();
-                if (e.key === "Escape") { setDraft(label); setRenaming(false); }
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setDraft(label);
+                  setRenaming(false);
+                }
               }}
               style={{
                 width: "100%", font: "inherit",
@@ -251,7 +255,11 @@ export function SubscriptionRow({
               onChange={(e) => setCodeDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") submitCode();
-                if (e.key === "Escape") { setCodeDraft(""); onCancelSignIn?.(); }
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setCodeDraft("");
+                  onCancelSignIn?.();
+                }
               }}
               placeholder="Paste code"
               style={{

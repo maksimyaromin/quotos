@@ -93,7 +93,7 @@ pub struct TraySegment {
 /// this: vector from centre (8,8) to each endpoint, `atan2`) — both in this
 /// module's plain math (y-down, 0 = +x axis) convention, which already
 /// matches the SVG's own y-down convention with no flip needed since this
-/// buffer is top-left-origin throughout (`put_pixel`, the text module, etc).
+/// buffer is top-left-origin throughout (`blend_pixel`, the text module, etc).
 fn glyph_coverage(canvas_px: u32) -> Vec<u8> {
     const TRACK_RADIUS_SVG: f64 = 5.4;
     const TRACK_STROKE_SVG: f64 = 1.4;
@@ -172,15 +172,82 @@ fn is_dark_mode() -> bool {
         .unwrap_or(false)
 }
 
-fn put_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8, u8)) {
+/// A11 needs two translucent layers in one buffer now (the "panel open"
+/// highlight, then the glyph/digits drawn over it) — `put_pixel`'s plain
+/// overwrite would just discard whichever layer drew second wherever they
+/// overlap, losing the highlight everywhere the glyph or a digit covers it.
+/// Standard "src-over" alpha compositing instead: on a fully-opaque `src` or
+/// a fully-transparent destination pixel this reduces to exactly what
+/// `put_pixel` already did, so every existing single-layer caller (glyph
+/// ink onto a blank buffer, digit text onto a blank buffer) is unaffected —
+/// only the new highlighted case actually exercises the blend math.
+fn blend_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8, u8)) {
     if x >= w || y >= h {
         return;
     }
     let idx = ((y * w + x) * 4) as usize;
-    buf[idx] = rgba.0;
-    buf[idx + 1] = rgba.1;
-    buf[idx + 2] = rgba.2;
-    buf[idx + 3] = rgba.3;
+    let src_a = rgba.3 as u32;
+    if src_a == 0 {
+        return;
+    }
+    if src_a == 255 {
+        buf[idx] = rgba.0;
+        buf[idx + 1] = rgba.1;
+        buf[idx + 2] = rgba.2;
+        buf[idx + 3] = 255;
+        return;
+    }
+    let dst_a = buf[idx + 3] as u32;
+    let out_a = src_a + dst_a * (255 - src_a) / 255;
+    if out_a == 0 {
+        buf[idx] = 0;
+        buf[idx + 1] = 0;
+        buf[idx + 2] = 0;
+        buf[idx + 3] = 0;
+        return;
+    }
+    let blend_channel = |src_c: u8, dst_c: u8| -> u8 {
+        (((src_c as u32 * src_a) + (dst_c as u32 * dst_a * (255 - src_a) / 255)) / out_a).min(255) as u8
+    };
+    buf[idx] = blend_channel(rgba.0, buf[idx]);
+    buf[idx + 1] = blend_channel(rgba.1, buf[idx + 1]);
+    buf[idx + 2] = blend_channel(rgba.2, buf[idx + 2]);
+    buf[idx + 3] = out_a as u8;
+}
+
+/// A11: "У иконки нет состояния «панель открыта»" — the handoff's own fix is
+/// a system-style highlight behind the whole glyph+digits image while the
+/// panel is open: rgba(255,255,255,0.20) dark / rgba(0,0,0,0.14) light,
+/// radius 5 CSS-px. Drawn ourselves (a standard rounded-box signed-distance
+/// field, same AA approach as `glyph_coverage`) rather than reached for via
+/// any native `NSStatusItem` highlighted state, because the icon is already
+/// a custom composited bitmap and the design calls for these exact tokens,
+/// not whatever tint macOS's own default selection style would draw.
+fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
+    const RADIUS_PHYSICAL: f64 = 10.0; // 5 CSS-px * 2 (this buffer's usual 2x)
+    const AA_HALF_WIDTH_PX: f64 = 0.75;
+    let rgba = if dark {
+        (0xffu8, 0xffu8, 0xffu8, (0.20f64 * 255.0).round() as u8)
+    } else {
+        (0x00u8, 0x00u8, 0x00u8, (0.14f64 * 255.0).round() as u8)
+    };
+    let (bx, by) = (w as f64 / 2.0, h as f64 / 2.0);
+    for y in 0..h {
+        for x in 0..w {
+            let px = x as f64 + 0.5 - bx;
+            let py = y as f64 + 0.5 - by;
+            let qx = px.abs() - (bx - RADIUS_PHYSICAL);
+            let qy = py.abs() - (by - RADIUS_PHYSICAL);
+            let outside_len = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
+            let signed_dist = outside_len + qx.max(qy).min(0.0) - RADIUS_PHYSICAL;
+            let coverage = (0.5 - signed_dist / AA_HALF_WIDTH_PX).clamp(0.0, 1.0);
+            if coverage <= 0.0 {
+                continue;
+            }
+            let alpha = ((rgba.3 as f64) * coverage).round().clamp(0.0, 255.0) as u8;
+            blend_pixel(buf, w, h, x, y, (rgba.0, rgba.1, rgba.2, alpha));
+        }
+    }
 }
 
 /// Composites an 8-bit coverage mask (`mask`, `mask_w` wide x `buf_h` tall,
@@ -204,7 +271,7 @@ fn composite_mask(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, mask: &[u8], 
                 continue;
             }
             let alpha = ((coverage as u16 * rgba.3 as u16) / 255) as u8;
-            put_pixel(buf, buf_w, buf_h, x0 + x, y, (rgba.0, rgba.1, rgba.2, alpha));
+            blend_pixel(buf, buf_w, buf_h, x0 + x, y, (rgba.0, rgba.1, rgba.2, alpha));
         }
     }
 }
@@ -216,7 +283,7 @@ fn composite_mask(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, mask: &[u8], 
 /// like "a mangled colon").
 #[cfg(target_os = "macos")]
 mod text {
-    use super::put_pixel;
+    use super::blend_pixel;
     use objc2::rc::Retained;
     use objc2_app_kit::{NSFont, NSFontWeightMedium};
     use objc2_core_foundation::{CFArray, CFAttributedString, CFDictionary, CFNumber, CFRetained, CFString, CFType};
@@ -433,7 +500,7 @@ mod text {
                 }
                 // Unpremultiply: premultiplied RGB = straight RGB * a/255.
                 let unpremul = |c: u8| ((c as u32 * 255 + (a as u32 / 2)) / a as u32).min(255) as u8;
-                put_pixel(buf, buf_w, buf_h, x0 + x, y, (unpremul(pixels[idx]), unpremul(pixels[idx + 1]), unpremul(pixels[idx + 2]), a));
+                blend_pixel(buf, buf_w, buf_h, x0 + x, y, (unpremul(pixels[idx]), unpremul(pixels[idx + 1]), unpremul(pixels[idx + 2]), a));
             }
         }
 
@@ -582,7 +649,14 @@ pub fn used_fallback_font() -> bool {
 /// buffer. Returns `(rgba, width, height)`. `segments` empty still draws the
 /// bare glyph (callers that truly have nothing pinned should prefer the
 /// cheaper template-icon path in `lib.rs` instead of calling this).
-pub fn render(segments: &[TraySegment]) -> (Vec<u8>, u32, u32) {
+/// `highlighted` is A11's "panel open" state — draws the design's own
+/// translucent rounded-rect behind everything else when true (see
+/// `draw_highlight_background`); `segments` empty here still draws the bare
+/// glyph as a non-template colored image whenever `highlighted` is true
+/// (a plain template image can't carry a background tint of its own — see
+/// `lib.rs`'s `repaint_tray_icon` for why that case routes here rather than
+/// through `plain_glyph_rgba`'s template path at all).
+pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32) {
     let dark = is_dark_mode();
     let coverage = glyph_coverage(GLYPH_PX);
     let font = text::load_font(text_font_size_pt());
@@ -597,6 +671,10 @@ pub fn render(segments: &[TraySegment]) -> (Vec<u8>, u32, u32) {
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
 
+    if highlighted {
+        draw_highlight_background(&mut buf, total_w, total_h, dark);
+    }
+
     // The glyph itself always stays neutral — only the digits carry
     // severity/staleness color.
     let ink = TrayColor::Neutral.rgba(dark);
@@ -607,7 +685,7 @@ pub fn render(segments: &[TraySegment]) -> (Vec<u8>, u32, u32) {
                 continue;
             }
             let blended = ((ink.3 as u16 * a as u16) / 255) as u8;
-            put_pixel(&mut buf, total_w, total_h, x, y, (ink.0, ink.1, ink.2, blended));
+            blend_pixel(&mut buf, total_w, total_h, x, y, (ink.0, ink.1, ink.2, blended));
         }
     }
 
@@ -683,18 +761,18 @@ mod tests {
 
     #[test]
     fn render_with_no_segments_is_exactly_the_glyph_square() {
-        let (buf, w, h) = render(&[]);
+        let (buf, w, h) = render(&[], false);
         assert_eq!((w, h), (GLYPH_PX, GLYPH_PX));
         assert_eq!(buf.len(), (w * h * 4) as usize);
     }
 
     #[test]
     fn render_grows_width_per_segment_and_never_touches_height() {
-        let one = render(&[TraySegment { text: "2%".into(), color: TrayColor::Neutral }]);
+        let one = render(&[TraySegment { text: "2%".into(), color: TrayColor::Neutral }], false);
         let two = render(&[
             TraySegment { text: "2%".into(), color: TrayColor::Neutral },
             TraySegment { text: "78%".into(), color: TrayColor::Amber },
-        ]);
+        ], false);
         assert!(one.1 > GLYPH_PX, "adding a segment must widen the image beyond the bare glyph");
         assert!(two.1 > one.1, "a second segment must widen it further");
         assert_eq!(one.2, GLYPH_PX);
@@ -703,7 +781,7 @@ mod tests {
 
     #[test]
     fn a_digit_and_percent_segment_renders_some_exact_colored_pixels() {
-        let (buf, w, h) = render(&[TraySegment { text: "78%".into(), color: TrayColor::Red }]);
+        let (buf, w, h) = render(&[TraySegment { text: "78%".into(), color: TrayColor::Red }], false);
         let red = TrayColor::Red.rgba(true);
         let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(found, "expected at least one pixel painted in the red channel across a {w}x{h} buffer");
@@ -714,7 +792,7 @@ mod tests {
         // '!' is very likely dead in practice (CLAUDE.md: a broken pin
         // contributes no segment at all now), but should still render
         // correctly rather than being special-cased away.
-        let (buf, w, h) = render(&[TraySegment { text: "!".into(), color: TrayColor::Red }]);
+        let (buf, w, h) = render(&[TraySegment { text: "!".into(), color: TrayColor::Red }], false);
         let red = TrayColor::Red.rgba(true);
         let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(found, "expected at least one pixel painted in the red channel across a {w}x{h} buffer");
@@ -738,8 +816,8 @@ mod tests {
         // calls this "tabular-nums"). MonoLisa is monospace already, and the
         // system fallback font is requested via
         // `monospacedDigitSystemFontOfSize:weight:`, which guarantees this.
-        let one = render(&[TraySegment { text: "1".into(), color: TrayColor::Red }]);
-        let eight = render(&[TraySegment { text: "8".into(), color: TrayColor::Red }]);
+        let one = render(&[TraySegment { text: "1".into(), color: TrayColor::Red }], false);
+        let eight = render(&[TraySegment { text: "8".into(), color: TrayColor::Red }], false);
         assert_eq!(one.1, eight.1, "'1' and '8' must render at the same width (tabular figures)");
     }
 
@@ -749,6 +827,43 @@ mod tests {
         // only asserts the lookup completes cleanly and returns a bool either
         // way — not which branch was taken.
         let _ = used_fallback_font();
+    }
+
+    // A11 regression guards.
+
+    #[test]
+    fn highlighted_bare_glyph_paints_translucent_pixels_behind_the_ink() {
+        let (buf, w, h) = render(&[], true);
+        // The very corner pixel is deliberately *outside* the highlight's
+        // own rounded rect (that's what "rounded" means) — sample just
+        // inset from the flat middle of an edge instead, which is inside
+        // the highlight but outside the glyph's own ink (a circular ring
+        // roughly centered on the canvas, per `glyph_coverage`), so any
+        // non-zero alpha there can only have come from the highlight layer.
+        let (x, y) = (2u32, h / 2);
+        let idx = ((y * w + x) * 4) as usize;
+        let edge_alpha = buf[idx + 3];
+        assert!(edge_alpha > 0, "expected the highlight to paint near the canvas edge, got alpha {edge_alpha}");
+        // And it must be translucent, not a solid fill — a fully opaque
+        // pixel there would misread as a filled square, not a soft tint.
+        assert!(edge_alpha < 255, "highlight should be translucent, got fully opaque alpha {edge_alpha}");
+    }
+
+    #[test]
+    fn unhighlighted_bare_glyph_leaves_the_corner_fully_transparent() {
+        let (buf, _, _) = render(&[], false);
+        assert_eq!(buf[3], 0, "no highlight requested, corner should stay fully transparent");
+    }
+
+    #[test]
+    fn highlighted_digits_still_render_their_own_color_on_top() {
+        // The highlight must not wash out or replace the digit color it
+        // sits behind — blend_pixel's whole point is that a fully-opaque
+        // foreground (the digit glyph's solid interior) still wins outright.
+        let (buf, w, h) = render(&[TraySegment { text: "78%".into(), color: TrayColor::Red }], true);
+        let red = TrayColor::Red.rgba(true);
+        let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
+        assert!(found, "expected an unmodified red digit pixel somewhere in a {w}x{h} highlighted buffer");
     }
 }
 
