@@ -12,10 +12,23 @@ body {
   user-select: none;
 }
 
+/* R3-10: `padding-top` is the beak's own headroom inside the transparent
+   window, and it is load-bearing in two directions. It must be at least
+   Panel.jsx's NOTCH_RESERVE (or the beak is clipped by the window edge), and
+   it is subtracted by src-tauri/src/lib.rs's `docked_layout_in_points` when it
+   works out where to put the window so the beak's *tip* lands just below the
+   menu bar — the captain's *"он должен быть 'почти в иконке'"*. Every point of
+   slack here is a point of visible gap between the menu bar and the panel, so
+   it tracks NOTCH_RESERVE exactly rather than carrying spare room.
+   `--shadow-popover`'s top bleed is zero (`0 6px 16px -4px` reaches
+   `16/2 − 4 − 6 = −2px` above the box, i.e. not at all — it is a downward
+   shadow), so nothing else needs room up here. The left/right margin is a
+   different matter and stays at 14px per side: see the B9 note in
+   tokens/elevation.css. */
 body {
   display: flex;
   justify-content: center;
-  padding-top: 14px;
+  padding-top: 12px;
   color: var(--text-primary);
 }
 

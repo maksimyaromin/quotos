@@ -15,13 +15,18 @@ import "./app.css";
 const NOW_TICK_MS = 30_000;
 const STOP_TRACKING_UNDO_MS = 5_000;
 
-// Beak center offset (px) from the panel's own left edge. B3/B5: the native
-// side now computes and pushes the real value on every dock/re-dock (see
+// Beak offset (px) from the panel's own left edge. B3/B5: the native side
+// computes and pushes the real value on every dock/re-dock (see
 // `compute_docked_layout` in src-tauri/src/lib.rs — it depends on the tray
 // icon's actual position and how much the panel got clamped off it, so it
-// can't be a fixed constant there). This stays only as the fallback for the
-// browser mock harness, which has no real tray glyph to measure.
-const BEAK_LEFT_FALLBACK = 24;
+// can't be a fixed constant there).
+//
+// This exists *only* for the browser mock harness, which has no real tray
+// glyph to measure. The native build deliberately starts at `null` instead:
+// if the `panel-beak-offset` event were ever missed, falling back to a
+// hardcoded number would draw the beak confidently in a place that is right
+// on nobody's screen. Drawing no beak for a frame is the honest failure.
+const BEAK_LEFT_MOCK_FALLBACK = 24;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -52,7 +57,7 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [pendingRemovals, setPendingRemovals] = useState<Record<string, { label: string }>>({});
   const removalTimers = useRef<Record<string, number>>({});
-  const [beakLeft, setBeakLeft] = useState(BEAK_LEFT_FALLBACK);
+  const [beakLeft, setBeakLeft] = useState<number | null>(isTauri ? null : BEAK_LEFT_MOCK_FALLBACK);
 
   // B3/B5: keep the beak centered under the real tray glyph position.
   useEffect(() => {
@@ -281,7 +286,7 @@ export default function App() {
     <Panel
       title={screen === "manage" ? "Subscriptions" : "Quotos"}
       docked={!detached}
-      beakLeft={beakLeft}
+      beakLeft={beakLeft ?? undefined}
       dragging={dragging}
       onHeaderPointerDown={handleHeaderPointerDown}
       position={position}

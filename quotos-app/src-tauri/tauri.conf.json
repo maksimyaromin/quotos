@@ -28,9 +28,7 @@
         "skipTaskbar": true,
         "resizable": false,
         "center": false,
-        "focus": true,
-        "hiddenTitle": true,
-        "titleBarStyle": "Overlay"
+        "focus": true
       }
     ],
     "security": {

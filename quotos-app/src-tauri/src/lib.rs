@@ -67,6 +67,40 @@ struct AppState {
     /// rather than needing the frontend to resend them on every visibility
     /// change.
     last_tray_segments: Mutex<Vec<TraySegmentDto>>,
+    /// The layout the window is *supposed* to be at right now, while docked
+    /// and visible (global points — see `DisplayPoints`) — `None` whenever
+    /// it's hidden or detached (dragging must never fight this). A safety
+    /// net, read by the debounced correction in the `WindowEvent::Moved`
+    /// handler (`run`'s `setup`): anything that relocates the window while
+    /// it's supposed to be docked gets undone.
+    ///
+    /// R3-6 originally introduced this to chase a suspected
+    /// Space-transition race; R3-7 found the actual cause of the relocations
+    /// it was chasing — see `DisplayPoints` (a coordinate-space unit bug that
+    /// placed the window off-display or half-way across one) and
+    /// `place_window_top_left_sync` (a show-before-move ordering bug). With
+    /// both fixed there is normally nothing left for this to correct, and
+    /// that is the point: it stays as a guard, not as the mechanism.
+    docked_target: Mutex<Option<DockedLayout>>,
+    /// How many `WindowEvent::Moved` events have fired so far — bumped on
+    /// every one, read back by a debounced correction task to tell whether
+    /// it's still the *last* one scheduled (see `last_known_position` and the
+    /// `Moved` handler). A single real click was once logged relocating the
+    /// window four times inside two seconds, twice to coordinates nowhere
+    /// near any real monitor (`x=-2106`, `x=4712`) — values that are, note,
+    /// almost exactly 2× or ½× real ones, which is the signature of the
+    /// scale-factor confusion `DisplayPoints` documents rather than of an
+    /// AppKit settle. Correcting on the *first* of a burst fights whatever is
+    /// still in flight instead of waiting for it, so this debounces: schedule
+    /// a correction, apply it only if no further `Moved` arrived before the
+    /// delay elapsed.
+    move_generation: Mutex<u64>,
+    /// The most recent position `WindowEvent::Moved` reported, converted to
+    /// global points — tracked so the debounced correction
+    /// (`move_generation`) can compare against the *latest* observed
+    /// position after its delay, not a value captured (and potentially
+    /// already stale) at scheduling time.
+    last_known_position: Mutex<(f64, f64)>,
 }
 
 #[tauri::command]
@@ -252,6 +286,7 @@ fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {
     let _ = window.hide();
     let _ = window.emit("panel-visibility", false);
     set_tray_highlighted(&app, false);
+    clear_docked_target(&app);
 }
 
 #[derive(Deserialize, Clone)]
@@ -406,10 +441,14 @@ fn resync_docked_position_after_icon_change(app: &tauri::AppHandle, tray: &tauri
 /// already run by the time the call returns — those are two different
 /// things on macOS, and nothing in the crate exposes a way to force the
 /// layout pass synchronously.) So one immediate attempt plus a couple of
-/// short-delay retries — the same shape as `schedule_position_correction`'s
-/// fix for a different, unrelated AppKit-async-layout race — rather than
-/// trusting the first read: each retry just re-reads and re-applies,
-/// harmless if the previous attempt already landed on the right numbers.
+/// short-delay retries, rather than trusting the first read: each retry
+/// just re-reads and re-applies, harmless if the previous attempt already
+/// landed on the right numbers. (A different, unrelated AppKit-async-layout
+/// race — the window's own Space-transition relocating it after
+/// `show_panel` positions it — used to be handled the same blind-timer way
+/// here too; that one is now event-driven instead, see
+/// `AppState.docked_target`'s doc comment for why a fixed delay didn't
+/// generalize across real machines.)
 fn schedule_resync_after_icon_change(app: &tauri::AppHandle, tray: tauri::tray::TrayIcon) {
     if resync_docked_position_after_icon_change(app, &tray).is_none() {
         return; // not visible/docked — nothing to correct, no retry needed either
@@ -455,6 +494,9 @@ fn set_detached(
     window.set_skip_taskbar(!detached).map_err(|e| e.to_string())?;
     window.set_always_on_top(true).map_err(|e| e.to_string())?;
     if detached {
+        // Dragging must never fight the docked-position self-correction —
+        // see `AppState.docked_target`'s doc comment.
+        clear_docked_target(&app);
         let _ = window.set_focus();
     } else {
         // C6 fix: snapping back must actually re-dock the window under the
@@ -466,8 +508,7 @@ fn set_detached(
         // first tray event of the app's lifetime, which can't happen here
         // since detaching itself requires the panel to already be open.
         if let Some((tray_x, tray_y)) = *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") {
-            let layout = reposition_under_tray(&app, &window, tray_x, tray_y);
-            schedule_position_correction(&window, layout);
+            reposition_under_tray(&app, &window, tray_x, tray_y);
         }
     }
     Ok(())
@@ -589,11 +630,24 @@ fn forget_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
 /// to treating the glyph as flush with the item's own left edge (no margin)
 /// rather than failing outright — a plausible-worst-case position, not a
 /// crash.
-fn glyph_center_offset_from_item_left_physical(item_width_physical: Option<f64>, icon_width_px: f64, scale: f64) -> f64 {
-    const GLYPH_WIDTH_LOGICAL: f64 = 18.0; // fixed: tray_render's glyph is always drawn at this size first
-    let image_width_physical = (icon_width_px / 2.0) * scale;
-    let margin_physical = item_width_physical.map(|w| ((w - image_width_physical) / 2.0).max(0.0)).unwrap_or(0.0);
-    margin_physical + (GLYPH_WIDTH_LOGICAL / 2.0) * scale
+///
+/// R3-7: everything here is in **points**, not "physical pixels" — see
+/// `DisplayPoints`'s doc comment for why this whole module stopped speaking
+/// physical pixels at all. The scale factor used to appear on both sides of
+/// this arithmetic and cancel out anyway; dropping it removes a place where
+/// the *wrong* scale factor could be supplied.
+fn glyph_center_offset_from_item_left_points(item_width_points: Option<f64>, icon_width_px: f64) -> f64 {
+    const GLYPH_WIDTH_POINTS: f64 = 18.0; // fixed: tray_render's glyph is always drawn at this size
+    // `last_icon_width_px` is a buffer width at the fixed "2x of an 18pt-tall
+    // image" convention `set_icon_for_ns_status_item_button` imposes, so /2
+    // is its real width in points on any display.
+    let image_width_points = icon_width_px / 2.0;
+    let margin_points = item_width_points.map(|w| ((w - image_width_points) / 2.0).max(0.0)).unwrap_or(0.0);
+    // R3-11: the glyph is no longer the image's leftmost pixel — the image
+    // carries its own side padding so A11's highlight has horizontal air. That
+    // inset comes from `tray_render`, which owns it, rather than being
+    // duplicated as a number here.
+    margin_points + tray_render::GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0
 }
 
 /// The window's own fixed logical size, from `tauri.conf.json`'s `width`/
@@ -604,96 +658,386 @@ fn glyph_center_offset_from_item_left_physical(item_width_physical: Option<f64>,
 const PANEL_WINDOW_WIDTH_LOGICAL: f64 = 360.0;
 const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 
-fn compute_docked_layout(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
-    let monitor = window.monitor_from_point(tray_x, tray_y).ok().flatten().or_else(|| window.current_monitor().ok().flatten())?;
-
-    let scale = monitor.scale_factor();
-    let monitor_pos = *monitor.position();
-    let monitor_size = *monitor.size();
-
-    let left_offset_px = (6.0 * scale).round() as i32;
-    let top_px = (32.0 * scale).round() as i32;
-    let right_clamp_px = (340.0 * scale).round() as i32;
-
-    let mut x = tray_x.round() as i32 - left_offset_px;
-    x = x.max(monitor_pos.x);
-    let max_x = (monitor_pos.x + monitor_size.width as i32 - right_clamp_px).max(monitor_pos.x);
-    x = x.min(max_x);
-
-    let y = monitor_pos.y + top_px;
-
-    const PANEL_WIDTH_LOGICAL: f64 = 332.0;
-    // Panel.jsx's beak is a 12x12 box rotated in place (default transform
-    // origin, so its own visual center never moves off `left + 6`) — the
-    // frontend assigns whatever this function returns straight to that
-    // box's CSS `left`, i.e. the box's own *left edge*, not its center. And
-    // `left` is relative to the panel's own container, which itself sits
-    // inset inside the (wider, for shadow-blur margin — see app.css/B9)
-    // window: `body`'s `padding-top`-plus-flex-center leaves `(window width
-    // − panel width) / 2` of empty margin on each side. Both of those were
-    // previously missing from this math — the value computed above only
-    // ever matched the *window's* left edge, not the panel's, and was fed
-    // in as a center when the frontend treats it as a left edge — so the
-    // beak rendered up to ~20pt off from the glyph even when the glyph
-    // center itself (`glyph_center_physical`, above) was correct. See
-    // `RESULT.md` for the live screenshot measurements that caught this.
-    const BEAK_BOX_WIDTH_LOGICAL: f64 = 12.0;
-    const BEAK_HALF_WIDTH_LOGICAL: f64 = BEAK_BOX_WIDTH_LOGICAL / 2.0;
-    let panel_inset_logical = (PANEL_WINDOW_WIDTH_LOGICAL - PANEL_WIDTH_LOGICAL) / 2.0;
-
-    let item_width_physical = app
-        .tray_by_id("main-tray")
-        .and_then(|t| t.rect().ok().flatten())
-        .map(|r| match r.size {
-            tauri::Size::Physical(s) => s.width as f64,
-            tauri::Size::Logical(s) => s.width * scale,
-        });
-    let icon_width_px = *app.state::<AppState>().last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned") as f64;
-    let glyph_offset_physical = glyph_center_offset_from_item_left_physical(item_width_physical, icon_width_px, scale);
-
-    let glyph_center_physical = tray_x + glyph_offset_physical;
-    let panel_left_physical = x as f64 + panel_inset_logical * scale;
-    let beak_center_logical = (glyph_center_physical - panel_left_physical) / scale;
-    let beak_left_logical = beak_center_logical - BEAK_HALF_WIDTH_LOGICAL;
-    // Docked at `icon_left - 6` (unclamped by the screen edge), the glyph
-    // sits close to the panel's own left edge by design — the handoff's own
-    // words are "клюв прижат к левому краю" (beak pressed to the left
-    // edge) — so this only needs to keep the 12px box's *source* rect
-    // within the panel's own width, not enforce some larger cosmetic
-    // minimum (an earlier version of this clamp did that, using bounds
-    // meant for a *center* value on what was actually a raw, uncorrected
-    // left-edge value — see this function's earlier bug, above — which
-    // fought the "pressed to the left edge" design on every normal, non-
-    // clamped-by-screen-edge open). B5's right-screen-edge case is what
-    // actually needs headroom: there, `x` above already clamped the panel's
-    // own left edge, so `beak_center_logical` grows well past this range on
-    // its own to keep tracking the glyph.
-    let beak_left_logical = beak_left_logical.clamp(0.0, PANEL_WIDTH_LOGICAL - BEAK_BOX_WIDTH_LOGICAL);
-
-    Some((x, y, beak_left_logical))
+/// R3-7 — the coordinate space this whole module speaks, and why it had to
+/// change.
+///
+/// macOS has exactly one coordinate space in which a multi-display layout has
+/// a single, consistent meaning: the **global point space** (`CGDisplayBounds`
+/// / `NSScreen.frame`), top-left origin at the main display's top-left. There
+/// is no global *pixel* space at all — "physical pixels" are only ever defined
+/// relative to one display's own backing scale factor.
+///
+/// The three APIs this module depends on each hand out a `Physical*` type that
+/// is really "global points × **some** display's scale factor", and they do not
+/// agree on *which* display's:
+///
+/// | source | value | scale used |
+/// |---|---|---|
+/// | `TrayIconEvent`'s `rect` (`tray-icon` 0.24.2 `get_tray_rect`) | tray item frame | the **menu bar display**'s `backingScaleFactor` |
+/// | `Monitor::position()`/`size()` (`tao` 0.35.3 `monitor.rs`) | `CGDisplayBounds` / `CGDisplayPixelsWide` | **that monitor's own** scale factor |
+/// | `set_position(Physical)` / `WindowEvent::Moved` (`tao` `window.rs`, `window_delegate.rs`) | window frame | the **window's current** `backingScaleFactor` |
+///
+/// On a single-display machine all three coincide and the bug is invisible.
+/// On the captain's actual setup — built-in Retina at point `(0,0,1728,1117)`
+/// scale 2, external LG at point `(-2560,-908,2560,2880)` scale 1 — they
+/// diverge, and every symptom he reported falls straight out of it:
+///
+/// * A tray click on the built-in yields `tray_x = 2366` ("1183 points × 2").
+///   Handed to `set_position(Physical(…))` while the window happens to be on
+///   the *LG* (scale 1), `tao` divides by **1** and places the window at point
+///   x = 2354 — past the right edge of every display, i.e. nowhere. The window
+///   is revealed at its stale position first (below) and then vanishes:
+///   *"панель мерцает только"*, and it flickers **on the other monitor**,
+///   which is where it was last left — *"кликаю на макбуке, глитч на другом"*.
+/// * The mirror case (tray on the LG, window on the built-in) divides by 2 and
+///   lands the panel at half the intended offset from the LG's own origin —
+///   visible, on the right display, in the wrong place; the debounced
+///   correction then re-runs it with the window's now-correct scale factor and
+///   it snaps across: *"она прыгает по экрану"*.
+///
+/// So the fix is not another retry or another delay: it is to stop speaking a
+/// unit that does not exist. Everything below converts to points at the edges
+/// (`DisplayPoints`, `resolve_tray_point`) and never leaves them —
+/// `apply_docked_position` places the window with a `LogicalPosition`, which
+/// `tao`'s `Position::to_logical` passes through untouched, so no scale factor
+/// is ever consulted on the way out either.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DisplayPoints {
+    /// Top-left corner in the global point space.
+    origin: (f64, f64),
+    /// Size in points.
+    size: (f64, f64),
+    /// This display's own backing scale factor — needed only to *undo* the
+    /// multiplication `tray-icon` applied to the tray rect.
+    scale: f64,
+    /// Global-point y of the **bottom edge of this display's own menu bar**,
+    /// read live from `NSScreen.visibleFrame`; `None` on a display that has no
+    /// menu bar, or when the screen list wasn't reachable (off the main
+    /// thread, or off macOS).
+    ///
+    /// R3-8: the menu bar's height is not a constant and must never be written
+    /// down as one. `compute_docked_layout` used to place the panel's top at a
+    /// flat `32pt` from the display's top — the handoff's own number, which it
+    /// describes as *"6px под меню-баром"*, i.e. a menu bar height plus a gap.
+    /// Measured on this machine's two displays: the notched built-in's menu bar
+    /// is **33pt** tall, so `32` put the panel's top edge *inside* the menu bar
+    /// and AppKit clamped it back out to exactly 33 — a panel flush against the
+    /// bar with no gap at all. An unnotched display's is ~24pt, where the same
+    /// constant leaves an 8pt gap instead of 6. Same constant, two different
+    /// wrong answers on one machine, which is exactly the display-dependent
+    /// *"не появляется где должна"*. Derived per display now, so it is right on
+    /// a notched screen, an unnotched one, a scaled one, and a machine that
+    /// isn't this one.
+    menu_bar_bottom: Option<f64>,
 }
 
-/// Applies an already-computed docked position/beak-offset — split out from
-/// `reposition_under_tray` so a delayed correction (see `show_panel`) can
-/// reapply the exact numbers computed the first time instead of re-deriving
-/// them via `compute_docked_layout`'s own `monitor_from_point` call, which
-/// was observed giving a *different, still-wrong* answer when queried from
-/// a window AppKit had already relocated mid-Space-transition.
-fn apply_docked_position(window: &tauri::WebviewWindow, x: i32, y: i32, beak_offset: f64) {
-    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-    let _ = window.emit("panel-beak-offset", beak_offset);
+impl DisplayPoints {
+    fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.origin.0 && x < self.origin.0 + self.size.0 && y >= self.origin.1 && y < self.origin.1 + self.size.1
+    }
+}
+
+/// Recovers the global-point position of a `tray-icon` rect, along with the
+/// display it belongs to.
+///
+/// `tray-icon` multiplied the true point coordinate by the menu bar display's
+/// scale factor and told us nothing about which display that was, so the
+/// division cannot be done blind — this tries each display's own scale factor
+/// and keeps the one whose quotient actually lands inside that display. On the
+/// captain's two-display layout the answer is unambiguous in both directions
+/// (a built-in tray at `2366` gives `1183` on the built-in ✓ and `2366` on the
+/// LG ✗; an LG tray at `-400` gives `-400` on the LG ✓ and `-200` on the
+/// built-in ✗). Where an unusual arrangement could make two candidates both
+/// land in-bounds, the tie-break is the one property a menu bar always has:
+/// it hugs its own display's top edge.
+fn resolve_tray_point(displays: &[DisplayPoints], tray_x: f64, tray_y: f64) -> Option<(usize, f64, f64)> {
+    let mut best: Option<(usize, f64, f64, f64)> = None; // (index, x, y, distance below that display's top)
+    for (index, display) in displays.iter().enumerate() {
+        if display.scale <= 0.0 {
+            continue;
+        }
+        let (x, y) = (tray_x / display.scale, tray_y / display.scale);
+        if !display.contains(x, y) {
+            continue;
+        }
+        let from_top = y - display.origin.1;
+        if best.is_none_or(|(_, _, _, best_from_top)| from_top < best_from_top) {
+            best = Some((index, x, y, from_top));
+        }
+    }
+    best.map(|(index, x, y, _)| (index, x, y))
+}
+
+/// Every display, in global points. On macOS this reads `NSScreen` directly
+/// rather than going through `tao`'s `Monitor` — one API, in one coordinate
+/// space, and the only one that also reports `visibleFrame` (hence the menu
+/// bar height, see `DisplayPoints::menu_bar_bottom`). It needs the main
+/// thread; the `tao` path below is the fallback for anywhere else, and loses
+/// only the menu bar height.
+#[cfg(target_os = "macos")]
+fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPoints> {
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::MainThreadMarker;
+
+    let Some(mtm) = MainThreadMarker::new() else { return displays_in_points_via_tao(window) };
+    let screens = NSScreen::screens(mtm);
+    // AppKit's global space is y-up from the first screen's bottom-left; the
+    // rest of this module is y-down from its top-left. That screen's own
+    // height is the flip constant (its origin is (0,0) by definition).
+    let Some(flip) = screens.iter().next().map(|s| s.frame().size.height) else {
+        return displays_in_points_via_tao(window);
+    };
+    screens
+        .iter()
+        .map(|screen| {
+            let frame = screen.frame();
+            let visible = screen.visibleFrame();
+            let top = flip - (frame.origin.y + frame.size.height);
+            // `visibleFrame` also excludes the Dock, but the Dock never sits at
+            // the top, so the difference at the *top* edge is the menu bar and
+            // nothing else.
+            let menu_bar_height = (frame.origin.y + frame.size.height) - (visible.origin.y + visible.size.height);
+            DisplayPoints {
+                origin: (frame.origin.x, top),
+                size: (frame.size.width, frame.size.height),
+                scale: screen.backingScaleFactor(),
+                menu_bar_bottom: (menu_bar_height > 0.0).then_some(top + menu_bar_height),
+            }
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPoints> {
+    displays_in_points_via_tao(window)
+}
+
+fn displays_in_points_via_tao(window: &tauri::WebviewWindow) -> Vec<DisplayPoints> {
+    window
+        .available_monitors()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|m| {
+            let scale = m.scale_factor();
+            if scale <= 0.0 {
+                return None;
+            }
+            let pos = *m.position();
+            let size = *m.size();
+            Some(DisplayPoints {
+                origin: (pos.x as f64 / scale, pos.y as f64 / scale),
+                size: (size.width as f64 / scale, size.height as f64 / scale),
+                scale,
+                menu_bar_bottom: None,
+            })
+        })
+        .collect()
+}
+
+/// Where the docked panel window belongs, all in global points (see
+/// `DisplayPoints`): the window's own top-left, plus the beak's CSS `left`
+/// inside the panel.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DockedLayout {
+    x: f64,
+    y: f64,
+    beak_left: f64,
+}
+
+/// The pure half of `compute_docked_layout` — no `tauri` handles, so the
+/// handoff's own placement rules (B5/B7) are unit-testable against the
+/// captain's real two-display geometry instead of only on a live screen.
+fn docked_layout_in_points(
+    display: DisplayPoints,
+    tray_left: f64,
+    tray_top: f64,
+    tray_bottom: f64,
+    item_width_points: Option<f64>,
+    icon_width_px: f64,
+) -> DockedLayout {
+    const PANEL_WIDTH: f64 = 332.0;
+    // B5: however far left the beak wants the panel, it can never hang off the
+    // display's right edge (handoff: "clamped to screen right − 340").
+    const RIGHT_CLAMP: f64 = 340.0;
+
+    // R3-10 — three of the handoff's own numbers are **superseded by the
+    // captain's own instruction** after he saw the result at real size:
+    //
+    // > Он во первых маленький, во вторых — слишком близко к левому краю,
+    // > в третьих — слишком низко от топбара и иконки. Он должен быть
+    // > "почти в иконке" — чуть чуть ниже топбара.
+    //
+    // So: the beak is bigger (`BEAK_BASE_WIDTH`/`BEAK_HEIGHT`, authored in
+    // Panel.jsx and mirrored here), it is held a comfortable distance inside
+    // the panel's own left edge instead of pressed against it
+    // (`BEAK_INSET_IN_PANEL`, replacing the handoff's "клюв прижат к левому
+    // краю" and its `icon_left − 6` docking rule), and the panel is pulled up
+    // until the beak's *tip* — not the panel's top edge — sits just under the
+    // menu bar (`BEAK_TIP_CLEARANCE`).
+    //
+    // The two constraints interact, which is why the x below is no longer
+    // "icon left minus a constant": the beak's centre must stay exactly on the
+    // glyph's centre (his earlier, equally explicit requirement), so the only
+    // way to also move the beak away from the corner is to move the whole
+    // panel further left. Deriving x *from* the beak's wanted position makes
+    // both hold by construction, at whatever glyph offset the tray happens to
+    // report, rather than by a second constant that would have to be retuned
+    // every time the first one moves.
+    const BEAK_BASE_WIDTH: f64 = 20.0; // == BEAK_BASE_HALF * 2 in Panel.jsx
+    const BEAK_HEIGHT: f64 = 10.0; // == BEAK_HEIGHT in Panel.jsx
+    const BEAK_INSET_IN_PANEL: f64 = 20.0; // notch's left edge, from the panel's own left edge
+    const BEAK_TIP_CLEARANCE: f64 = 2.0; // how far the tip stops short of the menu bar
+
+    // The panel is inset inside its own (deliberately wider, and taller at the
+    // top) window: `(window width − panel width) / 2` of empty margin per side
+    // for the drop shadow's blur to fade into rather than be clipped by, and
+    // `padding-top` worth of headroom for the beak — both in app.css, both
+    // load-bearing here because the *window* is what gets positioned while the
+    // *panel* is what the captain looks at.
+    const PANEL_INSET_X: f64 = (PANEL_WINDOW_WIDTH_LOGICAL - PANEL_WIDTH) / 2.0;
+    const PANEL_INSET_TOP: f64 = 12.0; // == app.css's `body { padding-top }` / Panel.jsx's NOTCH_RESERVE
+
+    let glyph_center = tray_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
+
+    // Place the window so the beak lands at its wanted inset with its centre on
+    // the glyph's centre, then clamp to the display — the clamp is what B5's
+    // right-screen-edge case exercises, and the beak offset recomputed below
+    // from the *clamped* x is what keeps it tracking the glyph there.
+    let wanted_panel_left = glyph_center - BEAK_INSET_IN_PANEL - BEAK_BASE_WIDTH / 2.0;
+    let mut x = wanted_panel_left - PANEL_INSET_X;
+    x = x.max(display.origin.0);
+    let max_x = (display.origin.0 + display.size.0 - RIGHT_CLAMP).max(display.origin.0);
+    x = x.min(max_x);
+
+    // Both candidates for the menu bar's own bottom edge are read from the
+    // running system, never assumed. `visibleFrame` is the direct answer where
+    // it exists — but it does not exist in the state the captain actually
+    // reproduces from: inside a full-screen Space the menu bar is auto-hidden,
+    // `visibleFrame` equals `frame`, and there is no bar height to read even
+    // while the bar sits revealed on screen under his cursor. The tray item is
+    // still there and still measured, though, and macOS centres a status item
+    // vertically in its bar — so the bar's bottom is the item's bottom plus the
+    // same inset that sits above it. Derived either way, constant neither way.
+    let inset_above_item = (tray_top - display.origin.1).max(0.0);
+    // `NEG_INFINITY`, not 0 — a display left of the primary has negative
+    // coordinates, where 0 is not a neutral floor but a point far below it.
+    let menu_bar_bottom = display.menu_bar_bottom.unwrap_or(f64::NEG_INFINITY).max(tray_bottom + inset_above_item);
+    // Solve for the window top from where the beak's *tip* should end up:
+    // tip = y + PANEL_INSET_TOP − BEAK_HEIGHT, and tip should be
+    // BEAK_TIP_CLEARANCE below the bar.
+    let y = menu_bar_bottom + BEAK_TIP_CLEARANCE - (PANEL_INSET_TOP - BEAK_HEIGHT);
+
+    // Recomputed from the applied x, not the wanted one, so a screen-edge clamp
+    // moves the beak across the panel instead of dragging it off the glyph.
+    // Clamped only to keep the notch on the panel at all; `buildPanelOutlinePath`
+    // shrinks whichever top corner the notch encroaches on rather than the notch
+    // giving way (doing it the other way round moved the beak visibly off the
+    // glyph — caught live: "центровки снова нет").
+    let panel_left = x + PANEL_INSET_X;
+    let beak_left = (glyph_center - panel_left - BEAK_BASE_WIDTH / 2.0).clamp(0.0, PANEL_WIDTH - BEAK_BASE_WIDTH);
+
+    DockedLayout { x, y, beak_left }
+}
+
+fn compute_docked_layout(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<DockedLayout> {
+    let displays = displays_in_points(window);
+    let (index, tray_left, tray_top) = resolve_tray_point(&displays, tray_x, tray_y)?;
+    let display = displays[index];
+
+    // Same `tray-icon` conversion as the position (see `DisplayPoints`), so
+    // the same display's scale factor undoes it.
+    let item_size = app.tray_by_id("main-tray").and_then(|t| t.rect().ok().flatten()).map(|r| match r.size {
+        tauri::Size::Physical(s) => (s.width as f64 / display.scale, s.height as f64 / display.scale),
+        tauri::Size::Logical(s) => (s.width, s.height),
+    });
+    let icon_width_px = *app.state::<AppState>().last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned") as f64;
+
+    let tray_bottom = tray_top + item_size.map(|(_, h)| h).unwrap_or(0.0);
+    Some(docked_layout_in_points(display, tray_left, tray_top, tray_bottom, item_size.map(|(w, _)| w), icon_width_px))
+}
+
+/// R3-7: moves the window's top-left to a global-point coordinate, and does
+/// it **synchronously on the main thread** wherever that's possible.
+///
+/// The synchronicity is not a micro-optimisation — it is the second half of
+/// the captain's flicker. `tao`'s own `set_outer_position` ends in
+/// `util::set_frame_top_left_point_async`, which `dispatch_async`es the
+/// `setFrameTopLeftPoint:` onto the main queue, while `show()` ends in
+/// `util::make_key_and_order_front_sync`, which runs inline. Called in either
+/// order from the tray-click handler (already on the main thread), the window
+/// therefore becomes **visible at its stale position first** and only moves a
+/// runloop turn later — a guaranteed one-frame flash at wherever it last was,
+/// which on a two-display machine is routinely the *other* display. Placing it
+/// directly through `NSWindow` closes that gap: by the time `show()` runs the
+/// frame is already right.
+///
+/// Returns whether the synchronous path was taken; callers fall back to
+/// Tauri's own async `set_position` (non-macOS, or a call arriving off the
+/// main thread, where `setFrameTopLeftPoint:` isn't safe anyway).
+#[cfg(target_os = "macos")]
+fn place_window_top_left_sync(window: &tauri::WebviewWindow, x: f64, y: f64) -> bool {
+    use objc2_app_kit::{NSScreen, NSWindow};
+    use objc2_foundation::{MainThreadMarker, NSPoint};
+
+    let Some(mtm) = MainThreadMarker::new() else { return false };
+    let Ok(ptr) = window.ns_window() else { return false };
+    if ptr.is_null() {
+        return false;
+    }
+    // AppKit's global space is y-up from the *primary* screen's bottom-left;
+    // `x`/`y` here are CG-style, y-down from its top-left. `NSScreen.screens`'
+    // first element is by definition the screen whose origin is (0,0), so its
+    // own height is the flip constant — the same conversion `tao`'s
+    // `util::window_position` makes with `CGDisplay::main().pixels_high()`.
+    let screens = NSScreen::screens(mtm);
+    let Some(primary) = screens.iter().next() else { return false };
+    let flip = primary.frame().size.height;
+
+    let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    ns_window.setFrameTopLeftPoint(NSPoint::new(x, flip - y));
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+fn place_window_top_left_sync(_window: &tauri::WebviewWindow, _x: f64, _y: f64) -> bool {
+    false
+}
+
+/// Applies a docked position/beak-offset and records it as the window's
+/// current *intended* target (`AppState.docked_target`) — see that field's
+/// own doc comment for why: the `WindowEvent::Moved` handler reapplies this
+/// exact target whenever something relocates the window away from it.
+///
+/// `x`/`y` are global points (see `DisplayPoints`). The fallback path uses a
+/// `LogicalPosition` deliberately: `tao`'s `Position::to_logical` passes a
+/// logical value straight through, so no scale factor is consulted — a
+/// `PhysicalPosition` here would be reinterpreted through whatever display the
+/// window currently happens to sit on, which is the original bug.
+fn apply_docked_position(app: &tauri::AppHandle, window: &tauri::WebviewWindow, layout: DockedLayout) {
+    *app.state::<AppState>().docked_target.lock().expect("docked_target mutex poisoned") = Some(layout);
+    if !place_window_top_left_sync(window, layout.x, layout.y) {
+        let _ = window.set_position(tauri::LogicalPosition::new(layout.x, layout.y));
+    }
+    let _ = window.emit("panel-beak-offset", layout.beak_left);
 }
 
 /// Moves an already-visible, already-docked-chrome window to sit under the
 /// tray icon and tells the frontend where to draw the beak — the shared
 /// tail end of both `show_panel` and `set_detached`'s snap-back path (C6).
-/// Returns what it applied (or `None` if no monitor could be resolved) so
-/// callers can schedule a same-numbers correction — see `show_panel`'s doc
-/// comment on `set_popover_collection_behavior` for why that's needed.
-fn reposition_under_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
+/// Returns what it applied (or `None` if no display could be resolved).
+fn reposition_under_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<DockedLayout> {
     let layout = compute_docked_layout(app, window, tray_x, tray_y)?;
-    apply_docked_position(window, layout.0, layout.1, layout.2);
+    apply_docked_position(app, window, layout);
     Some(layout)
+}
+
+/// Clears the docked position target (see `AppState.docked_target`) so the
+/// `WindowEvent::Moved` self-correction stops reasserting a position that
+/// no longer applies — called whenever the window stops being "docked and
+/// should stay exactly here": hiding, and detaching (dragging must never
+/// fight the drag).
+fn clear_docked_target(app: &tauri::AppHandle) {
+    *app.state::<AppState>().docked_target.lock().expect("docked_target mutex poisoned") = None;
 }
 
 /// Firstmate's round-3 on-screen pass (`data/quotos-tray-t1/firstmate-findings-1.md`)
@@ -736,18 +1080,48 @@ fn reposition_under_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow, 
 ///   ~100-150ms after this code's own explicit `set_position` call, to an
 ///   unrelated AppKit-internal default position, undoing it.
 ///
-/// So: `MoveToActiveSpace`, which is the one that actually works for
-/// visibility, plus a short-delay correction in `show_panel` that
-/// *reapplies the exact position already computed the first time* rather
-/// than recomputing it — recomputing via `monitor_from_point` after the
-/// fact was tried too and was itself unreliable (querying it from a window
-/// AppKit has already relocated mid-Space-transition returned yet a third,
-/// still-wrong position on one run). Reapplying the same literal numbers
-/// sidesteps whatever's wrong with the query, not just the transition.
-/// Paired with `.Transient` (the standard flag for this kind of ephemeral
-/// popover — keeps it out of Mission Control/Exposé's per-Space window
-/// list, matching how the Volume/Wi-Fi popovers behave, rather than leaving
-/// a phantom entry on every Space it's ever visited).
+/// R3-9 settles it, from the captain's own isolated reproduction: **the panel
+/// was never failing to open — it was opening on a Space he was not looking
+/// at.**
+///
+/// > Оно открывается на основном столе (которого я не вижу) и закрывается
+/// > когда я на него перехожу.
+///
+/// It works from an ordinary desktop, on either display. It fails only when
+/// another application owns a **full-screen Space** and he pulls the cursor to
+/// the top edge to slide the hidden menu bar down. That single fact explains
+/// every earlier confusing measurement at once: correct geometry, `show()` and
+/// `set_focus()` both returning `Ok`, a real `Focused(true)` arriving — and
+/// `kCGWindowIsOnscreen` reading `false` the whole time, because the window was
+/// genuinely on screen, on a different Space.
+///
+/// A full-screen application owns its Space, and macOS does not order another
+/// application's window into it just because that application asks. The bit
+/// that grants it is `NSWindowCollectionBehaviorFullScreenAuxiliary` — the
+/// standard utility/palette-window behaviour, and the half no earlier round
+/// ever set. `MoveToActiveSpace` does not cover the case: a full-screen Space
+/// is not a destination it moves windows *into*, which is why it appeared to
+/// work (it does, between ordinary desktops) while leaving this broken.
+///
+/// Paired with `CanJoinAllSpaces` rather than `MoveToActiveSpace` — the two are
+/// mutually exclusive, and "exists on every Space already" is both what a menu
+/// bar popover actually is and the option with no asynchronous transition to
+/// race: the previous round measured it holding this code's own explicit
+/// positioning perfectly stable, with no spurious `Moved` events at all. (The
+/// relocations once blamed on `MoveToActiveSpace`'s transition were `x=-2106`
+/// and `x=4712` — both within rounding of exactly 2× or ½× a legitimate
+/// coordinate here, i.e. the signature of the scale-factor bug `DisplayPoints`
+/// documents, not of an AppKit default placement.)
+///
+/// `.Transient` keeps it out of Mission Control/Exposé's per-Space window list,
+/// matching the system's own Volume/Wi-Fi popovers; `.IgnoresCycle` keeps it
+/// out of Cmd-` window cycling. Neither conflicts with the two above — AppKit
+/// groups these flags and silently drops conflicting pairs *within* a group,
+/// which is exactly why this is read back afterwards rather than assumed (see
+/// `collection_behavior_bits`).
+///
+/// Reapplied on every show rather than only at launch: idempotent, and cheap
+/// insurance against anything resetting it on first realisation.
 #[cfg(target_os = "macos")]
 fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
@@ -756,46 +1130,239 @@ fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
         return;
     }
     let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
-    ns_window.setCollectionBehavior(NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::Transient);
+    let behavior = match std::env::var("QUOTOS_DEBUG_SPACE_BEHAVIOR").ok().as_deref() {
+        Some("join") => NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        Some("move") => NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        Some("aux") => NSWindowCollectionBehavior::FullScreenAuxiliary,
+        Some("joinonly") => NSWindowCollectionBehavior::CanJoinAllSpaces,
+        Some("none") => NSWindowCollectionBehavior::empty(),
+        _ => {
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::Transient
+                | NSWindowCollectionBehavior::IgnoresCycle
+        }
+    };
+    ns_window.setCollectionBehavior(behavior);
+    set_popover_window_level(ns_window);
+}
+
+/// R3-9: `alwaysOnTop` in tauri.conf.json gets this window
+/// `NSFloatingWindowLevel`, which is right for a panel floating over ordinary
+/// windows and **not** enough to be seen over another application's
+/// full-screen Space — the state the captain's own reproduction is from. A
+/// status-item popover belongs at `NSStatusWindowLevel`, which is what the
+/// system's own menu bar popovers use and what puts it above a full-screen
+/// window's content. Overridable for diagnosis (`QUOTOS_DEBUG_WINDOW_LEVEL`)
+/// because "which of these two knobs actually did it" is only answerable by
+/// changing one at a time against a real full-screen Space.
+#[cfg(target_os = "macos")]
+fn set_popover_window_level(ns_window: &objc2_app_kit::NSWindow) {
+    const NS_STATUS_WINDOW_LEVEL: isize = 25;
+    let level = std::env::var("QUOTOS_DEBUG_WINDOW_LEVEL").ok().and_then(|v| v.parse().ok()).unwrap_or(NS_STATUS_WINDOW_LEVEL);
+    ns_window.setLevel(level);
 }
 
 #[cfg(not(target_os = "macos"))]
 fn set_popover_collection_behavior(_window: &tauri::WebviewWindow) {}
 
-fn show_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
+/// Reads back what AppKit actually stored, since `setCollectionBehavior:`
+/// silently drops flags that conflict with others in the same group — "we set
+/// it" is not evidence that it is set. Surfaced through the `QUOTOS_DEBUG_POS`
+/// trace.
+#[cfg(target_os = "macos")]
+fn collection_behavior_bits(window: &tauri::WebviewWindow) -> Option<u64> {
+    use objc2_app_kit::NSWindow;
+    let ptr = window.ns_window().ok()?;
+    if ptr.is_null() {
+        return None;
+    }
+    Some(unsafe { (*(ptr as *const NSWindow)).collectionBehavior() }.0 as u64)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn collection_behavior_bits(_window: &tauri::WebviewWindow) -> Option<u64> {
+    None
+}
+
+/// AppKit's own answer to "is this window on the Space the user is looking at",
+/// which is the entire question this round turns on and the one thing
+/// `kCGWindowIsOnscreen` and a screenshot can only infer. Public API
+/// (`-[NSWindow isOnActiveSpace]`), unlike the `CGSCopySpacesForWindows`
+/// route. Surfaced through the `QUOTOS_DEBUG_POS` trace.
+#[cfg(target_os = "macos")]
+fn space_diagnostics(window: &tauri::WebviewWindow) -> Option<String> {
+    use objc2_app_kit::{NSApplication, NSWindow};
+    use objc2_foundation::MainThreadMarker;
+    let mtm = MainThreadMarker::new()?;
+    let ptr = window.ns_window().ok()?;
+    if ptr.is_null() {
+        return None;
+    }
+    let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    let app_active = NSApplication::sharedApplication(mtm).isActive();
+    Some(format!(
+        "on_active_space={} visible={} key={} level={} occlusion={:?} app_active={app_active}",
+        ns_window.isOnActiveSpace(),
+        ns_window.isVisible(),
+        ns_window.isKeyWindow(),
+        ns_window.level(),
+        ns_window.occlusionState(),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn space_diagnostics(_window: &tauri::WebviewWindow) -> Option<String> {
+    None
+}
+
+/// R3-9: shows the panel, focuses it, **and** orders it front regardless.
+///
+/// `WebviewWindow::set_focus()` bottoms out in `tao`'s `util::set_focus`,
+/// which is `makeKeyAndOrderFront:` followed by
+/// `activateIgnoringOtherApps: YES` (read straight from
+/// `tao-0.35.3/.../util/async.rs`) — "bring my application forward, wherever
+/// its windows happen to live". `orderFrontRegardless` asks for the opposite:
+/// "put this window at the front of its level here and now, even if my
+/// application is not the active one", which is what a status-item popover
+/// actually wants and is the call the captain's own report points at:
+/// *"оно открывается на основном столе (которого я не вижу)"*.
+///
+/// Both, in that order — see the honest limits below. Dropping `set_focus`
+/// was tried and measured here to leave the window non-key, which would break
+/// click-away-to-close (it rides on `Focused(false)`) and the rename and
+/// sign-in text fields. That is a certain regression traded for an unproven
+/// fix.
+///
+/// **Unverified from this machine, and the reason is worth recording.** With a
+/// real full-screen Space active — the captain's exact reproduction, which
+/// happened to be live here — the panel window never joined it, and
+/// `-[NSWindow isOnActiveSpace]` read `false` under *every* variant tried:
+/// five collection behaviours (including `CanJoinAllSpaces` alone and
+/// `empty()`), window levels 3/25/101, with and without app activation, and
+/// launched both by direct exec and through LaunchServices. Identical results
+/// across `CanJoinAllSpaces` and `empty()` means the measurement is not
+/// discriminating on this box, so it is evidence about the environment, not
+/// about the fix. `QUOTOS_DEBUG_SPACE_BEHAVIOR` and `QUOTOS_DEBUG_WINDOW_LEVEL`
+/// are left in place so the next attempt can sweep them against a real click
+/// without a rebuild.
+#[cfg(target_os = "macos")]
+fn order_panel_front(window: &tauri::WebviewWindow) {
+    use objc2_app_kit::NSWindow;
+    use objc2_foundation::MainThreadMarker;
+
+    let _ = window.show();
+    // Keeps every existing behaviour that depends on the panel being key:
+    // click-away-to-close rides on `Focused(false)`, and the rename and
+    // sign-in fields need real keyboard focus. Dropping it in favour of
+    // `orderFrontRegardless` alone was measured here to leave the window
+    // non-key (`key=false`) — a certain regression traded for an unproven
+    // fix, which is the wrong trade.
+    let _ = window.set_focus();
+    let (Some(_mtm), Ok(ptr)) = (MainThreadMarker::new(), window.ns_window()) else { return };
+    if ptr.is_null() {
+        return;
+    }
+    // ...then order front *regardless* on top of that: this is the call that
+    // asks for "appear here, on the Space in front of the user, now" rather
+    // than "bring my application forward wherever it lives".
+    let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    ns_window.orderFrontRegardless();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn order_panel_front(window: &tauri::WebviewWindow) {
     let _ = window.show();
     let _ = window.set_focus();
-    let layout = reposition_under_tray(app, window, tray_x, tray_y);
+}
+
+/// R3-7: **position first, then show.** `show()` reveals the window wherever
+/// it was last left — on a two-display machine, routinely the other display —
+/// so showing before moving guarantees a visible frame at the wrong place,
+/// which is precisely the captain's *"панель мерцает"*. The move itself must
+/// also actually land before the reveal, which `set_position` alone cannot
+/// promise; see `place_window_top_left_sync` for that half.
+///
+/// The position is reapplied once after `show()` as well. That second call is
+/// a no-op when nothing moved the window (`setFrameTopLeftPoint:` to the
+/// frame's current origin emits no `Moved` event), and it costs one main-
+/// thread call to be immune to anything ordering-front does to the frame.
+fn show_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
+    set_popover_collection_behavior(window);
+    let layout = compute_docked_layout(app, window, tray_x, tray_y);
+    if let Some(layout) = layout {
+        apply_docked_position(app, window, layout);
+    }
+    order_panel_front(window);
+    if let Some(layout) = layout {
+        apply_docked_position(app, window, layout);
+    }
+    log_docked_placement(app, window, tray_x, tray_y, layout);
     let _ = window.emit("panel-visibility", true);
-    schedule_position_correction(window, layout);
     set_tray_highlighted(app, true);
 }
 
-/// `NSWindowCollectionBehaviorMoveToActiveSpace` (see
-/// `set_popover_collection_behavior`) is what makes the window actually
-/// appear on the user's current Space at all — necessary, confirmed by
-/// `kCGWindowIsOnscreen` flipping true for the first time in this whole
-/// investigation once it was added. But the Space transition it triggers is
-/// itself asynchronous: logging showed the window moving *again*, ~100-150ms
-/// after the initial explicit `set_position` call, undoing it (observed
-/// final position was nowhere near the target — some AppKit-internal
-/// default for "a window landing on a Space it wasn't already positioned
-/// on," not anything this code requests). Reapplying the *exact same
-/// already-computed* position/beak-offset (not recomputed — see
-/// `apply_docked_position`'s doc comment) a little after that settles
-/// reliably wins the race; each reapplication is a harmless no-op if
-/// nothing moved the window in between. Used by both `show_panel` and
-/// `set_detached`'s snap-back path (C6), since re-docking from detached can
-/// hit the same Space-transition race.
-fn schedule_position_correction(window: &tauri::WebviewWindow, layout: Option<(i32, i32, f64)>) {
-    let Some((x, y, beak_offset)) = layout else { return };
-    let correction_window = window.clone();
+/// Opt-in placement trace (`QUOTOS_DEBUG_POS=1`), off by default so no build
+/// ever writes to stderr on its own. Every number the docked-position
+/// arithmetic consumes and produces, plus the frame AppKit actually ended up
+/// with — enough to tell "computed wrong" apart from "computed right, then
+/// something moved it", which is the distinction the whole R3-7 investigation
+/// turned on and which no amount of screenshotting can settle.
+fn log_docked_placement(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    tray_x: f64,
+    tray_y: f64,
+    layout: Option<DockedLayout>,
+) {
+    if std::env::var_os("QUOTOS_DEBUG_POS").is_none() {
+        return;
+    }
+    let displays = displays_in_points(window);
+    let resolved = resolve_tray_point(&displays, tray_x, tray_y);
+    let item = app.tray_by_id("main-tray").and_then(|t| t.rect().ok().flatten()).map(|r| (r.position, r.size));
+    let icon_width_px = *app.state::<AppState>().last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned");
+    eprintln!(
+        "quotos-pos: tray_raw=({tray_x},{tray_y}) displays={displays:?} resolved={resolved:?} item={item:?} icon_width_px={icon_width_px} layout={layout:?} frame_after={:?} collection_behavior={:?} visible={:?}",
+        window_frame_points(window),
+        collection_behavior_bits(window).map(|b| format!("{b:#x}")),
+        window.is_visible()
+    );
+    // Sampled again shortly after, because Space membership settles
+    // asynchronously and the value read inside `show_panel` is the one least
+    // likely to be final.
+    let later = window.clone();
     tauri::async_runtime::spawn(async move {
-        for delay_ms in [250, 600] {
-            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-            apply_docked_position(&correction_window, x, y, beak_offset);
+        for delay_ms in [50u64, 400, 1500] {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            let w = later.clone();
+            let _ = w.clone().run_on_main_thread(move || {
+                eprintln!("quotos-pos: +{delay_ms}ms {:?}", space_diagnostics(&w));
+            });
         }
     });
+}
+
+/// The window's own frame, read back from AppKit in global points — not via
+/// `outer_position()`, which is both scale-factor-relative (see
+/// `DisplayPoints`) and was observed misreporting right after a first `show()`.
+#[cfg(target_os = "macos")]
+fn window_frame_points(window: &tauri::WebviewWindow) -> Option<(f64, f64, f64, f64)> {
+    use objc2_app_kit::{NSScreen, NSWindow};
+    use objc2_foundation::MainThreadMarker;
+    let mtm = MainThreadMarker::new()?;
+    let ptr = window.ns_window().ok()?;
+    if ptr.is_null() {
+        return None;
+    }
+    let flip = NSScreen::screens(mtm).iter().next()?.frame().size.height;
+    let frame = unsafe { (*(ptr as *const NSWindow)).frame() };
+    Some((frame.origin.x, flip - (frame.origin.y + frame.size.height), frame.size.width, frame.size.height))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn window_frame_points(_window: &tauri::WebviewWindow) -> Option<(f64, f64, f64, f64)> {
+    None
 }
 
 /// Left-clicking the tray icon while detached brings the window forward
@@ -808,6 +1375,7 @@ fn toggle_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, detached:
         let _ = window.hide();
         let _ = window.emit("panel-visibility", false);
         set_tray_highlighted(app, false);
+        clear_docked_target(app);
     } else {
         show_panel(app, window, tray_x, tray_y);
     }
@@ -871,6 +1439,9 @@ pub fn run() {
                 last_icon_width_px: Mutex::new(initial_w),
                 tray_highlighted: Mutex::new(false),
                 last_tray_segments: Mutex::new(Vec::new()),
+                docked_target: Mutex::new(None),
+                move_generation: Mutex::new(0),
+                last_known_position: Mutex::new((0.0, 0.0)),
             });
             spawn_scheduler(app.handle().clone());
 
@@ -885,7 +1456,23 @@ pub fn run() {
                 let blur_app = app.handle().clone();
                 window.on_window_event(move |event| {
                     match event {
-                        tauri::WindowEvent::Focused(false) => {
+                        tauri::WindowEvent::Focused(focused) => {
+                            if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
+                                eprintln!("quotos-pos: Focused({focused}) visible={:?}", blur_window.is_visible());
+                            }
+                            if *focused {
+                                return;
+                            }
+                            // Diagnostic escape hatch, off by default: the panel
+                            // hides the instant anything else takes focus, which
+                            // on a machine being driven by an agent is
+                            // immediately — leaving no way to photograph the
+                            // docked panel beside the real menu bar and judge it
+                            // by eye, which is how this round's acceptance bar is
+                            // actually written. Never set in a shipped run.
+                            if std::env::var_os("QUOTOS_DEBUG_KEEP_OPEN").is_some() {
+                                return;
+                            }
                             let detached = blur_app
                                 .state::<AppState>()
                                 .detached
@@ -896,6 +1483,7 @@ pub fn run() {
                                 let _ = blur_window.hide();
                                 let _ = blur_window.emit("panel-visibility", false);
                                 set_tray_highlighted(&blur_app, false);
+                                clear_docked_target(&blur_app);
                             }
                         }
                         // R3-3 (Magnet question): `resizable: false` in
@@ -918,11 +1506,84 @@ pub fn run() {
                         // it does not fight a *move* (a Magnet action that
                         // only repositions is left alone), only a resize.
                         tauri::WindowEvent::Resized(size) => {
+                            // Compared and reasserted in *logical* units for
+                            // the same reason positions are (see
+                            // `DisplayPoints`): the incoming `PhysicalSize` is
+                            // the window's own scale factor applied to its
+                            // point size, so converting with that same factor
+                            // is the only comparison that means anything on a
+                            // mixed-DPI setup.
                             let scale = blur_window.scale_factor().unwrap_or(1.0);
-                            let expected_w = (PANEL_WINDOW_WIDTH_LOGICAL * scale).round() as u32;
-                            let expected_h = (PANEL_WINDOW_HEIGHT_LOGICAL * scale).round() as u32;
-                            if size.width != expected_w || size.height != expected_h {
-                                let _ = blur_window.set_size(tauri::PhysicalSize::new(expected_w, expected_h));
+                            let (w, h) = (size.width as f64 / scale, size.height as f64 / scale);
+                            if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5 || (h - PANEL_WINDOW_HEIGHT_LOGICAL).abs() > 0.5 {
+                                let _ = blur_window
+                                    .set_size(tauri::LogicalSize::new(PANEL_WINDOW_WIDTH_LOGICAL, PANEL_WINDOW_HEIGHT_LOGICAL));
+                            }
+                        }
+                        // R3-6: the self-correcting half of `AppState.docked_target`
+                        // — whenever AppKit relocates the window away from
+                        // where it's supposed to be docked (the
+                        // Space-transition race `set_popover_collection_behavior`'s
+                        // doc comment describes), nudges it back — but only
+                        // once the relocating has gone *quiet* for
+                        // `MOVE_SETTLE_MS`, not on every single `Moved`
+                        // event (see `move_generation`'s doc comment for why
+                        // that immediate-reapply version, this fix's first
+                        // draft, plausibly made things worse). Tracks its
+                        // own "am I still the most recently scheduled
+                        // correction" via the generation counter — a classic
+                        // debounce — so a burst of AppKit-internal
+                        // relocations gets to finish before this reasserts
+                        // anything, and every scheduled-but-superseded
+                        // attempt is a cheap no-op.
+                        tauri::WindowEvent::Moved(pos) => {
+                            let state = blur_app.state::<AppState>();
+                            // `WindowEvent::Moved` reports the frame origin in
+                            // points multiplied by the window's *current*
+                            // backing scale factor (`tao`'s
+                            // `window_delegate.rs::emit_move_event`) — undone
+                            // here so everything downstream compares in the one
+                            // coordinate space that exists (see `DisplayPoints`).
+                            let scale = blur_window.scale_factor().unwrap_or(1.0);
+                            let observed = (pos.x as f64 / scale, pos.y as f64 / scale);
+                            *state.last_known_position.lock().expect("last_known_position mutex poisoned") = observed;
+                            let this_generation = {
+                                let mut generation = state.move_generation.lock().expect("move_generation mutex poisoned");
+                                *generation += 1;
+                                *generation
+                            };
+                            let has_target = state.docked_target.lock().expect("docked_target mutex poisoned").is_some();
+                            if has_target {
+                                let app2 = blur_app.clone();
+                                let window2 = blur_window.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    const MOVE_SETTLE_MS: u64 = 180;
+                                    tokio::time::sleep(std::time::Duration::from_millis(MOVE_SETTLE_MS)).await;
+                                    let state2 = app2.state::<AppState>();
+                                    let is_still_latest =
+                                        *state2.move_generation.lock().expect("move_generation mutex poisoned") == this_generation;
+                                    if !is_still_latest {
+                                        return; // a newer Moved event superseded this one — let it debounce instead
+                                    }
+                                    let Some(target) = *state2.docked_target.lock().expect("docked_target mutex poisoned") else {
+                                        return; // hidden or detached by the time this fired
+                                    };
+                                    let current = *state2.last_known_position.lock().expect("last_known_position mutex poisoned");
+                                    // A tolerance, not exact equality: AppKit was logged settling
+                                    // the window a point or so off whatever was requested and
+                                    // never reporting that final nudge distinguishably from our
+                                    // own resulting `Moved`. Correcting a sub-point gap is
+                                    // imperceptible and produced an endless correct→drift→correct
+                                    // loop — itself a contributor to "flickers" — while a
+                                    // genuinely wrong placement (the wrong display, or off every
+                                    // display) is orders of magnitude larger than this.
+                                    const SETTLE_TOLERANCE_POINTS: f64 = 2.0;
+                                    if (current.0 - target.x).abs() > SETTLE_TOLERANCE_POINTS
+                                        || (current.1 - target.y).abs() > SETTLE_TOLERANCE_POINTS
+                                    {
+                                        apply_docked_position(&app2, &window2, target);
+                                    }
+                                });
                             }
                         }
                         _ => {}
@@ -957,10 +1618,12 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    // Always physical pixels for a real tray event — see
-                    // `show_panel`'s doc comment for why this is read
-                    // straight off the event rather than through the
-                    // positioner plugin's own cached/derived position.
+                    // Carried through raw, exactly as `tray-icon` reports it
+                    // — the conversion into a coordinate space that actually
+                    // means something happens once, in `compute_docked_layout`
+                    // via `resolve_tray_point`. See `DisplayPoints` for what
+                    // this number really is (it is not physical pixels, and it
+                    // is not points either).
                     let rect_position = match &event {
                         TrayIconEvent::Click { rect, .. }
                         | TrayIconEvent::DoubleClick { rect, .. }
@@ -1003,6 +1666,33 @@ pub fn run() {
                 .build(app)?;
             app.manage(tray);
 
+            // Diagnostic only, off by default: opens the panel from the tray
+            // item's own rect a few seconds after launch, with no click at
+            // all. The captain watches this menu bar while he works and a
+            // previous round's repeated test-clicking was itself visible to
+            // him; this makes the whole Space/geometry question iterable
+            // without ever touching his menu bar. `tray.rect()` is available
+            // without a click — only the *event* needs one.
+            if std::env::var_os("QUOTOS_DEBUG_AUTO_OPEN").is_some() {
+                let auto_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    let _ = auto_app.clone().run_on_main_thread(move || {
+                        let app = &auto_app;
+                        let (Some(window), Some(tray)) = (app.get_webview_window("main"), app.tray_by_id("main-tray")) else {
+                            return;
+                        };
+                        let Some(rect) = tray.rect().ok().flatten() else { return };
+                        let (x, y) = match rect.position {
+                            tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                            tauri::Position::Logical(p) => (p.x, p.y),
+                        };
+                        show_panel(app, &window, x, y);
+
+                    });
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -1011,7 +1701,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod glyph_offset_tests {
-    use super::glyph_center_offset_from_item_left_physical;
+    use super::glyph_center_offset_from_item_left_points;
 
     // R3-1 regression guard: these numbers are the real measurements taken
     // against a live tray item (see RESULT.md) — a bare-glyph item measured
@@ -1021,11 +1711,12 @@ mod glyph_offset_tests {
     // 18pt in from its own left edge, not the old hardcoded 15pt.
     #[test]
     fn bare_glyph_offset_matches_the_measured_item_center() {
-        let scale = 2.0;
-        let item_width_physical = 36.0 * scale;
-        let icon_width_px = 36.0; // GLYPH_PX: bare glyph, no digits
-        let offset = glyph_center_offset_from_item_left_physical(Some(item_width_physical), icon_width_px, scale);
-        assert!((offset - 18.0 * scale).abs() < 0.01, "expected ~18pt offset, got {}pt", offset / scale);
+        // R3-11: the composited image is the 18pt glyph plus 6pt of padding
+        // per side (see tray_render's SIDE_PAD_PX) = 30pt, inside an item
+        // NSStatusItem makes 8pt wider still on each side. The glyph stays
+        // centred in that image, so its centre remains the item's own centre.
+        let offset = glyph_center_offset_from_item_left_points(Some(46.0), 60.0);
+        assert!((offset - 23.0).abs() < 0.01, "expected ~23pt offset, got {offset}pt");
     }
 
     // A wider (pinned-digits) image still centers correctly as long as the
@@ -1035,27 +1726,239 @@ mod glyph_offset_tests {
     // just the bare-glyph case above.
     #[test]
     fn pinned_digits_offset_scales_with_the_wider_image_not_a_fixed_constant() {
-        let scale = 2.0;
         // Real measurement: item widened from 36pt to 64pt after pinning one
         // segment, while its right edge (and therefore the implied margin)
-        // stayed put — see compute_docked_layout's doc comment.
-        let item_width_physical = 64.0 * scale;
-        let icon_width_px = 46.0 * 2.0; // a wider composited image (glyph + one segment), at the fixed 2x convention
-        let offset = glyph_center_offset_from_item_left_physical(Some(item_width_physical), icon_width_px, scale);
-        // Same 18pt margin as the bare case (by construction of these two
+        // stayed put — see `glyph_center_offset_from_item_left_points`.
+        let offset = glyph_center_offset_from_item_left_points(Some(74.0), 58.0 * 2.0);
+        // Same system margin as the bare case (by construction of these two
         // measurements — right edge held fixed), so the glyph's offset from
         // the item's own *current* left edge is unchanged even though the
         // item itself is much wider now.
-        assert!((offset - 18.0 * scale).abs() < 0.01, "expected ~18pt offset, got {}pt", offset / scale);
+        assert!((offset - 23.0).abs() < 0.01, "expected ~23pt offset, got {offset}pt");
+    }
+
+    // R3-7: the offset is a property of the tray item and its own composited
+    // image, both of which are already in points — no display scale factor
+    // may enter into it. Two displays of different scale must give the same
+    // answer for the same item.
+    #[test]
+    fn the_offset_is_independent_of_any_display_scale_factor() {
+        let retina = glyph_center_offset_from_item_left_points(Some(46.0), 60.0);
+        let non_retina = glyph_center_offset_from_item_left_points(Some(46.0), 60.0);
+        assert_eq!(retina, non_retina);
     }
 
     #[test]
     fn missing_item_rect_falls_back_to_glyph_flush_with_the_left_edge() {
-        let scale = 2.0;
-        let icon_width_px = 36.0;
-        let offset = glyph_center_offset_from_item_left_physical(None, icon_width_px, scale);
-        // No margin data available: half the glyph's own width is the best
-        // available answer, not a crash or a wildly wrong guess.
-        assert!((offset - 9.0 * scale).abs() < 0.01);
+        let offset = glyph_center_offset_from_item_left_points(None, 60.0);
+        // No margin data available: the image's own known padding plus half
+        // the glyph's width is the best available answer, not a crash or a
+        // wildly wrong guess.
+        assert!((offset - 15.0).abs() < 0.01, "got {offset}");
+    }
+}
+
+#[cfg(test)]
+mod docked_layout_tests {
+    use super::{docked_layout_in_points, resolve_tray_point, DisplayPoints};
+
+    // The captain's own two-display arrangement, in the global point space
+    // macOS actually uses (`NSScreen.frame` / `CGDisplayBounds`): the built-in
+    // Retina MacBook display at (0,0) 1728x1117 scale 2, and the external LG
+    // at (-2560,-908) 2560x2880 scale 1. Every number below is expressed the
+    // way one of the three real APIs would hand it over — see `DisplayPoints`.
+    // Menu bar heights are the real measured ones: 33pt on the notched
+    // built-in (`NSScreen` frame 1117 vs visibleFrame 1084), and a standard
+    // 24pt on an unnotched external — deliberately different, because a single
+    // constant being wrong on one of them is the R3-8 bug.
+    const BUILT_IN: DisplayPoints =
+        DisplayPoints { origin: (0.0, 0.0), size: (1728.0, 1117.0), scale: 2.0, menu_bar_bottom: Some(33.0) };
+    const EXTERNAL: DisplayPoints =
+        DisplayPoints { origin: (-2560.0, -855.0), size: (2560.0, 2880.0), scale: 1.0, menu_bar_bottom: Some(-831.0) };
+
+    // A tray item as macOS lays one out: a 24pt-tall button centred in
+    // whatever menu bar it is in, so it can never extend below that bar.
+    // Checked against the real thing on the notched built-in, whose AX rect
+    // measured (1183, 4, 36, 24) against a 33pt bar — this gives 4.5.
+    // A bare tray item as it really measures: the 18pt glyph padded to a 30pt
+    // image (tray_render's SIDE_PAD_PX), inside an NSStatusItem 8pt wider on
+    // each side again.
+    const ITEM_W: f64 = 46.0;
+    const ICON_PX: f64 = 60.0; // that 30pt image at the fixed 2x convention
+
+    fn glyph_centre(tray_left: f64, item_w: f64, icon_px: f64) -> f64 {
+        tray_left + super::glyph_center_offset_from_item_left_points(Some(item_w), icon_px)
+    }
+
+    fn item_top(display: DisplayPoints) -> f64 {
+        let bar_height = display.menu_bar_bottom.map(|b| b - display.origin.1).unwrap_or(33.0);
+        display.origin.1 + (bar_height - 24.0).max(0.0) / 2.0
+    }
+
+    fn item_bottom(display: DisplayPoints) -> f64 {
+        item_top(display) + 24.0
+    }
+
+    fn displays() -> Vec<DisplayPoints> {
+        vec![BUILT_IN, EXTERNAL]
+    }
+
+    // R3-7 regression guard, built-in half. `tray-icon` multiplies the tray
+    // item's true point position (1183, 0) by the *menu bar display's* scale
+    // factor, so the value arriving here is 2366 — which is not a coordinate
+    // in any real space. Dividing by the built-in's own scale recovers 1183;
+    // dividing by the external's leaves 2366, which is off every display.
+    #[test]
+    fn a_tray_rect_from_the_retina_built_in_resolves_to_that_display_in_points() {
+        let (index, x, y) = resolve_tray_point(&displays(), 2366.0, 0.0).expect("built-in tray point must resolve");
+        assert_eq!(index, 0);
+        assert!((x - 1183.0).abs() < 0.01, "got {x}");
+        assert!(y.abs() < 0.01, "got {y}");
+    }
+
+    // The mirror case: the menu bar living on the 1x external display, whose
+    // point coordinates are negative. Here `tray-icon`'s multiplication is by
+    // 1 and the raw value is already the answer — but only if the *external*
+    // display's scale is the one used to undo it. Halving it (the built-in's
+    // scale) lands somewhere else entirely, which is the second half of the
+    // captain's "прыгает по экрану".
+    #[test]
+    fn a_tray_rect_from_the_1x_external_display_resolves_to_that_display_in_points() {
+        let (index, x, y) = resolve_tray_point(&displays(), -400.0, -855.0).expect("external tray point must resolve");
+        assert_eq!(index, 1);
+        assert!((x + 400.0).abs() < 0.01, "got {x}");
+        assert!((y + 855.0).abs() < 0.01, "got {y}");
+    }
+
+    #[test]
+    fn a_tray_rect_matching_no_display_resolves_to_nothing_rather_than_a_guess() {
+        assert!(resolve_tray_point(&displays(), 90_000.0, 90_000.0).is_none());
+    }
+
+    // R3-10: the beak's *tip* sits `BEAK_TIP_CLEARANCE` below the menu bar of
+    // the display the icon is actually on — the captain's "почти в иконке".
+    // Tip = y + (panel top inset 12 − beak height 10), so the window's own top
+    // lands flush with the bar: 33 on the notched built-in, −825 on the
+    // external (bar bottom −831, i.e. a standard 24pt bar), whose coordinates
+    // are negative and whose bar is a different height again.
+    #[test]
+    fn the_beaks_tip_sits_just_under_the_menu_bar_of_its_own_display() {
+        let tip = |l: super::DockedLayout| l.y + (12.0 - 10.0);
+
+        let built_in = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        assert!((tip(built_in) - (33.0 + 2.0)).abs() < 0.01, "got {}", tip(built_in));
+
+        let external = docked_layout_in_points(EXTERNAL, -400.0, item_top(EXTERNAL), item_bottom(EXTERNAL), Some(ITEM_W), ICON_PX);
+        assert!((tip(external) - (-831.0 + 2.0)).abs() < 0.01, "got {}", tip(external));
+    }
+
+    // R3-8 regression guard: two displays whose menu bars differ in height must
+    // get *different* tops relative to their own origin. A constant would give
+    // the same number for both, which is the bug.
+    #[test]
+    fn the_top_follows_each_displays_own_menu_bar_height_not_one_constant() {
+        let built_in = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        let external = docked_layout_in_points(EXTERNAL, -400.0, item_top(EXTERNAL), item_bottom(EXTERNAL), Some(ITEM_W), ICON_PX);
+        let below_own_top = |l: super::DockedLayout, d: DisplayPoints| l.y - d.origin.1;
+        assert!((below_own_top(built_in, BUILT_IN) - 33.0).abs() < 0.01, "got {}", below_own_top(built_in, BUILT_IN));
+        assert!((below_own_top(external, EXTERNAL) - 24.0).abs() < 0.01, "got {}", below_own_top(external, EXTERNAL));
+        assert_ne!(below_own_top(built_in, BUILT_IN), below_own_top(external, EXTERNAL));
+    }
+
+    // The state the captain actually reproduces from — inside a full-screen
+    // Space, where the menu bar is auto-hidden and `visibleFrame` reports no
+    // bar at all even while the bar is sitting revealed under his cursor. The
+    // tray item is still measured, and reconstructing the bar from it
+    // (a status item is centred in its bar) must land on the same answer as
+    // reading the bar directly, not on some degraded approximation.
+    #[test]
+    fn a_hidden_menu_bar_is_reconstructed_from_the_tray_item_to_the_same_answer() {
+        let hidden_bar = DisplayPoints { menu_bar_bottom: None, ..BUILT_IN };
+        let with_bar = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        let without = docked_layout_in_points(hidden_bar, 1183.0, item_top(hidden_bar), item_bottom(hidden_bar), Some(ITEM_W), ICON_PX);
+        assert!((without.y - with_bar.y).abs() < 0.01, "{} vs {}", without.y, with_bar.y);
+    }
+
+    // A display left of the primary has negative coordinates throughout — a
+    // "no menu bar reported" floor of 0 would read as far *below* such a
+    // display's real bar rather than as neutral.
+    #[test]
+    fn the_fallback_floor_works_on_a_negative_coordinate_display() {
+        let hidden_bar = DisplayPoints { menu_bar_bottom: None, ..EXTERNAL };
+        let layout = docked_layout_in_points(hidden_bar, -400.0, item_top(hidden_bar), item_bottom(hidden_bar), Some(ITEM_W), ICON_PX);
+        assert!(layout.y < 0.0 && layout.y > EXTERNAL.origin.1, "got {}", layout.y);
+    }
+
+    // R3-10: the beak is held a comfortable distance inside the panel's own
+    // left edge rather than pressed against it — his "слишком близко к левому
+    // краю" — which, since its centre must still be the glyph's centre, is
+    // achieved by moving the whole panel left rather than by moving the beak.
+    #[test]
+    fn the_beak_sits_clear_of_the_panels_left_corner_by_moving_the_panel_not_the_beak() {
+        let layout = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        assert!((layout.beak_left - 20.0).abs() < 0.01, "got {}", layout.beak_left);
+        // Well clear of the 12pt corner radius, unlike the handoff's own
+        // "pressed to the left edge" rule this replaces.
+        assert!(layout.beak_left > 12.0);
+        // ...and still exactly on the glyph.
+        let beak_centre = layout.x + 14.0 + layout.beak_left + 10.0;
+        assert!((beak_centre - glyph_centre(1183.0, ITEM_W, ICON_PX)).abs() < 0.01, "got {beak_centre}");
+    }
+
+    // R3-1/the captain's own acceptance bar: pinning digits widens the tray
+    // item, and macOS lays status items out right-to-left, so the item's own
+    // left edge moves left — carrying the glyph with it, since `NSStatusItem`
+    // centres the whole composited image and the glyph is that image's
+    // leftmost 18pt (measured live: glyph centre 1238.75 bare → 1209.75
+    // pinned, see RESULT.md). Nothing can hold the beak still *and* under the
+    // glyph, because the glyph itself moved; what must hold is that the beak
+    // lands on the glyph's real centre in **both** states, with the panel
+    // tracking the item the same way in both. Getting that wrong is exactly
+    // the drift the captain photographed across pin/unpin.
+    #[test]
+    fn the_beak_lands_on_the_glyph_centre_both_before_and_after_pinning() {
+        // The absolute on-screen centre of the notch = window x + the 14pt
+        // shadow-blur inset + beak_left + half the 12pt notch.
+        let beak_centre = |l: super::DockedLayout| l.x + 14.0 + l.beak_left + 10.0;
+
+        // Bare: 36pt item, 18pt image; right edge at 1183 + 36 = 1219.
+        let bare = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        let bare_glyph_centre: f64 = glyph_centre(1183.0, ITEM_W, ICON_PX);
+        assert!((beak_centre(bare) - bare_glyph_centre).abs() < 0.01, "bare: {}", beak_centre(bare));
+        assert!((bare.x - (bare_glyph_centre - 44.0)).abs() < 0.01, "bare panel: {}", bare.x);
+
+        // Pinned "29%": the item grows to 64pt with the same right edge, so
+        // its left edge moves to 1219 − 64 = 1155, and the composited image
+        // is 46pt wide (glyph + one segment).
+        let pinned = docked_layout_in_points(BUILT_IN, 1155.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(74.0), 58.0 * 2.0);
+        let pinned_glyph_centre = glyph_centre(1155.0, 74.0, 58.0 * 2.0);
+        assert!((beak_centre(pinned) - pinned_glyph_centre).abs() < 0.01, "pinned: {}", beak_centre(pinned));
+        assert!((pinned.x - (pinned_glyph_centre - 44.0)).abs() < 0.01, "pinned panel: {}", pinned.x);
+
+        // Unpinning restores the bare geometry exactly — no hysteresis, since
+        // every input is re-derived rather than accumulated.
+        let unpinned = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        assert_eq!(bare, unpinned);
+    }
+
+    // B5: at the right screen edge the panel stops (clamped to screen right −
+    // 340) and the beak keeps tracking the glyph past the panel's own centre.
+    #[test]
+    fn at_the_right_screen_edge_the_panel_stops_and_the_beak_keeps_tracking() {
+        // Icon hard against the built-in's right edge.
+        let tray_left = 1728.0 - 40.0;
+        let layout = docked_layout_in_points(BUILT_IN, tray_left, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        assert!((layout.x - (1728.0 - 340.0)).abs() < 0.01, "panel must clamp, got {}", layout.x);
+        let beak_centre = layout.x + 14.0 + layout.beak_left + 10.0;
+        assert!((beak_centre - glyph_centre(tray_left, ITEM_W, ICON_PX)).abs() < 0.01, "beak must still track the glyph, got {beak_centre}");
+    }
+
+    // The notch can never leave the panel, however extreme the geometry.
+    #[test]
+    fn the_beak_stays_within_the_panel() {
+        for tray_left in [-3000.0f64, -2560.0, 0.0, 900.0, 1727.0, 5000.0] {
+            let layout = docked_layout_in_points(BUILT_IN, tray_left, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+            assert!(layout.beak_left >= 0.0 && layout.beak_left <= 332.0 - 20.0, "tray_left={tray_left} gave {}", layout.beak_left);
+        }
     }
 }

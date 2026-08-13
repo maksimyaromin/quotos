@@ -254,7 +254,8 @@ rewritten each round, not appended to.
   (`AppState.last_icon_width_px`, set by `set_tray_status` right before
   `set_icon`, always at the buffer's fixed "2x of an 18pt image" convention
   so `/2` gives real points regardless of monitor scale) — via
-  `glyph_center_offset_from_item_left_physical`, rather than trusting any
+  `glyph_center_offset_from_item_left_points` (points, not pixels — see
+  the coordinate-space entry below), rather than trusting any
   single constant again. Second: `set_tray_status` (pin/unpin) never
   re-docked the panel at all — no `TrayIconEvent` fires for a same-app icon
   resize, so the position captured at the last real tray click just went
@@ -266,13 +267,47 @@ rewritten each round, not appended to.
   `tray.rect()` call made immediately after `set_icon()` was itself found
   to read a stale rect (AppKit's own layout pass for the new width hadn't
   caught up for one to a few runloop turns) — needs the same short-delay-retry
-  shape as `schedule_position_correction`'s unrelated Space-transition fix,
+  shape as the `WindowEvent::Moved` correction's own retry,
   not a single attempt. Also found and fixed in the same pass: the computed
   glyph *center* was being fed straight into `Panel.jsx`'s `beakLeft` as if
   it were the beak box's own CSS `left` (its *left edge*, off by half the
   12px box), and the 14px inset between the window's own edge and the
   panel's edge (`app.css`'s shadow-blur margin, B9) was never subtracted —
   both silently wrong even when the glyph-center math itself was correct.
+- **The beak's size and placement override the handoff, and the numbers live
+  in four files with no build step syncing them.** The captain rejected the
+  handoff's 12x12 beak on sight ("маленький… слишком близко к левому краю…
+  слишком низко от топбара"), so: `Panel.jsx`'s `BEAK_BASE_HALF`/`BEAK_HEIGHT`/
+  `NOTCH_RESERVE` (both copies), `lib.rs`'s `BEAK_BASE_WIDTH`/`BEAK_HEIGHT`/
+  `BEAK_INSET_IN_PANEL`/`BEAK_TIP_CLEARANCE` in `docked_layout_in_points`, and
+  `app.css`'s `body { padding-top }` all have to move together — each one's own
+  comment names the others. Two invariants make the whole thing work and are
+  easy to break separately: the beak's centre must stay exactly on the glyph's
+  centre (so "move the beak away from the corner" is implemented by moving the
+  **panel** further left — the window x is derived from where the beak needs to
+  be, replacing the handoff's `icon_left - 6`), and the layout solves for the
+  beak's **tip** rather than the panel's top edge, since the window's own
+  `padding-top` inset is what was putting a visible gap under the menu bar.
+  `--shadow-popover`'s top bleed is zero by construction (`0 6px 16px -4px`
+  reaches -2px above the box), so closing that gap costs nothing at the top;
+  the left/right 14px margin is still load-bearing for the shadow (B9).
+- **The beak is one shape with the panel, not a second layer.** Two stacked
+  translucent elements paint `rgba(19,21,24,0.86)` twice at the overlap and the
+  beak had no `backdrop-filter` of its own — a seam the captain could see over
+  a bright desktop. `Panel.jsx`'s `buildPanelOutlinePath` emits a single path
+  used both as the `clip-path` for one fill+blur layer and as one 0.5px stroke
+  round the whole outline. Don't try to fix a seam by tuning opacities:
+  backdrop-filter's blur kernel doesn't sample across an element boundary, so
+  only one shape actually removes it. Judge it over a *bright* backdrop — a
+  dark one hides both faults.
+- **The tray image carries fixed side padding, always.** `tray_render`'s
+  `SIDE_PAD_PX` (6pt per side) exists so A11's "panel open" highlight reads as
+  a pressed menu bar button rather than a box hugging the ink, and it is
+  applied whether highlighted or not so the glyph — and therefore the beak —
+  cannot shift when the highlight toggles. `plain_glyph_rgba` and `render`
+  must keep producing the same width (there's a test). `lib.rs` reads
+  `GLYPH_LEFT_INSET_POINTS` from `tray_render` rather than assuming the glyph
+  is the image's leftmost 18pt.
 - **This machine is live and shared — not a clean test box — and
   screenshotting this app's own windows only ever shows whatever's on the
   *currently active macOS Space*, which is frequently not where a tray
@@ -303,44 +338,73 @@ rewritten each round, not appended to.
   renders blank/white for a window on an inactive Space (no real compositing
   happened to sample from), even though the window and its content genuinely
   exist.
-- **`NSWindowCollectionBehavior` is the lever for "popover shows on the
-  user's current Space," but on this machine neither available option is a
-  clean win, and the tension is unresolved as of the last round.** The panel
-  window is a singleton (created once at launch, only ever hidden/shown
-  after, never recreated), and a macOS window's Space membership is normally
-  sticky to whichever Space was frontmost when it was first realized —
-  `-orderFront:`/`-makeKeyAndOrderFront:` alone don't move it to the user's
-  current Space, which is the root cause behind `kCGWindowIsOnscreen` reading
-  `false` after an apparently-successful `show()`/`set_focus()` (both
-  return `Ok`, a `Focused(true)` event does arrive, no `Focused(false)`
-  auto-hide ever follows — all independently confirmed by logging; it is
-  not a focus-loss bug). Two behaviors were tried, set once via the raw
-  `NSWindow` (`window.ns_window()` cast to `&NSWindow` from the objc2-app-kit
-  binding — needs the `NSWindow` feature added to this crate's Cargo.toml,
-  see `set_popover_collection_behavior` in `lib.rs`): `.CanJoinAllSpaces`
-  keeps the window's own explicit position perfectly stable (no spurious
-  `Moved` events) but never flips `kCGWindowIsOnscreen` true, i.e. doesn't
-  solve the actual problem. `.MoveToActiveSpace` (paired with `.Transient`,
-  the standard flag combo for this kind of ephemeral popover) **does** flip
-  `kCGWindowIsOnscreen` true — confirmed live, more than once — but the
-  Space transition it triggers is itself asynchronous and was directly
-  observed relocating the window a *second* time, ~100-150ms after this
-  code's own explicit `set_position` call, to an AppKit-internal default
-  position unrelated to the tray icon. `lib.rs`'s
-  `schedule_position_correction` reapplies the exact already-computed
-  position/beak-offset (not recomputed — recomputing via
-  `monitor_from_point` from a window mid-relocation was itself observed
-  returning a third, still-wrong answer) a couple of times shortly after,
-  which reliably restores the *position* — but doing so was also observed,
-  on this same machine, to cost the `kCGWindowIsOnscreen` fix back. Current
-  state: `.MoveToActiveSpace | .Transient`, with the position correction, is
-  what's shipped, since it's the only option that's ever demonstrated the
-  actual visibility fix and the correct-position outcomes independently, even
-  though not reliably simultaneously from here. The next person picking this
-  up should get the captain to confirm with a real click before assuming
-  either outcome — this is likely a testing-environment limitation more than
-  a real defect (see the point above), but that has not been proven, only
-  argued.
+- **There is no global "physical pixel" coordinate space on macOS, and three
+  APIs this app depends on each invent a different one.** This was the root
+  cause of the captain's "панель мерцает, прыгает по экрану, появляется не на
+  том мониторе", and the arithmetic is only safe in **global points**
+  (`CGDisplayBounds`/`NSScreen.frame`). Each of these hands out a `Physical*`
+  type that is really "points x *some* display's scale factor", and they
+  disagree about which: `TrayIconEvent`'s `rect` uses the **menu bar
+  display's** scale (`tray-icon` 0.24.2 `get_tray_rect`), `Monitor::position()`/
+  `size()` use **that monitor's own** (`tao` `platform_impl/macos/monitor.rs`),
+  and `set_position(Physical)`/`WindowEvent::Moved` use **the window's
+  current** one (`tao` `window.rs`/`window_delegate.rs` — all read from the
+  crate sources, not inferred). They coincide on a single-display machine and
+  diverge on a mixed-DPI multi-display one. `lib.rs`'s `DisplayPoints` doc
+  comment carries the full table and the worked examples; the rules that fall
+  out: convert at the edges via `resolve_tray_point` (it recovers the tray
+  rect's true point position by trying each display's own scale and keeping
+  the quotient that lands inside that display — the scale cannot be known in
+  advance), never store or compare a `Physical*` value, and place the window
+  with a `LogicalPosition`, which `tao`'s `Position::to_logical` passes through
+  untouched so no scale factor is consulted on the way out.
+- **`set_position` lands asynchronously but `show()` runs inline — position
+  before showing, and place the frame synchronously yourself.** `tao`'s
+  `set_outer_position` ends in `util::set_frame_top_left_point_async`
+  (dispatched to the main queue) while `set_visible(true)` ends in
+  `make_key_and_order_front_sync` (inline). Called in either order from the
+  tray handler, which is already on the main thread, the window becomes
+  visible at its stale position and moves a runloop turn later — a guaranteed
+  one-frame flash wherever it last was. `place_window_top_left_sync` in
+  `lib.rs` sets the `NSWindow` frame directly instead.
+- **Never hardcode a menu bar height; it differs per display on one machine.**
+  The handoff's "32px from the top" is a bar height plus a 6px gap, and this
+  machine's notched built-in measures **33pt** against an unnotched display's
+  24-30pt — so the constant put the panel *inside* the bar on one display and
+  8pt too low on the other, and AppKit silently clamped the overlap back out
+  (which reads as a mysterious 1pt offset). Derive it from
+  `NSScreen.visibleFrame` per display, and keep the tray-item fallback in
+  `docked_layout_in_points`: inside a full-screen Space the bar is auto-hidden
+  and `visibleFrame` reports no bar at all *even while the bar is on screen
+  under the cursor*. Both paths were checked to agree. The captain's standing
+  rule — "нигде не хардкодите мой сетап мониторов" — applies to every value of
+  this kind: if it has to come from the running system, read it every time.
+- **Unresolved: the panel opens on the wrong Space from inside another app's
+  full-screen Space.** The captain's own isolated reproduction: from an
+  ordinary desktop it works on both displays; from a full-screen Space it is
+  ordered onto the default desktop Space, which he cannot see. What is
+  shipped: `CanJoinAllSpaces | FullScreenAuxiliary | Transient | IgnoresCycle`
+  (the `FullScreenAuxiliary` half was missing from every earlier round),
+  `NSStatusWindowLevel`, and `orderFrontRegardless` alongside the normal focus
+  path — none of it confirmed. Tested here against a *real* live full-screen
+  Space, `-[NSWindow isOnActiveSpace]` read `false` under five collection
+  behaviours (including `CanJoinAllSpaces` alone **and** `empty()`), window
+  levels 3/25/101, with and without `activateIgnoringOtherApps`, and under both
+  direct exec and LaunchServices. Identical results for `CanJoinAllSpaces` and
+  `empty()` mean the measurement does not discriminate on this box — treat it
+  as evidence about the environment, not the fix. Do not drop `set_focus()` in
+  favour of `orderFrontRegardless` alone: measured, that leaves the window
+  non-key, breaking click-away-to-close (it rides on `Focused(false)`) and the
+  rename/sign-in fields. `QUOTOS_DEBUG_SPACE_BEHAVIOR` and
+  `QUOTOS_DEBUG_WINDOW_LEVEL` exist to sweep variants without a rebuild.
+- **Iterate on tray/panel behaviour without clicking the captain's menu bar.**
+  He watches it while he works and repeated test-clicking drew a complaint.
+  `QUOTOS_DEBUG_AUTO_OPEN=1` opens the panel from `tray.rect()` a few seconds
+  after launch with no click at all (only the *event* needs a click; the rect
+  does not); `QUOTOS_DEBUG_KEEP_OPEN=1` suppresses hide-on-blur so the panel
+  survives long enough to photograph; `QUOTOS_DEBUG_POS=1` traces every input
+  and output of the placement arithmetic plus `isOnActiveSpace`. All opt-in,
+  all silent by default.
 - **Drawing real text (Core Text) into an offscreen `CGBitmapContext` has two
   non-obvious failure modes, both found by rendering `tray_render.rs`'s
   actual `render()` output to PNG and inspecting it directly (screenshotting

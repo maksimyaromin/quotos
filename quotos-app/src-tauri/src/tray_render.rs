@@ -36,6 +36,24 @@ use std::process::Command;
 /// own "18x18 CSS-px, 36x36 @2x" spec for the glyph).
 const GLYPH_PX: u32 = 36;
 const GAP_PX: u32 = 10; // 5pt gap between glyph and digits, at 2x
+/// R3-11: horizontal air on each side of the glyph+digits, inside the
+/// composited image. Two things need it, and one of them is not optional:
+///
+/// * A11's "panel open" highlight is painted across this whole buffer, so
+///   without padding it hugs the ink and reads as a box drawn round the glyph
+///   rather than as a pressed menu bar button. The handoff gives the button
+///   6px of padding; macOS fills the status item's own width for its own open
+///   items. Firstmate's on-screen pass: *"no horizontal air"*.
+/// * It is applied **unconditionally**, highlighted or not, so the glyph's
+///   position inside the item cannot shift when the highlight toggles — a
+///   shift there would move the beak, which is exactly the drift the captain
+///   spent a whole round reporting.
+///
+/// 6 CSS-px per side, at this buffer's 2x convention. `lib.rs`'s
+/// `glyph_center_offset_from_item_left_points` reads `GLYPH_LEFT_INSET_POINTS`
+/// rather than assuming the glyph is the image's leftmost 18pt.
+const SIDE_PAD_PX: u32 = 12;
+pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
 const SEGMENT_GAP_PX: u32 = 8; // 4pt gap between separately-pinned segments, at 2x
 
 /// The design system specifies 12 CSS-px digits; this buffer is rendered at
@@ -667,7 +685,7 @@ pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32
     } else {
         widths.iter().sum::<u32>() + (segments.len() as u32 - 1) * SEGMENT_GAP_PX
     };
-    let total_w = GLYPH_PX + if text_total > 0 { GAP_PX + text_total } else { 0 };
+    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + if text_total > 0 { GAP_PX + text_total } else { 0 };
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
 
@@ -685,11 +703,11 @@ pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32
                 continue;
             }
             let blended = ((ink.3 as u16 * a as u16) / 255) as u8;
-            blend_pixel(&mut buf, total_w, total_h, x, y, (ink.0, ink.1, ink.2, blended));
+            blend_pixel(&mut buf, total_w, total_h, SIDE_PAD_PX + x, y, (ink.0, ink.1, ink.2, blended));
         }
     }
 
-    let mut x = GLYPH_PX + GAP_PX;
+    let mut x = SIDE_PAD_PX + GLYPH_PX + GAP_PX;
     for (seg, w) in segments.iter().zip(widths.iter()) {
         text::draw_text(&mut buf, total_w, total_h, x, &font, &seg.text, seg.color.rgba(dark));
         x += w + SEGMENT_GAP_PX;
@@ -709,8 +727,23 @@ pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32
 /// alpha alone, per-appearance).
 pub fn plain_glyph_rgba() -> (Vec<u8>, u32, u32) {
     let coverage = glyph_coverage(GLYPH_PX);
-    let rgba = coverage.iter().flat_map(|&a| [0xffu8, 0xff, 0xff, a]).collect();
-    (rgba, GLYPH_PX, GLYPH_PX)
+    // Padded identically to `render`'s output (see `SIDE_PAD_PX`): the two
+    // paths swap places whenever the panel opens or a pin changes, and an
+    // image width that changed between them would move the glyph — and with
+    // it the beak — on every toggle.
+    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX;
+    let mut rgba = vec![0u8; (total_w * GLYPH_PX * 4) as usize];
+    for y in 0..GLYPH_PX {
+        for x in 0..GLYPH_PX {
+            let a = coverage[(y * GLYPH_PX + x) as usize];
+            let idx = (((y * total_w) + SIDE_PAD_PX + x) * 4) as usize;
+            rgba[idx] = 0xff;
+            rgba[idx + 1] = 0xff;
+            rgba[idx + 2] = 0xff;
+            rgba[idx + 3] = a;
+        }
+    }
+    (rgba, total_w, GLYPH_PX)
 }
 
 #[cfg(test)]
@@ -760,10 +793,35 @@ mod tests {
     }
 
     #[test]
-    fn render_with_no_segments_is_exactly_the_glyph_square() {
+    fn render_with_no_segments_is_the_glyph_square_plus_its_side_padding() {
         let (buf, w, h) = render(&[], false);
-        assert_eq!((w, h), (GLYPH_PX, GLYPH_PX));
+        assert_eq!((w, h), (SIDE_PAD_PX * 2 + GLYPH_PX, GLYPH_PX));
         assert_eq!(buf.len(), (w * h * 4) as usize);
+    }
+
+    // R3-11: the highlighted and unhighlighted paths (`render` and
+    // `plain_glyph_rgba`) swap places whenever the panel opens or closes. If
+    // their widths differed the status item would resize on every toggle,
+    // moving the glyph — and with it the beak — which is the exact drift class
+    // this whole round exists to stop.
+    #[test]
+    fn every_bare_glyph_path_produces_the_same_image_width() {
+        assert_eq!(plain_glyph_rgba().1, render(&[], false).1);
+        assert_eq!(plain_glyph_rgba().1, render(&[], true).1);
+    }
+
+    // The highlight has to reach the image's own edges — that is what gives it
+    // the horizontal air that makes it read as a pressed menu bar button
+    // rather than a box drawn tightly round the glyph.
+    #[test]
+    fn the_highlight_reaches_into_the_side_padding_where_the_glyph_never_draws() {
+        let (buf, w, h) = render(&[], true);
+        let mid_row = h / 2;
+        let alpha_at = |x: u32| buf[(((mid_row * w) + x) * 4 + 3) as usize];
+        assert!(alpha_at(2) > 0, "highlight must cover the left padding");
+        assert!(alpha_at(w - 3) > 0, "highlight must cover the right padding");
+        let (bare, _, _) = render(&[], false);
+        assert_eq!(bare[(((mid_row * w) + 2) * 4 + 3) as usize], 0, "unhighlighted padding stays fully transparent");
     }
 
     #[test]

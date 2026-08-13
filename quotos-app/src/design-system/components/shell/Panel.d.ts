@@ -9,7 +9,7 @@ export interface PanelProps {
   title?: string;
   /** Docked under the tray icon (shows the beak) vs. torn off into a free-floating window. */
   docked?: boolean;
-  /** Beak center offset (px) from the panel's own left edge — dynamic, tracks the tray glyph. */
+  /** Left edge (px, from the panel's own left edge) of the beak's 12px-wide base — dynamic, tracks the tray glyph's center. */
   beakLeft?: number;
   /** True while the header is being dragged (grabbing vs. grab cursor). */
   dragging?: boolean;
