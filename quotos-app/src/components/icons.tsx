@@ -39,32 +39,24 @@ export function DebugIcon() {
   );
 }
 
-export function CloseIcon() {
+/** Fold a detached window back under the tray icon — an upward arrow, "send
+ * this back up to the menu bar". There is no detach button (dragging the
+ * header is the only way to tear the panel off), so this is the only affordance
+ * this pair needs. */
+export function SnapBackIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18M6 6l12 12" />
+      <path d="M12 19V5M5 12l7-7 7 7" />
     </svg>
   );
 }
 
-/** Tear the panel off the tray into a freestanding window (I7). A window
- * with an outward-pointing corner arrow — "pop this out". */
-export function DetachIcon() {
+/** The Subscriptions screen's header back arrow — the only way out, there is
+ * no Done button. */
+export function BackIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-      <path d="M15 3h6v6M10 14 21 3" />
-    </svg>
-  );
-}
-
-/** Fold a detached window back into the tray popover — an inward-pointing
- * version of DetachIcon. */
-export function AttachIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-      <path d="M21 3l-7 7M21 9V3h-6" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
     </svg>
   );
 }

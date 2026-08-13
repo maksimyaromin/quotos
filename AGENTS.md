@@ -14,6 +14,14 @@ rewritten each round, not appended to.
 ## Sources of truth (don't duplicate, read these)
 
 - `design/brief.md` — product spec: entity model, every state, every surface.
+  **Superseded wherever it disagrees** by the round-2 UI/UX handoff,
+  `data/quotos-fixes-f2/design-notes/quotos-handoff.html` (firstmate data
+  dir, not this repo) — the brief predates any build, the handoff was
+  written after the captain used one. `quotos-prototype.html` in the same
+  folder is the interactive reference; where code and prototype differ, the
+  prototype wins unless the handoff text says otherwise. Its own JS
+  (`renderVals()`) is the authoritative source for exact row-state logic —
+  read it directly rather than re-deriving from the prose.
 - `design/system/` — the design system (tokens, React components). Use it,
   don't reinvent it; `design/system/readme.md` explains the visual language.
   `quotos-app/src/design-system/` is a verbatim copy consumed by the app —
@@ -65,6 +73,28 @@ rewritten each round, not appended to.
   states are reviewable from a plain browser (`npm run dev`) — never let it
   leak into a real-build code path. Extend it (not `App.tsx`) when a new
   state needs to be reachable for browser-only QA.
+- **`idle` and "no limits reported yet" are two different things, both
+  reachable via `SubscriptionState`.** `idle` renders a hollow grey ring dot
+  (`StatusDot`'s `dotRing`) — a subscription never successfully read. "No
+  limits reported yet" is `state: "working"` with `used: null` — a *good*
+  read that simply had no windows to show — and renders the calm teal dot,
+  same as any other working row. This is derived, not a stored value: the
+  row body always shows `reason ?? "No limits reported yet."` whenever
+  `used` isn't a number, for every non-data state (`idle`, `connecting`,
+  `broken`, or `working` with nothing to report) — see `SubscriptionRow.jsx`
+  and mirror `quotos-prototype.html`'s `renderVals()` if this needs to
+  change. `SubscriptionState` still has an unused `"repairing"` member from
+  round 1; the round-2 handoff's fixed vocabulary is exactly `working`,
+  `reading`, `behind`, `broken`, `connecting`, `idle` — don't render
+  `"repairing"` and don't introduce new state values without updating both
+  this file and the handoff's row-state table.
+- The "…" row menu (`SubscriptionRow.jsx`) closes on any interaction outside
+  itself via a single `window` `mousedown` listener in `App.tsx`, gated by
+  `data-quotos-menu-scope` on both the trigger button and the dropdown. It
+  only ever *closes* — never (re)opens — so it can't race the trigger
+  button's own toggle-on-click. Keep both elements' `data-quotos-menu-scope`
+  attribute if you touch this markup, or the menu will close itself on its
+  own click.
 
 ## Sharp edges
 
@@ -85,12 +115,39 @@ rewritten each round, not appended to.
   Verified by reading `platform_impl/macos/mod.rs` in the crate source
   directly — don't trust the `Option<S>` signature's apparent symmetry.
 - **`tauri-plugin-positioner`'s tray anchor mode must match the popover's
-  beak alignment.** `Position::TrayBottomRight` places the window's *left*
-  edge at the icon's right edge (the whole popover unfolds to one side of
-  the icon); `Position::TrayCenter`/`TrayBottomCenter` center it under the
-  icon. `design/system/components/shell/Panel.jsx`'s beak is horizontally
-  centered, so the anchor must be `TrayBottomCenter` — any other tray
-  position will visually point the beak at the wrong menu-bar item.
+  beak alignment — as of round 2 they no longer do, and fixing one without
+  the other breaks it.** `Position::TrayBottomRight` places the window's
+  *left* edge at the icon's right edge; `Position::TrayCenter`/
+  `TrayBottomCenter` center the window under the icon. The round-2 handoff
+  moved the beak off-center: it's now pinned to the panel's left edge,
+  under the glyph, with the panel opening rightward (`Panel.jsx`'s
+  `beakLeft` prop, `App.tsx`'s `BEAK_LEFT` constant). `lib.rs` still uses
+  `Position::TrayBottomCenter` (round-2 surface work didn't touch
+  `src-tauri`, per that task's file ownership) — this anchor now
+  contradicts the beak, and the two must change together. Confirmed live on
+  the captain's screen (see firstmate's `measurements.md`): "the beak is
+  horizontally centred under the icon... this follows from
+  `Position::TrayBottomCenter`... so the anchor has to change together with
+  the beak." Whoever fixes the native anchor should also revisit
+  `BEAK_LEFT` in `App.tsx` (currently a static approximation, documented
+  in-place, since there's no in-page tray glyph to measure from).
+- I7's `set_detached` IPC command is unchanged, but its trigger moved:
+  round 2 removed the detach *button* — dragging the header is now the only
+  way to detach (`App.tsx`'s `handleHeaderPointerDown`), matching the
+  handoff's "first movement detaches" rule. In the real app this calls
+  `getCurrentWindow().startDragging()` from `@tauri-apps/api/window` after
+  the first `mousemove` past mousedown (a plain click does nothing); the
+  browser/mock harness has no OS window to move, so it simulates the same
+  interaction by fixed-positioning the Panel via CSS instead (see
+  `position`/`docked` props) — this is why dragging is fully testable via
+  `npm run dev` even though `startDragging()` itself isn't.
+- **The tray title can still show `"!"` and `"…"`**, which the round-2
+  handoff explicitly forbids ("Никаких знаков и многоточий... Либо цифра,
+  либо ничего") — found while reading `useSubscriptions.ts`'s tray-title
+  effect (`s.state === "broken" ? "!" : ... : "…"`). That file is outside
+  round-2 surface work's file ownership (`src/hooks/`); flagged here rather
+  than fixed, since acceptance criterion 2 depends on it and the next
+  worker touching that effect should know.
 - **`--shadow-popover`'s blur radius must stay inside the transparent
   window's own margin** around the panel (`--panel-width` vs the window
   width in `tauri.conf.json`, currently a 14px margin per side via

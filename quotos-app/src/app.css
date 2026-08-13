@@ -25,11 +25,7 @@ body {
 }
 
 .quotos-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-5) var(--space-4);
+  padding: var(--space-5) var(--space-3) var(--space-4);
   text-align: center;
 }
 
@@ -37,5 +33,17 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
+  line-height: var(--leading-normal);
   color: var(--text-tertiary);
+}
+
+/* Panel body: no visible scrollbar, no reserved gutter — the content owns
+   the full panel width whether or not it is currently scrolling. */
+.quotos-scroll {
+  scrollbar-width: none;
+}
+
+.quotos-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }

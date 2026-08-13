@@ -21,7 +21,11 @@ export function LimitWindow({ name, used = null, resetLabel = null, scope = null
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}>{name}</span>
-        {scope ? <Badge tone="neutral">{scope}</Badge> : null}
+        {scope ? (
+          <Badge tone="neutral" style={{ flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}>
+            {scope}
+          </Badge>
+        ) : null}
         <span style={{
           fontFamily: "var(--font-mono)",
           fontSize: "var(--numeral-sm)",

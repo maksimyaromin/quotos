@@ -4,8 +4,6 @@ import { StatusDot } from "../indicators/StatusDot.jsx";
 import { Badge } from "../indicators/Badge.jsx";
 import { LimitWindow } from "./LimitWindow.jsx";
 
-const HAS_DATA = new Set(["working", "reading", "behind", "repairing"]);
-
 // Minimal default affordance glyphs (generic UI arrows/marks, not brand icons).
 const Chevron = ({ open }) => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
@@ -15,57 +13,51 @@ const Chevron = ({ open }) => (
   </svg>
 );
 const PinGlyph = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
     strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
   </svg>
 );
-const PencilGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-    strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-  </svg>
-);
-const TrashGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-    strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" />
+const MenuDotsGlyph = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="5" cy="12" r="1.6" />
+    <circle cx="12" cy="12" r="1.6" />
+    <circle cx="19" cy="12" r="1.6" />
   </svg>
 );
 
-function TinyBtn({ label, active, danger, onClick, onMouseLeave, children }) {
-  const [h, setH] = React.useState(false);
+const STATE_DOT_COLOR = {
+  working: "var(--status-working)",
+  behind: "var(--status-behind)",
+  broken: "var(--status-broken)",
+};
+
+function MenuItem({ danger, onClick, children }) {
+  const [hover, setHover] = React.useState(false);
   return (
-    <button type="button" aria-label={label} title={label} onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => { setH(false); onMouseLeave?.(); }}
+    <button type="button" onClick={onClick}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        gap: "var(--space-1)", height: 20, padding: "0 4px", border: 0,
-        borderRadius: "var(--radius-xs)", cursor: "pointer",
-        background: h ? (danger ? "var(--red-muted)" : "var(--bg-row-hover)") : "transparent",
-        color: danger ? "var(--red)" : active ? "var(--text-accent)" : "var(--text-tertiary)",
-        fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)",
-        transition: "background var(--dur-fast), color var(--dur-fast)",
+        display: "flex", alignItems: "center", height: 26, padding: "0 var(--space-2)",
+        border: 0, borderRadius: "var(--radius-sm)",
+        background: hover ? "var(--bg-row-hover)" : "transparent",
+        fontFamily: "var(--font-sans)", fontSize: "var(--text-base)",
+        color: danger ? "var(--red)" : "var(--text-primary)",
+        textAlign: "left", cursor: "pointer",
       }}>
       {children}
     </button>
   );
 }
 
-const STATE_META = {
-  behind: { tone: "warn", label: "Behind" },
-  repairing: { tone: "info", label: "Repairing" },
-  broken: { tone: "danger", label: "Broken" },
-};
-
-/** The core panel row: one subscription, scannable in a single pass. Renders a
- *  "% used" headline + capacity bar for data-bearing states, and a message +
- *  action for not-connected / connecting / broken. State-driven throughout;
- *  age is always shown, and stale data is visibly dimmed, never presented as
- *  current. Expands to the variable window list without reflowing the card
- *  (the expand track is always present, animated between 0fr/1fr, and the
- *  scrollbar gutter is reserved in the parent Panel — see Panel.jsx). */
+/** The core panel row: one subscription, scannable in a single pass. Header
+ *  order is fixed — dot, name + subtitle, pin (only if pinned), state badge,
+ *  the always-visible "…" menu — nothing shifts, appears, or disappears on
+ *  hover. Clicking anywhere on the row expands it; an expanded (or
+ *  menu-open) row keeps --bg-row-hover so it visibly reads as open. Renders
+ *  a "% used" headline + capacity bar for data-bearing states, and a
+ *  message for not-connected / connecting / broken / no-limits-yet. Mirrors
+ *  quotos-prototype.html's row logic exactly — see design-notes. */
 export function SubscriptionRow({
   label,
   provider,
@@ -78,20 +70,21 @@ export function SubscriptionRow({
   reason = null,
   pinned = false,
   expanded = false,
+  menuOpen = false,
   actionLabel = null,
   actionDisabled = false,
   footerNote = null,
   onAction,
   onTogglePin,
   onToggleExpand,
+  onToggleMenu,
   onRename,
-  onDelete,
+  onReadNow,
+  onStopTracking,
   style,
 }) {
-  const [hover, setHover] = React.useState(false);
   const [renaming, setRenaming] = React.useState(false);
   const [draft, setDraft] = React.useState(label);
-  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   const inputRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -107,40 +100,48 @@ export function SubscriptionRow({
     onRename?.(trimmed.length > 0 && trimmed !== label ? trimmed : null);
   };
 
-  const connected = HAS_DATA.has(state);
-  const hasData = connected && typeof used === "number";
-  const noLimits = connected && typeof used !== "number"; // read fine, provider reports nothing useful
   const stale = state === "behind";
-  const reading = state === "reading";
-  const meta = STATE_META[state];
+  const reading = state === "reading" || state === "connecting";
+  const hasData = typeof used === "number";
+  const badge = stale ? "Not current" : state === "broken" ? "Needs sign-in" : null;
 
-  const numeralColor = stale
-    ? "var(--text-tertiary)"
-    : used !== null && used >= 75
+  const numColor = stale
+    ? "var(--amber)"
+    : hasData && used >= 75
     ? capacityColor(used)
     : "var(--text-primary)";
 
+  const dotColor = STATE_DOT_COLOR[stale ? "behind" : state] || "var(--status-progress)";
+
+  const handleRowClick = () => {
+    if (menuOpen) { onToggleMenu?.(); return; }
+    if (renaming) return;
+    onToggleExpand?.();
+  };
+
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onClick={handleRowClick}
       style={{
+        position: "relative",
         display: "flex", flexDirection: "column", gap: "var(--space-2)",
         padding: "var(--space-3)",
         borderRadius: "var(--radius-md)",
-        background: hover ? "var(--bg-row-hover)" : "transparent",
+        background: expanded || menuOpen ? "var(--bg-row-hover)" : "transparent",
+        cursor: "pointer",
         transition: "background var(--dur-fast) var(--ease-standard)",
         ...style,
       }}
     >
-      {/* header */}
+      {/* header — fixed order: dot, name+subtitle, pin (if pinned), badge, "…" */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}>
-        <StatusDot state={state} style={{ marginTop: 4, flex: "0 0 auto" }} />
+        <StatusDot state={state} style={{ marginTop: 5, flex: "0 0 auto" }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           {renaming ? (
             <input
               ref={inputRef}
               value={draft}
+              onClick={(e) => e.stopPropagation()}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commitRename}
               onKeyDown={(e) => {
@@ -173,27 +174,33 @@ export function SubscriptionRow({
             }}>{[account, provider].filter(Boolean).join(" · ")}</div>
           ) : null}
         </div>
-        {meta ? <Badge tone={meta.tone} style={{ marginTop: 1, flex: "0 0 auto" }}>{meta.label}</Badge> : null}
-        <div style={{ display: "flex", alignItems: "center", flex: "0 0 auto", opacity: pinned || hover ? 1 : 0, transition: "opacity var(--dur-fast)" }}>
-          {onRename ? (
-            <TinyBtn label="Rename" onClick={() => setRenaming(true)}>
-              <PencilGlyph />
-            </TinyBtn>
-          ) : null}
-          {onDelete ? (
-            <TinyBtn
-              label={confirmingDelete ? "Click again to remove" : "Remove subscription"}
-              danger
-              onClick={() => (confirmingDelete ? onDelete() : setConfirmingDelete(true))}
-              onMouseLeave={() => setConfirmingDelete(false)}
-            >
-              {confirmingDelete ? "Remove?" : <TrashGlyph />}
-            </TinyBtn>
-          ) : null}
-          <TinyBtn label={pinned ? "Unpin from menu bar" : "Pin to menu bar"} active={pinned} onClick={onTogglePin}>
+        {pinned ? (
+          <button type="button" title="Hide from the menu bar" aria-label="Hide from the menu bar"
+            onClick={(e) => { e.stopPropagation(); onTogglePin?.(); }}
+            style={{
+              flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 20, height: 20, margin: "1px 0 0 0", padding: 0, border: 0,
+              borderRadius: "var(--radius-xs)", background: "transparent", color: "var(--text-accent)",
+              cursor: "pointer",
+            }}>
             <PinGlyph />
-          </TinyBtn>
-        </div>
+          </button>
+        ) : null}
+        {badge ? (
+          <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>{badge}</Badge>
+        ) : null}
+        <button type="button" title="More" aria-label="More" data-quotos-menu-scope="true"
+          onClick={(e) => { e.stopPropagation(); onToggleMenu?.(); }}
+          style={{
+            flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 20, height: 20, margin: "1px -4px 0 0", padding: 0, border: 0,
+            borderRadius: "var(--radius-xs)",
+            background: menuOpen ? "var(--bg-row-hover)" : "transparent",
+            color: menuOpen ? "var(--text-primary)" : "var(--text-quaternary)",
+            cursor: "pointer",
+          }}>
+          <MenuDotsGlyph />
+        </button>
       </div>
 
       {/* body */}
@@ -204,7 +211,7 @@ export function SubscriptionRow({
               <span style={{
                 fontFamily: "var(--font-mono)", fontSize: "var(--numeral-lg)",
                 fontWeight: "var(--weight-medium)", fontVariantNumeric: "tabular-nums",
-                lineHeight: 1, color: numeralColor, letterSpacing: "var(--tracking-tighter)",
+                lineHeight: 1, color: numColor, letterSpacing: "var(--tracking-tighter)",
               }}>{used}<span style={{ fontSize: "18px" }}>%</span></span>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", color: "var(--text-tertiary)" }}>used</span>
             </div>
@@ -219,13 +226,9 @@ export function SubscriptionRow({
       ) : (
         <div style={{
           fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
-          color: state === "broken" ? "var(--text-secondary)" : "var(--text-tertiary)",
-          lineHeight: "var(--leading-snug)",
+          lineHeight: "var(--leading-snug)", color: "var(--text-secondary)",
         }}>
-          {state === "connecting" ? "Connecting…"
-            : state === "idle" ? "Not connected — needs one more step."
-            : noLimits ? "No limits reported — nothing to show yet."
-            : reason || "Can’t read this subscription."}
+          {reason || "No limits reported yet."}
         </div>
       )}
 
@@ -235,20 +238,26 @@ export function SubscriptionRow({
           flex: 1, fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)",
           color: stale ? "var(--amber)" : "var(--text-tertiary)",
         }}>
-          {state === "reading" ? "Reading…"
-            : footerNote ? footerNote
-            : state === "connecting" ? "This can take a few seconds"
-            : lastRead ? `Last read ${lastRead}` : ""}
+          {reading ? "Reading…" : footerNote ? footerNote : lastRead ? `Read ${lastRead}` : "Not read yet"}
         </span>
         {actionLabel ? (
-          <TinyBtn label={actionLabel} onClick={actionDisabled ? undefined : onAction}>
-            <span style={{ color: actionDisabled ? "var(--text-quaternary)" : "var(--text-accent)", fontWeight: "var(--weight-medium)" }}>{actionLabel}</span>
-          </TinyBtn>
+          <button type="button" title={actionLabel}
+            onClick={(e) => { e.stopPropagation(); if (!actionDisabled) onAction?.(); }}
+            style={{
+              height: 20, padding: "0 6px", border: 0, borderRadius: "var(--radius-xs)",
+              background: "transparent", fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)",
+              fontWeight: "var(--weight-medium)", cursor: actionDisabled ? "default" : "pointer",
+              color: actionDisabled ? "var(--text-quaternary)" : "var(--text-accent)",
+            }}>{actionLabel}</button>
         ) : null}
         {windows && windows.length > 0 ? (
-          <TinyBtn label={expanded ? "Hide limits" : "Show limits"} onClick={onToggleExpand}>
-            {windows.length} {windows.length === 1 ? "limit" : "limits"} <Chevron open={expanded} />
-          </TinyBtn>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)",
+          }}>
+            {windows.length} {windows.length === 1 ? "limit" : "limits"}
+            <Chevron open={expanded} />
+          </span>
         ) : null}
       </div>
 
@@ -277,6 +286,28 @@ export function SubscriptionRow({
           ) : null}
         </div>
       </div>
+
+      {/* the "…" menu — one fixed set of actions, always the same place */}
+      {menuOpen ? (
+        <div
+          data-quotos-menu-scope="true"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", top: 30, right: 8, zIndex: 30, minWidth: 168,
+            padding: "var(--space-1)", borderRadius: "var(--radius-lg)",
+            background: "var(--bg-elevated)", border: "0.5px solid var(--border-default)",
+            boxShadow: "var(--shadow-menu)", display: "flex", flexDirection: "column",
+          }}
+        >
+          <MenuItem onClick={() => { onToggleMenu?.(); onReadNow?.(); }}>Read now</MenuItem>
+          <MenuItem onClick={() => { onToggleMenu?.(); setRenaming(true); }}>Rename</MenuItem>
+          <MenuItem onClick={() => { onToggleMenu?.(); onTogglePin?.(); }}>
+            {pinned ? "Hide from menu bar" : "Show in menu bar"}
+          </MenuItem>
+          <div style={{ height: "0.5px", margin: "var(--space-1) var(--space-2)", background: "var(--border-default)" }} />
+          <MenuItem danger onClick={() => { onToggleMenu?.(); onStopTracking?.(); }}>Stop tracking</MenuItem>
+        </div>
+      ) : null}
     </div>
   );
 }

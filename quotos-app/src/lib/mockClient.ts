@@ -67,6 +67,8 @@ const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:demo-broken", provider: "claude", config_dir: "~/.claude-demo-broken" },
   { id: "claude:demo-waiting", provider: "claude", config_dir: "~/.claude-demo-waiting" },
   { id: "claude:demo-behind", provider: "claude", config_dir: "~/.claude-demo-behind" },
+  { id: "claude:demo-nolimits", provider: "claude", config_dir: "~/.claude-demo-nolimits" },
+  { id: "claude:demo-longnames", provider: "claude", config_dir: "~/.claude-demo-longnames" },
 ];
 
 export async function listAccounts(): Promise<AccountDescriptor[]> {
@@ -142,6 +144,51 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         });
       }
       return fail({ kind: "network", message: "the connection timed out" });
+    case "claude:demo-nolimits":
+      // A clean read that simply has nothing to report yet — "working" with
+      // no windows at all, not a failure. Exercises the "No limits reported
+      // yet." message with a teal (not amber/red) dot.
+      return delay({
+        account_id: account.id,
+        provider: "claude",
+        config_dir: account.config_dir,
+        fetched_at: new Date().toISOString(),
+        usage: { limits: [] },
+        profile: profilePayload("No limits demo", "claude_pro"),
+      });
+    case "claude:demo-longnames":
+      // A provider-supplied window name long enough to force the ellipsis
+      // truncation in LimitWindow.jsx — names are rendered verbatim, never
+      // translated or shortened by us.
+      return delay({
+        account_id: account.id,
+        provider: "claude",
+        config_dir: account.config_dir,
+        fetched_at: new Date().toISOString(),
+        usage: {
+          limits: [
+            {
+              kind: "session",
+              group: "session",
+              percent: 34,
+              severity: "normal",
+              resets_at: new Date(Date.now() + 3 * 3600_000).toISOString(),
+              scope: null,
+              is_active: true,
+            },
+            {
+              kind: "extended_thinking_weekly_combined_all_models_quota",
+              group: "weekly",
+              percent: 61,
+              severity: "normal",
+              resets_at: new Date(Date.now() + 5 * 86400_000).toISOString(),
+              scope: { model: { id: null, display_name: "Claude Opus 4.5 (extended thinking, research preview)" }, surface: null },
+              is_active: false,
+            },
+          ],
+        },
+        profile: profilePayload("Long names demo", "claude_pro"),
+      });
     default:
       return fail({ kind: "other", message: "unknown demo account" });
   }

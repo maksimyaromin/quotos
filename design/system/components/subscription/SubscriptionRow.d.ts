@@ -22,23 +22,28 @@ export interface SubscriptionRowProps {
   lastRead?: string | null;
   /** The variable detail list. Empty hides the expander. */
   windows?: LimitWindowProps[];
-  /** Human reason for the broken state + the fix it implies. */
+  /** Human reason for a no-data state (broken/idle/no-limits-yet). */
   reason?: string | null;
   pinned?: boolean;
   expanded?: boolean;
-  /** Inline action for idle/broken (e.g. "Finish setup", "Retry"). */
+  /** Whether this row's "…" menu is open — one row's menu open at a time, owned by the caller. */
+  menuOpen?: boolean;
+  /** Inline footer action label — "Try again" (behind) or "Open Claude Code" (broken). */
   actionLabel?: string | null;
   /** Visually inert but still labelled — e.g. mid rate-limit wait. */
   actionDisabled?: boolean;
-  /** Overrides the computed "Last read …" footer text, e.g. a rate-limit quiet note. */
+  /** Overrides the computed "Read …" footer text, e.g. a rate-limit quiet note. */
   footerNote?: string | null;
   onAction?: () => void;
   onTogglePin?: () => void;
   onToggleExpand?: () => void;
-  /** Present enables the inline rename affordance; called with the new label, or `null` to clear back to the provider default. */
+  onToggleMenu?: () => void;
+  /** Present enables the inline rename affordance (from the "…" menu); called with the new label, or `null` to clear back to the provider default. */
   onRename?: (nextLabel: string | null) => void;
-  /** Present enables the (confirm-to-remove) delete affordance. */
-  onDelete?: () => void;
+  /** "Read now" menu item — an explicit one-off refresh, independent of the footer action. */
+  onReadNow?: () => void;
+  /** "Stop tracking" menu item. */
+  onStopTracking?: () => void;
   style?: React.CSSProperties;
 }
 

@@ -18,7 +18,7 @@
   --shadow-focus: 0 0 0 3px color-mix(in oklch, var(--teal) 40%, transparent);
 
   /* the vibrancy blur behind the popover (apply to the shell) */
-  --blur-vibrancy: saturate(180%) blur(30px); /* @kind other */
+  --blur-vibrancy: saturate(180%) blur(28px); /* @kind other */
 
   /* motion — quick, flat, no overshoot */
   --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1); /* @kind other */

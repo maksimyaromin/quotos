@@ -36,7 +36,7 @@
 
   /* --- surfaces --- */
   --bg-base: var(--graphite-0);        /* behind the vibrancy blur */
-  --bg-panel: var(--graphite-1);       /* the popover surface */
+  --bg-panel: rgba(19, 21, 24, 0.86);  /* the popover surface — translucent, vibrancy shows through */
   --bg-row: transparent;               /* rows sit on the panel */
   --bg-row-hover: var(--graphite-3);
   --bg-elevated: var(--graphite-2);    /* nested cards, menus */
@@ -75,7 +75,7 @@
 
 [data-appearance="light"] {
   --bg-base: #e6e7ea;
-  --bg-panel: #fbfbfc;
+  --bg-panel: rgba(251, 251, 252, 0.88);
   --bg-row: transparent;
   --bg-row-hover: #f0f1f3;
   --bg-elevated: #ffffff;
