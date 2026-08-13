@@ -324,7 +324,8 @@ fn set_detached(
         // first tray event of the app's lifetime, which can't happen here
         // since detaching itself requires the panel to already be open.
         if let Some((tray_x, tray_y)) = *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") {
-            reposition_under_tray(&window, tray_x, tray_y);
+            let layout = reposition_under_tray(&window, tray_x, tray_y);
+            schedule_position_correction(&window, layout);
         }
     }
     Ok(())
@@ -446,21 +447,128 @@ fn compute_docked_layout(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64
     Some((x, y, beak_offset_logical))
 }
 
+/// Applies an already-computed docked position/beak-offset — split out from
+/// `reposition_under_tray` so a delayed correction (see `show_panel`) can
+/// reapply the exact numbers computed the first time instead of re-deriving
+/// them via `compute_docked_layout`'s own `monitor_from_point` call, which
+/// was observed giving a *different, still-wrong* answer when queried from
+/// a window AppKit had already relocated mid-Space-transition.
+fn apply_docked_position(window: &tauri::WebviewWindow, x: i32, y: i32, beak_offset: f64) {
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    let _ = window.emit("panel-beak-offset", beak_offset);
+}
+
 /// Moves an already-visible, already-docked-chrome window to sit under the
 /// tray icon and tells the frontend where to draw the beak — the shared
 /// tail end of both `show_panel` and `set_detached`'s snap-back path (C6).
-fn reposition_under_tray(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
-    if let Some((x, y, beak_offset)) = compute_docked_layout(window, tray_x, tray_y) {
-        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-        let _ = window.emit("panel-beak-offset", beak_offset);
-    }
+/// Returns what it applied (or `None` if no monitor could be resolved) so
+/// callers can schedule a same-numbers correction — see `show_panel`'s doc
+/// comment on `set_popover_collection_behavior` for why that's needed.
+fn reposition_under_tray(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
+    let layout = compute_docked_layout(window, tray_x, tray_y)?;
+    apply_docked_position(window, layout.0, layout.1, layout.2);
+    Some(layout)
 }
+
+/// Firstmate's round-3 on-screen pass (`data/quotos-tray-t1/firstmate-findings-1.md`)
+/// found the panel window's `kCGWindowIsOnscreen` staying `false` through an
+/// entire click, on both this build and the known-good control — sampled
+/// every 80ms for 16 seconds, never flipping. Diagnostic logging added this
+/// round (temporary `eprintln!`s in `show_panel`/`toggle_panel`/the blur
+/// handler, removed before commit) ruled out firstmate's other hypothesis:
+/// `show()`/`set_focus()` both return `Ok`, a `Focused(true)` window event
+/// does arrive shortly after (asynchronously — `is_focused()` reads `false`
+/// if checked synchronously right after `set_focus()`, which is a red
+/// herring, not a real failure), and no `Focused(false)`/hide ever follows
+/// it in the same window. So the window is genuinely shown, focused, and
+/// never auto-hidden — yet the WindowServer still doesn't consider it
+/// onscreen.
+///
+/// The remaining explanation: this window is a *singleton*, created once at
+/// launch and only ever hidden/shown afterward, never recreated. A macOS
+/// window's Space membership is normally sticky per-window — it belongs to
+/// whichever Space was frontmost when it was first realized, and plain
+/// `-orderFront:`/`-makeKeyAndOrderFront:` do not by themselves move it to
+/// the Space the user is actually looking at. A background-launched process
+/// (as this was, every time it was tested from here) has no interactively
+/// "current" Space to inherit at that moment, which would explain a
+/// persistent (not momentary) mismatch that never resolves on its own.
+///
+/// The fix needs the window visible on whatever Space the user currently
+/// has active. Two collection-behavior flags were tried:
+///
+/// - `NSWindowCollectionBehaviorCanJoinAllSpaces` (the window exists on
+///   every Space at once, so there's no "transition" to race against) keeps
+///   this code's own explicit positioning perfectly stable — no spurious
+///   `Moved` events — but `kCGWindowIsOnscreen` stayed `false` regardless,
+///   i.e. it never actually solved the visibility problem this exists to
+///   fix.
+/// - `NSWindowCollectionBehaviorMoveToActiveSpace` **does** flip
+///   `kCGWindowIsOnscreen` true (confirmed live, the first and only time in
+///   this whole investigation) — but the Space transition it triggers is
+///   itself asynchronous and was observed relocating the window *again*,
+///   ~100-150ms after this code's own explicit `set_position` call, to an
+///   unrelated AppKit-internal default position, undoing it.
+///
+/// So: `MoveToActiveSpace`, which is the one that actually works for
+/// visibility, plus a short-delay correction in `show_panel` that
+/// *reapplies the exact position already computed the first time* rather
+/// than recomputing it — recomputing via `monitor_from_point` after the
+/// fact was tried too and was itself unreliable (querying it from a window
+/// AppKit has already relocated mid-Space-transition returned yet a third,
+/// still-wrong position on one run). Reapplying the same literal numbers
+/// sidesteps whatever's wrong with the query, not just the transition.
+/// Paired with `.Transient` (the standard flag for this kind of ephemeral
+/// popover — keeps it out of Mission Control/Exposé's per-Space window
+/// list, matching how the Volume/Wi-Fi popovers behave, rather than leaving
+/// a phantom entry on every Space it's ever visited).
+#[cfg(target_os = "macos")]
+fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+    let Ok(ptr) = window.ns_window() else { return };
+    if ptr.is_null() {
+        return;
+    }
+    let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    ns_window.setCollectionBehavior(NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::Transient);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_popover_collection_behavior(_window: &tauri::WebviewWindow) {}
 
 fn show_panel(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
     let _ = window.show();
     let _ = window.set_focus();
-    reposition_under_tray(window, tray_x, tray_y);
+    let layout = reposition_under_tray(window, tray_x, tray_y);
     let _ = window.emit("panel-visibility", true);
+    schedule_position_correction(window, layout);
+}
+
+/// `NSWindowCollectionBehaviorMoveToActiveSpace` (see
+/// `set_popover_collection_behavior`) is what makes the window actually
+/// appear on the user's current Space at all — necessary, confirmed by
+/// `kCGWindowIsOnscreen` flipping true for the first time in this whole
+/// investigation once it was added. But the Space transition it triggers is
+/// itself asynchronous: logging showed the window moving *again*, ~100-150ms
+/// after the initial explicit `set_position` call, undoing it (observed
+/// final position was nowhere near the target — some AppKit-internal
+/// default for "a window landing on a Space it wasn't already positioned
+/// on," not anything this code requests). Reapplying the *exact same
+/// already-computed* position/beak-offset (not recomputed — see
+/// `apply_docked_position`'s doc comment) a little after that settles
+/// reliably wins the race; each reapplication is a harmless no-op if
+/// nothing moved the window in between. Used by both `show_panel` and
+/// `set_detached`'s snap-back path (C6), since re-docking from detached can
+/// hit the same Space-transition race.
+fn schedule_position_correction(window: &tauri::WebviewWindow, layout: Option<(i32, i32, f64)>) {
+    let Some((x, y, beak_offset)) = layout else { return };
+    let correction_window = window.clone();
+    tauri::async_runtime::spawn(async move {
+        for delay_ms in [250, 600] {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            apply_docked_position(&correction_window, x, y, beak_offset);
+        }
+    });
 }
 
 /// Left-clicking the tray icon while detached brings the window forward
@@ -533,6 +641,7 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("the 'main' window must be declared in tauri.conf.json");
             let _ = window.hide();
+            set_popover_collection_behavior(&window);
 
             {
                 let blur_window = window.clone();
@@ -556,9 +665,14 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Quit Quotos", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_item])?;
 
-            let tray_icon = tauri::include_image!("icons/tray/tray-icon.png");
+            // Built from the same procedural glyph `set_tray_status` uses
+            // (see `tray_render::plain_glyph_rgba`'s doc comment) rather than
+            // a static bundled asset, so there is no window between launch
+            // and the first `set_tray_status` call where a stale/blurry
+            // fixed-size icon could show.
+            let (initial_rgba, initial_w, initial_h) = tray_render::plain_glyph_rgba();
             let tray = TrayIconBuilder::with_id("main-tray")
-                .icon(tray_icon)
+                .icon(Image::new_owned(initial_rgba, initial_w, initial_h))
                 .icon_as_template(true)
                 .menu(&menu)
                 .show_menu_on_left_click(false)

@@ -44,6 +44,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
     "NSFont",
     "NSFontDescriptor",
+    "NSWindow",
     "objc2-core-foundation",
     "objc2-core-text",
 ] }

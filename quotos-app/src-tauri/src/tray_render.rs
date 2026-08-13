@@ -31,8 +31,6 @@
 
 use std::process::Command;
 
-const GLYPH_PNG: &[u8] = include_bytes!("../icons/tray/tray-icon.png");
-
 /// The crate always requests an 18pt button height; rendering at 2x that
 /// keeps the composited bitmap crisp on Retina (matches the design system's
 /// own "18x18 CSS-px, 36x36 @2x" spec for the glyph).
@@ -72,27 +70,94 @@ pub struct TraySegment {
     pub color: TrayColor,
 }
 
-struct DecodedGlyph {
-    width: u32,
-    height: u32,
-    /// Alpha-only mask: the bundled tray glyph is a template image (a
-    /// uniform-color silhouette carried entirely in the alpha channel), so
-    /// alpha alone is enough to know which pixels are "ink".
-    alpha: Vec<u8>,
-}
+/// Per-pixel alpha coverage (0-255, row-major, `canvas_px` square) for the
+/// capacity-gauge mark, drawn procedurally from its exact vector geometry
+/// (`design/system/assets/menubar-glyph.svg`: a faint full-circle track plus
+/// a bold, round-capped arc with a gap at the bottom) rather than rasterized
+/// from a fixed-size source and scaled — which is what firstmate's on-screen
+/// pass (round 3, `data/quotos-tray-t1/firstmate-findings-1.md`) measured as
+/// both undersized (11.5×10.5pt ink vs neighbouring menu bar icons'
+/// 13.5-20pt — checklist A1/A2, and the handoff's own opening complaint,
+/// *"Иконка в трее мельче соседних системных иконок"*) and visibly soft: the
+/// old asset was a 22×22 PNG, nearest-neighbor-sampled up into the 36×36
+/// composited buffer for the "digits pinned" case, and hand off to macOS's
+/// own (unscaled, so even softer) `NSImage` scaling for the "nothing
+/// pinned" bare-glyph case — two different blurry paths for what should be
+/// the same mark. Drawing the exact shape at the target resolution fixes
+/// both at once: there is no raster source to be too small or too soft, and
+/// the target ink size (`TARGET_INK_DIAMETER_CSS_PX`) is a direct, tunable
+/// parameter instead of whatever a fixed asset happened to contain.
+///
+/// The SVG's path (`M4.46 12.02 a5.4 5.4 0 1 1 7.08 0`) was converted to the
+/// two gap-endpoint angles below by hand (see the commit that introduced
+/// this: vector from centre (8,8) to each endpoint, `atan2`) — both in this
+/// module's plain math (y-down, 0 = +x axis) convention, which already
+/// matches the SVG's own y-down convention with no flip needed since this
+/// buffer is top-left-origin throughout (`put_pixel`, the text module, etc).
+fn glyph_coverage(canvas_px: u32) -> Vec<u8> {
+    const TRACK_RADIUS_SVG: f64 = 5.4;
+    const TRACK_STROKE_SVG: f64 = 1.4;
+    const TRACK_OPACITY: f64 = 0.28;
+    const ARC_RADIUS_SVG: f64 = 5.4;
+    const ARC_STROKE_SVG: f64 = 1.9;
+    const ARC_GAP_LOW_RAD: f64 = 0.8488; // ~48.6°
+    const ARC_GAP_HIGH_RAD: f64 = 2.2928; // ~131.4°
+    // Middle of the 14-16pt ink band firstmate's neighbour comparison calls
+    // for, measured as the bold arc's own outer edge (its dominant visible
+    // silhouette) on the 18 CSS-px canvas.
+    const TARGET_INK_DIAMETER_CSS_PX: f64 = 15.0;
+    // Antialiasing transition half-width, in physical (canvas_px) pixels —
+    // a soft coverage ramp across roughly 1.5 physical px either side of
+    // each edge, rather than a hard-edged/jagged threshold.
+    const AA_HALF_WIDTH_PX: f64 = 0.75;
 
-fn glyph() -> &'static DecodedGlyph {
-    use std::sync::OnceLock;
-    static GLYPH: OnceLock<DecodedGlyph> = OnceLock::new();
-    GLYPH.get_or_init(|| {
-        let img = tauri::image::Image::from_bytes(GLYPH_PNG).expect("bundled tray glyph must decode");
-        let rgba = img.rgba();
-        let mut alpha = Vec::with_capacity((img.width() * img.height()) as usize);
-        for px in rgba.chunks_exact(4) {
-            alpha.push(px[3]);
+    let natural_outer_diameter = (ARC_RADIUS_SVG + ARC_STROKE_SVG / 2.0) * 2.0;
+    // GLYPH_PX (canvas_px) is always 2x an 18-CSS-px canvas.
+    let px_per_css_px = canvas_px as f64 / 18.0;
+    let scale = (TARGET_INK_DIAMETER_CSS_PX * px_per_css_px) / natural_outer_diameter;
+    let center = canvas_px as f64 / 2.0;
+
+    let cap_point = |a: f64| (ARC_RADIUS_SVG * a.cos(), ARC_RADIUS_SVG * a.sin());
+    let (cap_lo_x, cap_lo_y) = cap_point(ARC_GAP_LOW_RAD);
+    let (cap_hi_x, cap_hi_y) = cap_point(ARC_GAP_HIGH_RAD);
+
+    let mut cov = vec![0u8; (canvas_px * canvas_px) as usize];
+    for y in 0..canvas_px {
+        for x in 0..canvas_px {
+            // Pixel center, converted back into the SVG's own unit space.
+            let ux = (x as f64 + 0.5 - center) / scale;
+            let uy = (y as f64 + 0.5 - center) / scale;
+            let dist = (ux * ux + uy * uy).sqrt();
+            let mut angle = uy.atan2(ux);
+            if angle < 0.0 {
+                angle += std::f64::consts::TAU;
+            }
+
+            let track_edge = (dist - TRACK_RADIUS_SVG).abs() - TRACK_STROKE_SVG / 2.0;
+            let track_cov = (1.0 - (track_edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0) * TRACK_OPACITY;
+
+            let in_gap = angle > ARC_GAP_LOW_RAD && angle < ARC_GAP_HIGH_RAD;
+            let arc_cov = if !in_gap {
+                let edge = (dist - ARC_RADIUS_SVG).abs() - ARC_STROKE_SVG / 2.0;
+                (1.0 - (edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
+            } else {
+                // Round caps: whichever gap endpoint is angularly nearer,
+                // tested as a plain 2D distance so the cap is a true
+                // half-circle, not just an angular cutoff.
+                let d_lo = ((ux - cap_lo_x).powi(2) + (uy - cap_lo_y).powi(2)).sqrt();
+                let d_hi = ((ux - cap_hi_x).powi(2) + (uy - cap_hi_y).powi(2)).sqrt();
+                let d = d_lo.min(d_hi);
+                (1.0 - ((d - ARC_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
+            };
+
+            let coverage = track_cov.max(arc_cov);
+            if coverage <= 0.0 {
+                continue;
+            }
+            cov[(y * canvas_px + x) as usize] = (coverage * 255.0).round().clamp(0.0, 255.0) as u8;
         }
-        DecodedGlyph { width: img.width(), height: img.height(), alpha }
-    })
+    }
+    cov
 }
 
 /// Read-only check of the current menu bar appearance. `defaults read` is a
@@ -519,7 +584,7 @@ pub fn used_fallback_font() -> bool {
 /// cheaper template-icon path in `lib.rs` instead of calling this).
 pub fn render(segments: &[TraySegment]) -> (Vec<u8>, u32, u32) {
     let dark = is_dark_mode();
-    let g = glyph();
+    let coverage = glyph_coverage(GLYPH_PX);
     let font = text::load_font(text_font_size_pt());
 
     let widths: Vec<u32> = segments.iter().map(|s| text::measure(&font, &s.text)).collect();
@@ -533,16 +598,11 @@ pub fn render(segments: &[TraySegment]) -> (Vec<u8>, u32, u32) {
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
 
     // The glyph itself always stays neutral — only the digits carry
-    // severity/staleness color. Nearest-neighbor sampled from the source
-    // asset's native resolution; only ever visible while colored digits are
-    // shown (i.e. not the common/quiet case), so a little softness here is
-    // an acceptable trade for not carrying a second higher-res glyph asset.
+    // severity/staleness color.
     let ink = TrayColor::Neutral.rgba(dark);
     for y in 0..GLYPH_PX {
         for x in 0..GLYPH_PX {
-            let sx = x * g.width / GLYPH_PX;
-            let sy = y * g.height / GLYPH_PX;
-            let a = g.alpha[(sy * g.width + sx) as usize];
+            let a = coverage[(y * GLYPH_PX + x) as usize];
             if a == 0 {
                 continue;
             }
@@ -560,12 +620,19 @@ pub fn render(segments: &[TraySegment]) -> (Vec<u8>, u32, u32) {
     (buf, total_w, total_h)
 }
 
-/// The bare glyph alone (no digits), for reverting to the quiet state. Kept
-/// as raw RGBA + template flag rather than the original PNG bytes so both
-/// paths share the exact same decoded source.
+/// The bare glyph alone (no digits), for reverting to the quiet state — the
+/// most common state per the design philosophy ("Спокойный случай молчит"),
+/// so this path matters at least as much as `render()`'s embedded glyph.
+/// Full `GLYPH_PX` resolution (previously this hand off the original
+/// 22×22-source PNG straight to macOS's own `NSImage` scaling — a second,
+/// separate, equally-blurry path from `render()`'s own former upscaling;
+/// see `glyph_coverage`'s doc comment). White RGB + alpha, matching a
+/// template image's convention (macOS tints template images itself from
+/// alpha alone, per-appearance).
 pub fn plain_glyph_rgba() -> (Vec<u8>, u32, u32) {
-    let g = glyph();
-    (g.alpha.iter().flat_map(|&a| [0xffu8, 0xff, 0xff, a]).collect(), g.width, g.height)
+    let coverage = glyph_coverage(GLYPH_PX);
+    let rgba = coverage.iter().flat_map(|&a| [0xffu8, 0xff, 0xff, a]).collect();
+    (rgba, GLYPH_PX, GLYPH_PX)
 }
 
 #[cfg(test)]
@@ -573,10 +640,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundled_glyph_decodes_and_is_square_with_some_ink() {
-        let g = glyph();
-        assert_eq!(g.width, g.height, "tray glyph asset should be square");
-        assert!(g.alpha.iter().any(|&a| a > 0), "glyph must have some opaque pixels");
+    fn glyph_has_some_ink() {
+        let cov = glyph_coverage(GLYPH_PX);
+        assert!(cov.iter().any(|&a| a > 0), "glyph must have some opaque pixels");
+    }
+
+    /// Round-3 regression guard for firstmate's exact finding
+    /// (`data/quotos-tray-t1/firstmate-findings-1.md`): the glyph was
+    /// measured at 11.5x10.5pt ink against neighbouring menu bar icons'
+    /// 13.5-20pt, "still the smallest thing on the bar." Measures the ink's
+    /// own bounding box (any non-zero-coverage pixel) directly out of the
+    /// composited buffer and asserts it lands near the 14-16pt band on an
+    /// 18pt canvas — i.e. in physical (2x) pixels, roughly 28-32px on a
+    /// GLYPH_PX=36 canvas — rather than trusting the target-diameter
+    /// constant alone, since antialiasing and the round caps could in
+    /// principle push the real ink bounds off from what was intended.
+    #[test]
+    fn glyph_ink_bounding_box_is_in_the_target_band() {
+        let cov = glyph_coverage(GLYPH_PX);
+        let mut min_x = GLYPH_PX;
+        let mut max_x = 0i64;
+        let mut min_y = GLYPH_PX;
+        let mut max_y = 0i64;
+        for y in 0..GLYPH_PX {
+            for x in 0..GLYPH_PX {
+                if cov[(y * GLYPH_PX + x) as usize] > 32 {
+                    min_x = min_x.min(x);
+                    max_x = max_x.max(x as i64);
+                    min_y = min_y.min(y);
+                    max_y = max_y.max(y as i64);
+                }
+            }
+        }
+        let width = max_x - min_x as i64 + 1;
+        let height = max_y - min_y as i64 + 1;
+        // 14-16 CSS-pt at 2x = 28-32 physical px; a couple of px of slack
+        // either side for the antialiasing threshold this test uses (>32
+        // out of 255, not full opacity).
+        assert!((26..=34).contains(&width), "ink width {width}px should be roughly 28-32px (14-16pt @2x)");
+        assert!((26..=34).contains(&height), "ink height {height}px should be roughly 28-32px (14-16pt @2x)");
     }
 
     #[test]

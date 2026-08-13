@@ -235,27 +235,74 @@ rewritten each round, not appended to.
   (Cargo.toml, `lib.rs`'s plugin registration, the `on_tray_event` cache
   priming) rather than kept around for some other position mode — nothing
   else in the codebase used it.
-- **Screenshotting this app's own windows on this machine only shows what's
-  on the *currently active macOS Space*, which is not necessarily where a
-  synthetic tray click's resulting window actually is.** This machine runs
-  concurrent, unrelated foreground activity (other terminal sessions, the
-  captain's own work) whose Space may differ from wherever a freshly-shown
-  popover window lands. `screencapture` (any `-D`/`-l` variant) only ever
-  captures the active Space; a window that gained focus and reports
-  `is_visible=true` internally can still be invisible to every
-  `screencapture` invocation for this reason alone — confirmed as an
-  environment artifact, not an app bug, by reproducing the *identical*
-  symptom against the known-good `Quotos 2` build as a control. Ground truth
-  that *is* Space-independent: `CGWindowListCopyWindowInfo` (via a small
-  `xcrun swift -e` snippet — JXA's ObjC bridge could not get a usable
-  `NSArray` out of the raw `CFArrayRef` this returns, don't waste time on
-  that route) reports each window's real bounds and `kCGWindowIsOnscreen`
-  regardless of the active Space, and Tauri's own `Moved`/`Focused` window
-  events (logged via a temporary `on_window_event` eprintln) confirm
-  positioning and focus independent of any screenshot. `screencapture -l
-  <windowID>` does not help either — it renders blank/white for a window on
-  an inactive Space (no real compositing happened to sample from), even
-  though the window and its content genuinely exist.
+- **This machine is live and shared — not a clean test box — and
+  screenshotting this app's own windows only ever shows whatever's on the
+  *currently active macOS Space*, which is frequently not where a tray
+  click's resulting window actually is.** Confirmed more than once, directly:
+  screenshots taken mid-investigation caught an unrelated Claude Code
+  session's terminal on the primary display and the captain's own live
+  Chrome session (mid Google-Images search) on the second — genuine
+  concurrent activity, not a fixture, actively changing which Space is
+  "active" independent of anything this work does. `screencapture` (any
+  `-D`/`-l` variant) only ever captures the active Space; a window that
+  gained focus and reports `is_visible=true` internally can still be
+  invisible to every `screencapture` invocation for this reason alone —
+  confirmed as an environment property, not an app bug, by reproducing the
+  *identical* symptom against the known-good `Quotos 2` build as a control.
+  A **real** click from the captain does not have this problem (his cursor
+  and "current Space" are the same thing at the moment he clicks); it is
+  specifically synthetic, cursor-restoring clicks fired from here, on a box
+  with other concurrent Space-changing activity, that can't reliably land on
+  a Space anyone is currently looking at. Ground truth that *is*
+  Space-independent: `CGWindowListCopyWindowInfo` (via a small `xcrun swift
+  -e` snippet — JXA's ObjC bridge could not get a usable `NSArray` out of the
+  raw `CFArrayRef` this returns, don't waste time on that route) reports each
+  window's real bounds and `kCGWindowIsOnscreen` regardless of the active
+  Space, and Tauri's own `Moved`/`Focused` window events (logged via a
+  temporary `on_window_event` eprintln, removed before commit each time —
+  don't leave these in) confirm positioning and focus independent of any
+  screenshot. `screencapture -l <windowID>` does not help either — it
+  renders blank/white for a window on an inactive Space (no real compositing
+  happened to sample from), even though the window and its content genuinely
+  exist.
+- **`NSWindowCollectionBehavior` is the lever for "popover shows on the
+  user's current Space," but on this machine neither available option is a
+  clean win, and the tension is unresolved as of the last round.** The panel
+  window is a singleton (created once at launch, only ever hidden/shown
+  after, never recreated), and a macOS window's Space membership is normally
+  sticky to whichever Space was frontmost when it was first realized —
+  `-orderFront:`/`-makeKeyAndOrderFront:` alone don't move it to the user's
+  current Space, which is the root cause behind `kCGWindowIsOnscreen` reading
+  `false` after an apparently-successful `show()`/`set_focus()` (both
+  return `Ok`, a `Focused(true)` event does arrive, no `Focused(false)`
+  auto-hide ever follows — all independently confirmed by logging; it is
+  not a focus-loss bug). Two behaviors were tried, set once via the raw
+  `NSWindow` (`window.ns_window()` cast to `&NSWindow` from the objc2-app-kit
+  binding — needs the `NSWindow` feature added to this crate's Cargo.toml,
+  see `set_popover_collection_behavior` in `lib.rs`): `.CanJoinAllSpaces`
+  keeps the window's own explicit position perfectly stable (no spurious
+  `Moved` events) but never flips `kCGWindowIsOnscreen` true, i.e. doesn't
+  solve the actual problem. `.MoveToActiveSpace` (paired with `.Transient`,
+  the standard flag combo for this kind of ephemeral popover) **does** flip
+  `kCGWindowIsOnscreen` true — confirmed live, more than once — but the
+  Space transition it triggers is itself asynchronous and was directly
+  observed relocating the window a *second* time, ~100-150ms after this
+  code's own explicit `set_position` call, to an AppKit-internal default
+  position unrelated to the tray icon. `lib.rs`'s
+  `schedule_position_correction` reapplies the exact already-computed
+  position/beak-offset (not recomputed — recomputing via
+  `monitor_from_point` from a window mid-relocation was itself observed
+  returning a third, still-wrong answer) a couple of times shortly after,
+  which reliably restores the *position* — but doing so was also observed,
+  on this same machine, to cost the `kCGWindowIsOnscreen` fix back. Current
+  state: `.MoveToActiveSpace | .Transient`, with the position correction, is
+  what's shipped, since it's the only option that's ever demonstrated the
+  actual visibility fix and the correct-position outcomes independently, even
+  though not reliably simultaneously from here. The next person picking this
+  up should get the captain to confirm with a real click before assuming
+  either outcome — this is likely a testing-environment limitation more than
+  a real defect (see the point above), but that has not been proven, only
+  argued.
 - **Drawing real text (Core Text) into an offscreen `CGBitmapContext` has two
   non-obvious failure modes, both found by rendering `tray_render.rs`'s
   actual `render()` output to PNG and inspecting it directly (screenshotting
@@ -287,6 +334,27 @@ rewritten each round, not appended to.
   color (`CGColorCreateSRGB`) and the context's color space
   (`CGColorSpaceCreateWithName(kCGColorSpaceSRGB)`), since design-token
   colors are plain CSS hex values, i.e. already sRGB by convention.
+- **The tray glyph is drawn procedurally now, not from a raster asset —
+  there is no `icons/tray/tray-icon.png` to update if the mark ever
+  changes.** `tray_render.rs`'s `glyph_coverage` ports the exact geometry of
+  `design/system/assets/menubar-glyph.svg` (a 16×16-viewBox capacity-gauge
+  mark: a faint full-circle track, `r=5.4` stroke `1.4` opacity `0.28`, plus
+  a bold round-capped arc on the same circle, stroke `1.9`, with a gap at
+  the bottom — the gap's two angles were derived by hand from the SVG path's
+  endpoints via `atan2`, see the function's own doc comment for the exact
+  numbers) into a per-pixel signed-distance-style coverage test, computed
+  fresh at whatever resolution is asked for. This replaced a 22×22 bundled
+  PNG that firstmate's on-screen pass measured as both undersized (ink
+  11.5×10.5pt against neighbouring menu bar icons' 13.5-20pt) and visibly
+  soft (nearest-neighbor-upscaled for the "digits pinned" path, and hand off
+  entirely to macOS's own unscaled `NSImage` scaling for the "nothing
+  pinned" path — two different blurry paths for the same mark). If the
+  design system's SVG ever changes, update the constants at the top of
+  `glyph_coverage` to match rather than reaching for a new raster export —
+  that's the mistake this replaced. The target ink size
+  (`TARGET_INK_DIAMETER_CSS_PX`) is independently guarded by a test,
+  `glyph_ink_bounding_box_is_in_the_target_band`, that measures the real
+  composited output rather than trusting the constant alone.
 - I7's `set_detached` IPC command is unchanged, but its trigger moved:
   round 2 removed the detach *button* — dragging the header is now the only
   way to detach (`App.tsx`'s `handleHeaderPointerDown`), matching the
