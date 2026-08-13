@@ -41,7 +41,13 @@ impl RateLimiter {
         let now = Instant::now();
         let entry = windows.entry(key.to_string()).or_default();
         while let Some(&front) = entry.front() {
-            if now.duration_since(front) > self.window {
+            // R2-4: >= , not > . At exactly the window boundary (t=300s for
+            // five 60-second-spaced entries under the new 1/min schedule),
+            // the oldest entry has fully aged out and must be pruned so the
+            // 6th request is admitted — with a strict `>` it stays counted
+            // for one more instant and the read is wrongly refused, which
+            // would make our own limiter fight our own schedule.
+            if now.duration_since(front) >= self.window {
                 entry.pop_front();
             } else {
                 break;
@@ -66,7 +72,8 @@ impl RateLimiter {
         let mut out = HashMap::new();
         for (key, entry) in windows.iter_mut() {
             while let Some(&front) = entry.front() {
-                if now.duration_since(front) > self.window {
+                // R2-4: mirrors the same >= fix in try_acquire, above.
+                if now.duration_since(front) >= self.window {
                     entry.pop_front();
                 } else {
                     break;
@@ -89,5 +96,75 @@ impl RateLimiter {
             );
         }
         out
+    }
+
+    /// Test-only: back-date every reservation for `key` by `age`, so the
+    /// window-boundary behavior can be exercised without a real sleep.
+    #[cfg(test)]
+    fn age_entries_by(&self, key: &str, age: Duration) {
+        let mut windows = self.windows.lock().expect("ratelimit mutex poisoned");
+        if let Some(entry) = windows.get_mut(key) {
+            for instant in entry.iter_mut() {
+                *instant = *instant - age;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R2-4: five requests spaced exactly 60s apart (the new schedule) must
+    /// not deadlock the budget — once the oldest is exactly 300s old, it
+    /// must be prunable so a 6th request is admitted. This is the exact
+    /// off-by-one the brief called out: with a strict `>` prune condition,
+    /// the oldest entry at precisely t=300s is not yet pruned and the read
+    /// is wrongly refused.
+    #[test]
+    fn admits_a_sixth_request_once_the_oldest_is_exactly_one_window_old() {
+        let limiter = RateLimiter::new(5, Duration::from_secs(300));
+        for _ in 0..5 {
+            limiter.try_acquire("acct").expect("first five requests must be admitted");
+        }
+        assert!(limiter.try_acquire("acct").is_err(), "sixth request with a full, fresh window must be refused");
+
+        limiter.age_entries_by("acct", Duration::from_secs(300));
+        assert!(
+            limiter.try_acquire("acct").is_ok(),
+            "once the oldest reservation is exactly one window old it must be pruned and the request admitted"
+        );
+    }
+
+    #[test]
+    fn a_reservation_one_second_short_of_the_window_still_counts() {
+        let limiter = RateLimiter::new(5, Duration::from_secs(300));
+        for _ in 0..5 {
+            limiter.try_acquire("acct").unwrap();
+        }
+        limiter.age_entries_by("acct", Duration::from_secs(299));
+        assert!(limiter.try_acquire("acct").is_err(), "an entry not yet a full window old must still count against the budget");
+    }
+
+    #[test]
+    fn accounts_are_isolated_from_each_other() {
+        let limiter = RateLimiter::new(5, Duration::from_secs(300));
+        for _ in 0..5 {
+            limiter.try_acquire("personal").unwrap();
+        }
+        assert!(limiter.try_acquire("personal").is_err());
+        assert!(limiter.try_acquire("team").is_ok(), "a different account's budget must be untouched");
+    }
+
+    #[test]
+    fn snapshot_reports_the_same_boundary_as_try_acquire() {
+        let limiter = RateLimiter::new(5, Duration::from_secs(300));
+        for _ in 0..5 {
+            limiter.try_acquire("acct").unwrap();
+        }
+        limiter.age_entries_by("acct", Duration::from_secs(300));
+        let snap = limiter.snapshot();
+        assert_eq!(snap["acct"].used, 0, "snapshot must prune the same way try_acquire does");
+        assert!(snap["acct"].retry_after_secs.is_none());
     }
 }

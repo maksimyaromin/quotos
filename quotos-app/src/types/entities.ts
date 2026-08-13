@@ -24,6 +24,14 @@ export interface LimitWindowEntity {
   isActive: boolean;
 }
 
+/** R2-2: computed by the provider adapter from *every* window it saw, not
+ * just the headline one — "weekly is 20% but the session is nearly out"
+ * must still read as amber. `critical` when any window is >=90% used,
+ * `warn` when any window is >=75%, otherwise `healthy`. Thresholds mirror
+ * the design system's `--cap-critical` / `--cap-warn` tokens; do not
+ * introduce separate numbers here. */
+export type Severity = "healthy" | "warn" | "critical";
+
 export interface Subscription {
   id: string;
   provider: string;
@@ -34,7 +42,14 @@ export interface Subscription {
   labelOverride: string | null;
   account: string | null;
   state: SubscriptionState;
-  /** Percent of the headline (most-consumed active) window *consumed*, 0-100. */
+  /** R2-2: provider-computed from every window, drives the headline
+   * number's, its bar's, and the tray digits' color — never the headline
+   * percentage's own magnitude. Untouched by a failed/rate-limited read;
+   * only a successful read updates it, same as `used`/`windows` below. */
+  severity: Severity;
+  /** Percent of the headline window *consumed*, 0-100. R2-2: the headline
+   * is the account-wide weekly window, not simply the most-consumed one —
+   * selection is provider-owned, see `providers/claude/normalizeUsage.ts`. */
   used: number | null;
   resetsAt: string | null;
   lastReadAt: string | null;
@@ -91,4 +106,25 @@ export interface NormalizedRead {
   /** Percent of the headline window *consumed*, 0-100 (I2). */
   used: number | null;
   resetsAt: string | null;
+  severity: Severity;
+}
+
+/** R2-4: pushed by the Rust-side scheduler (`src-tauri/src/scheduler.rs`)
+ * for each automatic, once-a-minute read — the frontend applies these the
+ * same way it applies a manual refresh's direct result, just arriving as an
+ * event instead of an `invoke` return value. */
+export type ScheduledRefreshEvent =
+  | { kind: "ok"; snapshot: RawSnapshot }
+  | { kind: "err"; account_id: string; error: FetchError };
+
+/** One colored piece of the tray title (R2-2). `tray-icon` v0.24.2's macOS
+ * `set_title` takes a plain string with no color channel — verified by
+ * reading `platform_impl/macos/mod.rs`, the same way the `set_title(None)`
+ * no-op was found (see CLAUDE.md). The real implementation composites a
+ * bitmap on the Rust side (`src-tauri/src/tray_render.rs`) so each pinned
+ * subscription's digits can carry their own color; the mock client has no
+ * real tray to update, so it's a no-op there instead of a stub export. */
+export interface TraySegment {
+  text: string;
+  color: "neutral" | "amber" | "red";
 }

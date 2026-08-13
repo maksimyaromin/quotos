@@ -14,13 +14,21 @@ export function formatRelativePast(iso: string | null, now: Date = new Date()): 
   return `${days}d ago`;
 }
 
-const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-const WEEKDAY_TIME_FMT = new Intl.DateTimeFormat(undefined, {
+// R2-7: "мне не нравится что я вижу Пн по русски" — every formatter here
+// used to build with locale `undefined`, i.e. whatever the system locale
+// is, which is Russian on the captain's Mac. The handoff's strings are
+// fixed to English, 12-hour clock ("Resets today at 4:05 PM"), so the
+// locale is pinned to `en-US` explicitly — the app's own language must not
+// depend on the machine it runs on.
+const LOCALE = "en-US";
+
+const TIME_FMT = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
+const WEEKDAY_TIME_FMT = new Intl.DateTimeFormat(LOCALE, {
   weekday: "short",
   hour: "numeric",
   minute: "2-digit",
 });
-const DATE_TIME_FMT = new Intl.DateTimeFormat(undefined, {
+const DATE_TIME_FMT = new Intl.DateTimeFormat(LOCALE, {
   month: "short",
   day: "numeric",
   hour: "numeric",

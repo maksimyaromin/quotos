@@ -1,5 +1,41 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatExactReset, formatRelativePast } from "./time";
+
+// R2-7: "мне не нравится что я вижу Пн по русски" — the root cause was
+// every Intl.DateTimeFormat in this file being built with locale
+// `undefined` (the system locale, Russian on the captain's Mac). A test
+// that merely eyeballs formatted output can't catch a regression here on a
+// machine whose own locale already happens to be English — it has to
+// inspect what locale argument the formatters were actually constructed
+// with, which is why this spies on the Intl.DateTimeFormat constructor
+// itself rather than just asserting on strings.
+describe("R2-7: locale is pinned to en-US, never the system locale", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("every Intl.DateTimeFormat this module builds is constructed with an explicit locale, never undefined", async () => {
+    const seenLocales: unknown[] = [];
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (
+      this: unknown,
+      locale?: unknown,
+      options?: Intl.DateTimeFormatOptions,
+    ) {
+      seenLocales.push(locale);
+      return new RealDateTimeFormat(locale as string | string[] | undefined, options);
+    } as unknown as typeof Intl.DateTimeFormat);
+
+    vi.resetModules();
+    await import("./time"); // re-import so the module-level formatters are (re)constructed under the spy
+
+    expect(seenLocales.length).toBeGreaterThan(0);
+    for (const locale of seenLocales) {
+      expect(locale).toBe("en-US");
+    }
+  });
+});
 
 describe("formatExactReset", () => {
   // Wednesday 2026-08-12, 12:00 local.

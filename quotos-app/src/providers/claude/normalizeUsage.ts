@@ -1,4 +1,4 @@
-import type { LimitWindowEntity } from "../../types/entities";
+import type { LimitWindowEntity, Severity } from "../../types/entities";
 
 /** Friendly labels for the `limits[].kind` values seen in the wild (see
  * `data/quotos-source-s1/report.md`). Anything not listed here still
@@ -78,8 +78,9 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
   };
 }
 
-/** Pick the headline: the most-consumed *active* window, per the brief. */
-function pickHeadline(windows: LimitWindowEntity[]): { used: number | null; resetsAt: string | null } {
+/** Fallback headline when there's no account-wide weekly window in the
+ * response at all: the most-consumed *active* window, as before R2-2. */
+function pickMostConsumed(windows: LimitWindowEntity[]): { used: number | null; resetsAt: string | null } {
   const candidates = windows.filter((w) => w.isActive && w.used !== null);
   const pool = candidates.length > 0 ? candidates : windows.filter((w) => w.used !== null);
   if (pool.length === 0) return { used: null, resetsAt: null };
@@ -87,13 +88,62 @@ function pickHeadline(windows: LimitWindowEntity[]): { used: number | null; rese
   return { used: binding.used, resetsAt: binding.resetsAt };
 }
 
+/** R2-2: the headline is the account-wide weekly window — `weekly_all` from
+ * `limits[]`, or `seven_day` from the fixed top-level shape — never simply
+ * the most-consumed window (that let a per-model weekly like Fable's 17%
+ * outrank the account weekly's 15% and become the headline, which the
+ * captain called out directly). Reads the raw response rather than the
+ * already-built `windows` list because `windowFromLimit`/`windowFromFixed`
+ * don't retain the raw `kind`/key needed to identify "the account-wide one"
+ * specifically. Returns `null` when no such window exists at all, so the
+ * caller can fall back to the old most-consumed behaviour. */
+function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; resetsAt: string | null } | null {
+  const rawLimits = usage.limits;
+  // Mirrors the windows-building rule below: an empty limits[] is treated
+  // the same as an absent one, falling through to the fixed top-level shape.
+  if (Array.isArray(rawLimits) && rawLimits.length > 0) {
+    for (const l of rawLimits) {
+      if (l === null || typeof l !== "object") continue;
+      const limit = l as RawLimit;
+      if (limit.kind !== "weekly_all") continue;
+      const used = clampPercent(limit.percent);
+      if (used === null) continue;
+      return { used, resetsAt: asString(limit.resets_at) };
+    }
+    return null;
+  }
+  const fixed = usage.seven_day;
+  if (fixed && typeof fixed === "object") {
+    const record = fixed as { utilization?: unknown; resets_at?: unknown };
+    const used = clampPercent(record.utilization);
+    if (used !== null) return { used, resetsAt: asString(record.resets_at) };
+  }
+  return null;
+}
+
+/** R2-2: `critical` when *any* window (active or not — a session at 85%
+ * still matters even while the weekly headline reads 20%) is >=90% used,
+ * `warn` when any is >=75%, otherwise `healthy`. Thresholds mirror the
+ * design system's `--cap-critical`/`--cap-warn` tokens exactly; this is the
+ * only place they're encoded for Claude. */
+function computeSeverity(windows: LimitWindowEntity[]): Severity {
+  let severity: Severity = "healthy";
+  for (const w of windows) {
+    if (w.used === null) continue;
+    if (w.used >= 90) return "critical";
+    if (w.used >= 75) severity = "warn";
+  }
+  return severity;
+}
+
 export interface NormalizedUsage {
   windows: LimitWindowEntity[];
   used: number | null;
   resetsAt: string | null;
+  severity: Severity;
 }
 
-const EMPTY: NormalizedUsage = { windows: [], used: null, resetsAt: null };
+const EMPTY: NormalizedUsage = { windows: [], used: null, resetsAt: null, severity: "healthy" };
 
 /** Turn a raw `/api/oauth/usage` response into the generic window list plus
  * headline — everywhere in "percent consumed" terms (I2), never "remaining".
@@ -135,6 +185,6 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
     }
   }
 
-  const headline = pickHeadline(windows);
-  return { windows, used: headline.used, resetsAt: headline.resetsAt };
+  const headline = pickAccountWideWeekly(usage) ?? pickMostConsumed(windows);
+  return { windows, used: headline.used, resetsAt: headline.resetsAt, severity: computeSeverity(windows) };
 }

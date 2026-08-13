@@ -100,12 +100,12 @@ describe("normalizeUsage", () => {
   });
 
   it("returns an empty, non-throwing result for a completely empty response", () => {
-    expect(normalizeUsage({})).toEqual({ windows: [], used: null, resetsAt: null });
+    expect(normalizeUsage({})).toEqual({ windows: [], used: null, resetsAt: null, severity: "healthy" });
   });
 
   it("returns an empty, non-throwing result for null/undefined", () => {
-    expect(normalizeUsage(null)).toEqual({ windows: [], used: null, resetsAt: null });
-    expect(normalizeUsage(undefined)).toEqual({ windows: [], used: null, resetsAt: null });
+    expect(normalizeUsage(null)).toEqual({ windows: [], used: null, resetsAt: null, severity: "healthy" });
+    expect(normalizeUsage(undefined)).toEqual({ windows: [], used: null, resetsAt: null, severity: "healthy" });
   });
 
   it("handles a subscription with no windows at all (all fixed fields null, no limits)", () => {
@@ -121,30 +121,104 @@ describe("normalizeUsage", () => {
     expect(result.used).toBeNull();
   });
 
-  // I2: everywhere is "consumed", not "remaining" — the raw provider
-  // percent (already a percent-used figure) must pass through unmodified,
-  // never inverted into a remaining figure.
-  it("computes the headline as the most-consumed currently-active window, in used terms", () => {
-    const result = normalizeUsage({
-      limits: [
-        { kind: "session", percent: 2, resets_at: "2026-08-11T23:20:00Z", scope: null, is_active: true },
-        { kind: "weekly_all", percent: 60, resets_at: "2026-08-17T10:00:00Z", scope: null, is_active: true },
-        { kind: "weekly_scoped", percent: 95, resets_at: null, scope: null, is_active: false },
-      ],
+  // R2-2: the headline is always the account-wide weekly window
+  // (`weekly_all`), regardless of what else is active or more consumed —
+  // this is the captain's exact regression: a per-model weekly (Fable, 17%)
+  // must never outrank the account weekly (15%) as the headline.
+  describe("R2-2: headline is the account-wide weekly", () => {
+    it("picks weekly_all even when a per-model weekly is more consumed and 'active'", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 2, resets_at: null, scope: null, is_active: true },
+          { kind: "weekly_all", percent: 15, resets_at: "2026-08-17T10:00:00Z", scope: null, is_active: true },
+          {
+            kind: "weekly_scoped",
+            percent: 17,
+            resets_at: "2026-08-17T09:59:59Z",
+            scope: { model: { id: null, display_name: "Fable" }, surface: null },
+            is_active: false,
+          },
+        ],
+      });
+      expect(result.used).toBe(15);
+      expect(result.resetsAt).toBe("2026-08-17T10:00:00Z");
     });
-    // weekly_scoped is inactive, so it's excluded even though it's the most consumed.
-    expect(result.used).toBe(60);
-    expect(result.resetsAt).toBe("2026-08-17T10:00:00Z");
+
+    it("picks weekly_all's own resets_at even when it's not marked active", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 70, resets_at: null, scope: null, is_active: false },
+          { kind: "weekly_all", percent: 20, resets_at: "2026-08-17T10:00:00Z", scope: null, is_active: false },
+        ],
+      });
+      expect(result.used).toBe(20);
+    });
+
+    it("falls back to the fixed-shape seven_day when limits[] has no weekly_all", () => {
+      const result = normalizeUsage({
+        limits: [],
+        five_hour: { utilization: 40, resets_at: null },
+        seven_day: { utilization: 8, resets_at: "2026-08-17T10:00:00Z" },
+      });
+      // limits: [] falls through to the fixed shape (existing behaviour);
+      // seven_day is the fixed shape's account-wide weekly.
+      expect(result.used).toBe(8);
+    });
+
+    it("falls back to most-consumed-active when no account-wide weekly window exists at all", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 70, resets_at: null, scope: null, is_active: true },
+          { kind: "weekly_scoped", percent: 95, resets_at: null, scope: null, is_active: false },
+        ],
+      });
+      expect(result.used).toBe(70);
+    });
   });
 
-  it("falls back to any window with a percentage when none are marked active", () => {
-    const result = normalizeUsage({
-      limits: [
-        { kind: "session", percent: 70, resets_at: null, scope: null, is_active: false },
-        { kind: "weekly_all", percent: 20, resets_at: null, scope: null, is_active: false },
-      ],
+  describe("R2-2: severity from every window, not just the headline", () => {
+    it("is healthy when every window is below 75%", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 40, is_active: true },
+          { kind: "weekly_all", percent: 20, is_active: true },
+        ],
+      });
+      expect(result.severity).toBe("healthy");
     });
-    expect(result.used).toBe(70);
+
+    it("is warn when any window is >=75%, even if it's not the headline", () => {
+      // The captain's exact example: weekly headline at 20%, but the
+      // session is nearly out — the tray/headline must still read amber.
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 85, is_active: true },
+          { kind: "weekly_all", percent: 20, is_active: true },
+        ],
+      });
+      expect(result.used).toBe(20);
+      expect(result.severity).toBe("warn");
+    });
+
+    it("is critical when any window is >=90%, outranking warn", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 92, is_active: true },
+          { kind: "weekly_all", percent: 80, is_active: true },
+        ],
+      });
+      expect(result.severity).toBe("critical");
+    });
+
+    it("counts an inactive window toward severity too", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 10, is_active: true },
+          { kind: "weekly_scoped", percent: 91, is_active: false },
+        ],
+      });
+      expect(result.severity).toBe("critical");
+    });
   });
 
   it("tolerates malformed entries inside limits[] without throwing", () => {

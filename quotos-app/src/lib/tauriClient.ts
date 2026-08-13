@@ -1,5 +1,6 @@
 import * as live from "./liveClient";
 import * as mock from "./mockClient";
+import type { ScheduledRefreshEvent, TraySegment } from "../types/entities";
 
 /** Real Tauri build vs. `npm run dev` opened directly in a browser for
  * visual QA. See mockClient.ts for why this seam exists. */
@@ -11,6 +12,24 @@ export const listAccounts = client.listAccounts;
 export const fetchSnapshot = client.fetchSnapshot;
 export const hidePanel = client.hidePanel;
 export const onPanelVisibility = client.onPanelVisibility;
-export const setTrayTitle = client.setTrayTitle;
 export const setDetached = client.setDetached;
 export const debugRateLimitSnapshot = client.debugRateLimitSnapshot;
+
+/** R2-2: colored tray digits only exist on the native side (see
+ * liveClient.ts's doc comment) — there's no real tray to update in the
+ * browser mock harness, so this branches directly here rather than adding
+ * an unused stub export to mockClient.ts (owned by the surface half of this
+ * round; see CLAUDE.md's file-ownership split). */
+export const setTrayStatus: (segments: TraySegment[]) => Promise<void> = isTauri
+  ? live.setTrayStatus
+  : async () => {};
+
+/** R2-4: the mock harness has no Rust scheduler to push events from — the
+ * browser path never calls back, matching setTrayStatus's pattern above. */
+export const onQuotaRefresh: (callback: (event: ScheduledRefreshEvent) => void) => Promise<() => void> = isTauri
+  ? live.onQuotaRefresh
+  : async () => () => {};
+
+/** R2-4: no-op in the browser harness — useSubscriptions.ts only calls this
+ * on the native path, where a real scheduler exists to kick. */
+export const kickScheduler: () => Promise<void> = isTauri ? live.kickScheduler : async () => {};

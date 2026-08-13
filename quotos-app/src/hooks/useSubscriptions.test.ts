@@ -2,11 +2,15 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchSnapshot = vi.fn();
-const setTrayTitle = vi.fn();
+const setTrayStatus = vi.fn();
+const onQuotaRefresh = vi.fn();
+const kickScheduler = vi.fn();
 
 vi.mock("../lib/tauriClient", () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
-  setTrayTitle: (...args: unknown[]) => setTrayTitle(...args),
+  setTrayStatus: (...args: unknown[]) => setTrayStatus(...args),
+  onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
+  kickScheduler: (...args: unknown[]) => kickScheduler(...args),
 }));
 
 const TRACKED = [
@@ -14,7 +18,7 @@ const TRACKED = [
 ];
 
 vi.mock("../lib/persistence", () => ({
-  loadTracked: () => TRACKED,
+  loadTracked: () => Promise.resolve(TRACKED),
   saveTracked: vi.fn(),
 }));
 
@@ -28,18 +32,16 @@ async function flush() {
   });
 }
 
-// B5: opening/closing the panel must never spend the shared rate budget —
-// only an explicit manual refresh and the scheduled background refresh may.
-// The panel's own show/hide no longer triggers any fetch at all (the old
-// bug was a refresh tied to a `panel-visibility` event); this test proves
-// that repeatedly letting time pass short of the background interval never
-// calls fetchSnapshot again, while the scheduled interval and a manual
-// refreshAll() both do.
-describe("useSubscriptions refresh policy", () => {
+// R2-4: in jsdom (no "__TAURI_INTERNALS__" global), the hook takes its
+// browser/mock-harness branch — a one-time initial read via fetchSnapshot,
+// exactly like the pre-R2-4 behaviour. The native branch (subscribing to
+// the Rust scheduler's quota-refresh push) is exercised separately below by
+// setting that global before rendering.
+describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayTitle.mockReset();
+    setTrayStatus.mockReset();
     fetchSnapshot.mockResolvedValue({
       account_id: "claude:claude",
       provider: "claude",
@@ -54,31 +56,21 @@ describe("useSubscriptions refresh policy", () => {
     vi.useRealTimers();
   });
 
-  it("does not fetch again merely because time passes short of the schedule (simulating repeated opens)", async () => {
+  // B5, still true after R2-4 moved cadence to the Rust side: there is no
+  // JS timer left at all, so time passing — however many simulated
+  // open/close cycles — can never spend budget on its own.
+  it("does not fetch again merely because time passes (no JS timer exists anymore)", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
 
-    // Five "open/close cycles" worth of elapsed time, each well short of
-    // the 5-minute background interval — none of this may spend budget.
     for (let i = 0; i < 5; i++) {
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_000);
+        await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
       });
     }
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
     expect(result.current.subscriptions[0].state).toBe("working");
-  });
-
-  it("the scheduled background refresh does spend budget once its interval elapses", async () => {
-    renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1000);
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
   });
 
   it("an explicit manual refresh spends budget on demand", async () => {
@@ -91,6 +83,118 @@ describe("useSubscriptions refresh policy", () => {
     });
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
   });
+
+  // R2-4: "the manual refresh control is debounced" — concurrent calls must
+  // collapse into a single in-flight fetch, not double-fire.
+  it("concurrent refreshAll calls collapse into a single in-flight fetch", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await Promise.all([result.current.refreshAll(), result.current.refreshAll(), result.current.refreshAll()]);
+    });
+    // One initial (mount) + one from the three collapsed manual calls.
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it("concurrent refreshAccountById calls for the same id collapse into one fetch", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await Promise.all([
+        result.current.refreshAccountById("claude:claude"),
+        result.current.refreshAccountById("claude:claude"),
+      ]);
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+  });
+});
+
+// R2-4: on the native path, automatic reads arrive as pushed `quota-refresh`
+// events from the Rust scheduler, not as JS-initiated fetches — this proves
+// the hook applies a pushed event exactly like a direct fetch result, and
+// never calls fetchSnapshot itself for it.
+describe("useSubscriptions refresh policy (native path)", () => {
+  let quotaRefreshCallback: ((event: unknown) => void) | undefined;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    kickScheduler.mockReset();
+    onQuotaRefresh.mockReset();
+    quotaRefreshCallback = undefined;
+    onQuotaRefresh.mockImplementation((cb: (event: unknown) => void) => {
+      quotaRefreshCallback = cb;
+      return Promise.resolve(() => {});
+    });
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  });
+
+  it("subscribes to quota-refresh and kicks the scheduler once at mount, without fetching directly", async () => {
+    renderHook(() => useSubscriptions());
+    await flush();
+    expect(onQuotaRefresh).toHaveBeenCalledTimes(1);
+    expect(kickScheduler).toHaveBeenCalledTimes(1);
+    expect(fetchSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("applies a pushed 'ok' event exactly like a direct refresh result", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(quotaRefreshCallback).toBeTypeOf("function");
+
+    await act(async () => {
+      quotaRefreshCallback?.({
+        kind: "ok",
+        snapshot: {
+          account_id: "claude:claude",
+          provider: "claude",
+          config_dir: "~/.claude",
+          fetched_at: new Date().toISOString(),
+          usage: { limits: [{ kind: "weekly_all", percent: 42, is_active: true, resets_at: null, scope: null }] },
+          profile: null,
+        },
+      });
+    });
+
+    expect(result.current.subscriptions[0].state).toBe("working");
+    expect(result.current.subscriptions[0].used).toBe(42);
+    expect(fetchSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("a pushed rate_limited event never overwrites prior health state (B5/B6, native path)", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    await act(async () => {
+      quotaRefreshCallback?.({
+        kind: "err",
+        account_id: "claude:claude",
+        error: { kind: "unauthorized", message: "still unauthorized after refreshing the credential" },
+      });
+    });
+    expect(result.current.subscriptions[0].state).toBe("broken");
+
+    await act(async () => {
+      quotaRefreshCallback?.({
+        kind: "err",
+        account_id: "claude:claude",
+        error: { kind: "rate_limited", retry_after_secs: 214 },
+      });
+    });
+    expect(result.current.subscriptions[0].state).toBe("broken");
+    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i);
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
+  });
 });
 
 // B6: a diagnosable failure (e.g. expired login → Broken) must never decay
@@ -99,10 +203,10 @@ describe("useSubscriptions refresh policy", () => {
 // found in manual testing: the optimistic "connecting" patch issued at the
 // start of every refresh attempt was clobbering the prior Broken state
 // before the rate-limited response even came back.
-describe("useSubscriptions health vs. rate-limit precedence (B6)", () => {
+describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh path)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    setTrayTitle.mockReset();
+    setTrayStatus.mockReset();
     fetchSnapshot.mockReset();
   });
 
