@@ -9,20 +9,19 @@ import { UndoRow } from "./components/UndoRow";
 import { useSubscriptions } from "./hooks/useSubscriptions";
 import { formatExactReset, formatRelativePast, formatClockTime } from "./lib/time";
 import { RefreshIcon, PlusIcon, SnapBackIcon, BackIcon, DebugIcon } from "./components/icons";
-import { hidePanel, setDetached as setDetachedIpc, debugRateLimitSnapshot } from "./lib/tauriClient";
+import { hidePanel, setDetached as setDetachedIpc, debugRateLimitSnapshot, onPanelBeakOffset } from "./lib/tauriClient";
 import "./app.css";
 
 const NOW_TICK_MS = 30_000;
 const STOP_TRACKING_UNDO_MS = 5_000;
 
-// Beak center offset (px) from the panel's own left edge. The handoff pins
-// the beak under the tray glyph with the panel opening rightward, but a
-// pixel-perfect fix needs the native tray anchor (src-tauri/src/lib.rs —
-// currently Position::TrayBottomCenter, out of this task's file ownership)
-// to switch off center-anchoring in lockstep; see measurements.md. This is
-// the best static approximation until that lands, and is trivially
-// retunable here in one place.
-const BEAK_LEFT = 24;
+// Beak center offset (px) from the panel's own left edge. B3/B5: the native
+// side now computes and pushes the real value on every dock/re-dock (see
+// `compute_docked_layout` in src-tauri/src/lib.rs — it depends on the tray
+// icon's actual position and how much the panel got clamped off it, so it
+// can't be a fixed constant there). This stays only as the fallback for the
+// browser mock harness, which has no real tray glyph to measure.
+const BEAK_LEFT_FALLBACK = 24;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -53,6 +52,21 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [pendingRemovals, setPendingRemovals] = useState<Record<string, { label: string }>>({});
   const removalTimers = useRef<Record<string, number>>({});
+  const [beakLeft, setBeakLeft] = useState(BEAK_LEFT_FALLBACK);
+
+  // B3/B5: keep the beak centered under the real tray glyph position.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void onPanelBeakOffset(setBeakLeft).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -244,7 +258,7 @@ export default function App() {
     <Panel
       title={screen === "manage" ? "Subscriptions" : "Quotos"}
       docked={!detached}
-      beakLeft={BEAK_LEFT}
+      beakLeft={beakLeft}
       dragging={dragging}
       onHeaderPointerDown={handleHeaderPointerDown}
       position={position}

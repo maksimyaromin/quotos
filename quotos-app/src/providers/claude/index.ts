@@ -1,6 +1,6 @@
 import { normalizeUsage } from "./normalizeUsage";
 import { normalizeProfile } from "./normalizeProfile";
-import type { FetchError, NormalizedRead, SubscriptionState } from "../../types/entities";
+import type { FetchError, NormalizedRead } from "../../types/entities";
 import type { ReadOutcome, OutcomeResult } from "../registry";
 
 export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel: string): NormalizedRead {
@@ -42,22 +42,28 @@ export function mapOutcome(outcome: ReadOutcome, hadGoodRead: boolean): OutcomeR
 }
 
 function mapFetchError(err: FetchError, hadGoodRead: boolean): OutcomeResult {
-  const behindOr = (fallback: SubscriptionState): SubscriptionState => (hadGoodRead ? "behind" : fallback);
+  // F16 (handoff's exact wording): once a prior good read exists, every
+  // error kind reads as "behind" with this one fixed sentence — never the
+  // specific (often quite technical) underlying error text, which would
+  // contradict "these numbers are from the last successful read" by
+  // describing a brand-new failure instead.
+  if (hadGoodRead) {
+    return { state: "behind", reason: "The provider didn't answer. These numbers are from the last successful read." };
+  }
+
   switch (err.kind) {
     case "not_connected":
-      return { state: behindOr("idle"), reason: err.message };
+      return { state: "idle", reason: err.message };
     case "unauthorized":
-      return {
-        state: behindOr("broken"),
-        reason: "Sign-in expired and could not be refreshed automatically.",
-      };
+      // F17 (handoff's exact wording).
+      return { state: "broken", reason: "The sign-in expired. Log in again in Claude Code and Quotos will pick it up." };
     case "network":
-      return { state: behindOr("broken"), reason: err.message };
+      return { state: "broken", reason: err.message };
     case "rate_limited":
       // Unreachable in practice — see the doc comment above. Handled here
       // only so this switch stays exhaustive over `FetchError["kind"]`.
-      return { state: behindOr("broken"), reason: "Unexpected rate-limit outcome reached the provider mapper." };
+      return { state: "broken", reason: "Unexpected rate-limit outcome reached the provider mapper." };
     default:
-      return { state: behindOr("broken"), reason: err.message };
+      return { state: "broken", reason: err.message };
   }
 }

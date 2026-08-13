@@ -22,6 +22,15 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
   return listen<boolean>("panel-visibility", (event) => callback(event.payload));
 }
 
+/** B3/B5: the beak's horizontal offset (logical/CSS px from the panel's own
+ * left edge), recomputed natively every time the panel docks or re-docks —
+ * see `show_panel`/`compute_docked_layout` in `src-tauri/src/lib.rs` for why
+ * this can't be a fixed constant (it depends on the tray icon's real
+ * position and how much the panel's own left edge got clamped). */
+export function onPanelBeakOffset(callback: (offsetPx: number) => void): Promise<() => void> {
+  return listen<number>("panel-beak-offset", (event) => callback(event.payload));
+}
+
 /** R2-4: the Rust-side scheduler's once-a-minute automatic reads arrive
  * here, one event per attempt — see `src-tauri/src/scheduler.rs`. */
 export function onQuotaRefresh(callback: (event: ScheduledRefreshEvent) => void): Promise<() => void> {

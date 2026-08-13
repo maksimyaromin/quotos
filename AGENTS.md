@@ -211,38 +211,82 @@ rewritten each round, not appended to.
   Always pass `Some("")` to clear it (see `set_tray_title` in `lib.rs`).
   Verified by reading `platform_impl/macos/mod.rs` in the crate source
   directly — don't trust the `Option<S>` signature's apparent symmetry.
-- **`tauri-plugin-positioner`'s tray anchor mode must match the popover's
-  beak alignment.** The round-2 handoff moved the beak off-center: it's now
-  pinned to the panel's left edge, under the glyph, with the panel opening
-  rightward (`Panel.jsx`'s `beakLeft` prop, `App.tsx`'s `BEAK_LEFT`
-  constant). `lib.rs`'s `show_panel` uses `Position::TrayBottomLeft`
-  (window's left edge = icon's left edge, per the plugin's own
-  `calculate_position`) plus two handoff-specified adjustments applied
-  afterward: the panel's left edge sits 6px inside the icon's own left edge
-  (re-clamped to the monitor's left edge; the plugin's own
-  `move_window_constrained` already clamps the right edge using the
-  window's real width, and nudging further left can only keep that
-  satisfied), and the top is pinned at a fixed 32px from the screen top
-  (6px under the menu bar) rather than flush against the icon's bottom.
-  **Not empirically pixel-verified this round.** A real tray click was
-  ruled unsafe to drive from here: with the captain's real Quotos also
-  running, both `System Events`-based accessibility queries (`tell process
-  "quotos-app"`, by name *and* by `unix id`) resolved to the identical menu
-  bar item rectangle for both processes, so there was no reliable way to
-  prove a click would land on the dev build and not his. A follow-up
-  attempt to prime `tauri-plugin-positioner`'s cached tray position from
-  `TrayIcon::rect()` (no OS event, fully in-process) and call
-  `show_panel()` directly produced a window position inconsistent with the
-  primed tray coordinates in a way not resolved within this round — logged
-  here rather than left silent. What *is* settled: `TrayBottomLeft` is the
-  semantically correct anchor (the previous `TrayBottomCenter` was
-  confirmed live on the captain's screen to center the window instead —
-  see firstmate's `measurements.md`), and the same `on_tray_event` →
-  `move_window_constrained` mechanism this relies on was already proven
-  correct with *real* click events in the prior round (that's how
-  `TrayBottomCenter`'s centering behavior was confirmed working before).
-  Confirm the exact pixel alignment on the merged build via a real click,
-  not synthetic data.
+- **`tauri-plugin-positioner` is gone — its `TrayBottomLeft` anchor math was
+  the round-2-to-round-3 regression that made the panel never visibly open.**
+  A real click (posted via `fm-quotos-click.sh`, a real CGEvent through the
+  HID tap, not synthetic Tauri-internal state) reliably produced a window
+  position wildly inconsistent with the tray icon's own rect — e.g. tray at
+  physical x=2444 on a 3456px-wide monitor placed the window at x=1368,
+  nowhere near anything `move_window_constrained`'s documented clamp-to-monitor
+  math could produce. This was confirmed independent of Tauri's own position
+  getters (`WebviewWindow::outer_position()` was *also* observed misreporting
+  immediately after a window's first-ever `show()` in this Tauri version —
+  don't trust it for this kind of diagnosis; read ground truth via a tiny
+  `xcrun swift -e` snippet calling `CGWindowListCopyWindowInfo` instead, which
+  reports each window's real on-screen bounds independent of what the app
+  itself believes). Root cause narrowed to the plugin's own
+  `calculate_position`/`get_monitor_for_tray_icon` path, not chased further
+  upstream — instead `show_panel` in `lib.rs` now computes the position
+  itself, directly from the tray icon's own `Rect` (handed fresh on every
+  click via `TrayIconEvent::Click`'s `rect` field, always physical pixels per
+  `tray-icon` v0.24.2's own `Rect` type) plus `window.monitor_from_point` on
+  that same rect, applying the handoff's left/top math itself with no
+  plugin involved. The `tauri-plugin-positioner` dependency is fully removed
+  (Cargo.toml, `lib.rs`'s plugin registration, the `on_tray_event` cache
+  priming) rather than kept around for some other position mode — nothing
+  else in the codebase used it.
+- **Screenshotting this app's own windows on this machine only shows what's
+  on the *currently active macOS Space*, which is not necessarily where a
+  synthetic tray click's resulting window actually is.** This machine runs
+  concurrent, unrelated foreground activity (other terminal sessions, the
+  captain's own work) whose Space may differ from wherever a freshly-shown
+  popover window lands. `screencapture` (any `-D`/`-l` variant) only ever
+  captures the active Space; a window that gained focus and reports
+  `is_visible=true` internally can still be invisible to every
+  `screencapture` invocation for this reason alone — confirmed as an
+  environment artifact, not an app bug, by reproducing the *identical*
+  symptom against the known-good `Quotos 2` build as a control. Ground truth
+  that *is* Space-independent: `CGWindowListCopyWindowInfo` (via a small
+  `xcrun swift -e` snippet — JXA's ObjC bridge could not get a usable
+  `NSArray` out of the raw `CFArrayRef` this returns, don't waste time on
+  that route) reports each window's real bounds and `kCGWindowIsOnscreen`
+  regardless of the active Space, and Tauri's own `Moved`/`Focused` window
+  events (logged via a temporary `on_window_event` eprintln) confirm
+  positioning and focus independent of any screenshot. `screencapture -l
+  <windowID>` does not help either — it renders blank/white for a window on
+  an inactive Space (no real compositing happened to sample from), even
+  though the window and its content genuinely exist.
+- **Drawing real text (Core Text) into an offscreen `CGBitmapContext` has two
+  non-obvious failure modes, both found by rendering `tray_render.rs`'s
+  actual `render()` output to PNG and inspecting it directly (screenshotting
+  the live tray/panel doesn't work here — see above), not by trusting
+  passing unit tests (the original tests only checked "a pixel of
+  approximately the right color exists somewhere," which survived both bugs
+  below undetected).** (1) An 8-bit **alpha-only** (`kCGImageAlphaOnly`)
+  context — chosen to sidestep premultiply/unpremultiply math entirely,
+  since only a coverage mask was thought to be needed — corrupts glyph
+  shapes when used with `CTFontDrawGlyphs`/`CTLineDraw`; specific glyphs come
+  out with wrong or missing strokes (e.g. a "7" losing its entire top bar)
+  while others render fine, which reads exactly like "some other bug" until
+  you render several test strings and compare glyph-by-glyph. Use a normal
+  (premultiplied) RGBA context instead and unpremultiply on read-back. (2)
+  The standard flip for turning a `CGBitmapContext`'s native bottom-left/
+  y-up coordinate system into top-left/y-down (`CGContextTranslateCTM(0,
+  h)` + `CGContextScaleCTM(1,-1)`) works fine for shapes/fills but **mirrors
+  glyphs drawn via CoreText**, because `CTFontDrawGlyphs`/`CTLineDraw`
+  orient glyph outlines relative to the CTM's handedness rather than
+  compensating for it — the textbook fix is to *also* set a matching
+  flipped `CGContextSetTextMatrix`, but it's simpler to just draw in the
+  context's native (unflipped) convention and adjust the baseline-position
+  formula to account for that instead (`tray_render.rs`'s `draw_text_impl`
+  does this — see its comment for the exact math). A third, unrelated bug
+  found the same way: pairing a `CGColorCreateGenericRGB` fill color with a
+  `CGColorSpaceCreateDeviceRGB` bitmap context shifts even fully-opaque
+  pixels well off the requested color (a real ~20-point-per-channel gamma
+  mismatch, not rounding noise) — use sRGB consistently for both the fill
+  color (`CGColorCreateSRGB`) and the context's color space
+  (`CGColorSpaceCreateWithName(kCGColorSpaceSRGB)`), since design-token
+  colors are plain CSS hex values, i.e. already sRGB by convention.
 - I7's `set_detached` IPC command is unchanged, but its trigger moved:
   round 2 removed the detach *button* — dragging the header is now the only
   way to detach (`App.tsx`'s `handleHeaderPointerDown`), matching the

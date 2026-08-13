@@ -38,6 +38,13 @@ struct AppState {
     /// R2-6: in-progress `claude setup-token` sessions, keyed by account id.
     /// See `signin.rs`.
     sign_in: signin::SignInRegistry,
+    /// Followup-1 fix: the tray icon's own physical-pixel rect, updated on
+    /// every tray icon event (not just clicks). `show_panel` always has a
+    /// fresh rect straight from the click event itself, but re-docking on
+    /// snap-back (`set_detached`) is triggered from the panel's own header
+    /// button, not a tray event, so it needs this cached value to know where
+    /// to reposition to. `None` until the first tray event ever arrives.
+    last_tray_rect: Mutex<Option<(f64, f64)>>,
 }
 
 #[tauri::command]
@@ -254,6 +261,17 @@ fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Resu
     };
     tray.set_title(Some("")).map_err(|e| e.to_string())?;
 
+    // I7: the composited image carries no text a screen reader can read —
+    // keep the tray item's accessible name/tooltip current with the actual
+    // pinned values (in words, with the product name) rather than leaving a
+    // screen reader with nothing but the bare rendered percentage.
+    let tooltip = if segments.is_empty() {
+        "Quotos".to_string()
+    } else {
+        format!("Quotos — {}", segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" "))
+    };
+    tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
+
     if segments.is_empty() {
         let (rgba, w, h) = tray_render::plain_glyph_rgba();
         tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
@@ -296,6 +314,18 @@ fn set_detached(
     window.set_always_on_top(true).map_err(|e| e.to_string())?;
     if detached {
         let _ = window.set_focus();
+    } else {
+        // C6 fix: snapping back must actually re-dock the window under the
+        // tray icon, not just restore the chrome (beak, no titlebar) —
+        // without this the window silently stayed wherever the drag left
+        // it. This path has no fresh tray click to read a rect from (it's
+        // triggered by the panel's own header button), so it uses the last
+        // rect seen by any tray icon event; `None` only before the very
+        // first tray event of the app's lifetime, which can't happen here
+        // since detaching itself requires the panel to already be open.
+        if let Some((tray_x, tray_y)) = *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") {
+            reposition_under_tray(&window, tray_x, tray_y);
+        }
     }
     Ok(())
 }
@@ -373,36 +403,63 @@ fn forget_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
 /// once already shown; the `Moved`/`Focused(true)` window events and the
 /// WindowServer's own reported bounds both confirm the final position lands
 /// exactly on target either way, but this ordering was what was verified.
+///
+/// Also returns the beak's horizontal offset (logical/CSS px, relative to
+/// the panel's own left edge) so the caller can tell the frontend where to
+/// draw it. B3/B5: the beak must stay centered under the tray glyph's own
+/// center, not the whole button's center — the button's width grows with
+/// each pinned digit segment (`tray_render.rs`), but the glyph is always
+/// the leftmost 18 CSS-px inside it, after the button's own 6px padding
+/// (handoff's A1/A3), so this is a fixed offset from the *icon's* left edge
+/// regardless of how many segments follow it. When the panel's left edge
+/// gets clamped away from `icon_left - 6` (B5's "at the right screen edge…
+/// the beak keeps following the icon"), this offset grows to compensate,
+/// clamped to stay clear of the panel's own 12px corner radius plus half
+/// the 12px beak so it never renders outside the panel body.
+fn compute_docked_layout(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<(i32, i32, f64)> {
+    let monitor = window.monitor_from_point(tray_x, tray_y).ok().flatten().or_else(|| window.current_monitor().ok().flatten())?;
+
+    let scale = monitor.scale_factor();
+    let monitor_pos = *monitor.position();
+    let monitor_size = *monitor.size();
+
+    let left_offset_px = (6.0 * scale).round() as i32;
+    let top_px = (32.0 * scale).round() as i32;
+    let right_clamp_px = (340.0 * scale).round() as i32;
+
+    let mut x = tray_x.round() as i32 - left_offset_px;
+    x = x.max(monitor_pos.x);
+    let max_x = (monitor_pos.x + monitor_size.width as i32 - right_clamp_px).max(monitor_pos.x);
+    x = x.min(max_x);
+
+    let y = monitor_pos.y + top_px;
+
+    const PANEL_WIDTH_LOGICAL: f64 = 332.0;
+    const GLYPH_CENTER_FROM_ICON_LEFT_LOGICAL: f64 = 6.0 + 18.0 / 2.0; // button padding + half glyph width
+    const BEAK_SAFE_MARGIN_LOGICAL: f64 = 18.0; // 12px corner radius + half the 12px beak
+
+    let glyph_center_physical = tray_x + GLYPH_CENTER_FROM_ICON_LEFT_LOGICAL * scale;
+    let beak_offset_logical = (glyph_center_physical - x as f64) / scale;
+    let beak_offset_logical =
+        beak_offset_logical.clamp(BEAK_SAFE_MARGIN_LOGICAL, PANEL_WIDTH_LOGICAL - BEAK_SAFE_MARGIN_LOGICAL);
+
+    Some((x, y, beak_offset_logical))
+}
+
+/// Moves an already-visible, already-docked-chrome window to sit under the
+/// tray icon and tells the frontend where to draw the beak — the shared
+/// tail end of both `show_panel` and `set_detached`'s snap-back path (C6).
+fn reposition_under_tray(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
+    if let Some((x, y, beak_offset)) = compute_docked_layout(window, tray_x, tray_y) {
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+        let _ = window.emit("panel-beak-offset", beak_offset);
+    }
+}
+
 fn show_panel(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
-    let monitor = window
-        .monitor_from_point(tray_x, tray_y)
-        .ok()
-        .flatten()
-        .or_else(|| window.current_monitor().ok().flatten());
-
-    let target = monitor.map(|monitor| {
-        let scale = monitor.scale_factor();
-        let monitor_pos = *monitor.position();
-        let monitor_size = *monitor.size();
-
-        let left_offset_px = (6.0 * scale).round() as i32;
-        let top_px = (32.0 * scale).round() as i32;
-        let right_clamp_px = (340.0 * scale).round() as i32;
-
-        let mut x = tray_x.round() as i32 - left_offset_px;
-        x = x.max(monitor_pos.x);
-        let max_x = (monitor_pos.x + monitor_size.width as i32 - right_clamp_px).max(monitor_pos.x);
-        x = x.min(max_x);
-
-        let y = monitor_pos.y + top_px;
-        (x, y)
-    });
-
     let _ = window.show();
     let _ = window.set_focus();
-    if let Some((x, y)) = target {
-        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-    }
+    reposition_under_tray(window, tray_x, tray_y);
     let _ = window.emit("panel-visibility", true);
 }
 
@@ -468,6 +525,7 @@ pub fn run() {
                 tracked_store: Store::load(tracked_path),
                 scheduler: Scheduler::new(),
                 sign_in: signin::SignInRegistry::new(),
+                last_tray_rect: Mutex::new(None),
             });
             spawn_scheduler(app.handle().clone());
 
@@ -504,28 +562,51 @@ pub fn run() {
                 .icon_as_template(true)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
+                // I7: the composited glyph+digits image (see `tray_render.rs`)
+                // carries no text VoiceOver can read at all — without this,
+                // a screen reader has nothing to announce for the item beyond
+                // maybe the bare rendered percentage with no product name.
+                // `set_tray_status` keeps this current as pinned digits
+                // change; this is just the pre-any-data baseline.
+                .tooltip("Quotos")
                 .on_menu_event(|app, event| {
                     if event.id.as_ref() == "quit" {
                         app.exit(0);
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        rect,
-                        ..
-                    } = &event
+                    // Always physical pixels for a real tray event — see
+                    // `show_panel`'s doc comment for why this is read
+                    // straight off the event rather than through the
+                    // positioner plugin's own cached/derived position.
+                    let rect_position = match &event {
+                        TrayIconEvent::Click { rect, .. }
+                        | TrayIconEvent::DoubleClick { rect, .. }
+                        | TrayIconEvent::Enter { rect, .. }
+                        | TrayIconEvent::Leave { rect, .. }
+                        | TrayIconEvent::Move { rect, .. } => Some(rect.position),
+                        _ => None,
+                    };
+                    let tray_xy = rect_position.map(|p| match p {
+                        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                        tauri::Position::Logical(p) => (p.x, p.y),
+                    });
+                    let app = tray.app_handle();
+                    if let Some(xy) = tray_xy {
+                        // C6: cached so `set_detached`'s snap-back path (not
+                        // itself a tray event) still knows where to re-dock.
+                        *app.state::<AppState>().last_tray_rect.lock().expect("last_tray_rect mutex poisoned") = Some(xy);
+                    }
+
+                    if let (
+                        TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        },
+                        Some((tray_x, tray_y)),
+                    ) = (&event, tray_xy)
                     {
-                        // Always physical pixels for a real tray click — see
-                        // `show_panel`'s doc comment for why this is read
-                        // straight off the event rather than through the
-                        // positioner plugin's own cached/derived position.
-                        let (tray_x, tray_y) = match rect.position {
-                            tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
-                            tauri::Position::Logical(p) => (p.x, p.y),
-                        };
-                        let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let detached = app
                                 .state::<AppState>()

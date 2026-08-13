@@ -23,17 +23,8 @@ export function formatRelativePast(iso: string | null, now: Date = new Date()): 
 const LOCALE = "en-US";
 
 const TIME_FMT = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
-const WEEKDAY_TIME_FMT = new Intl.DateTimeFormat(LOCALE, {
-  weekday: "short",
-  hour: "numeric",
-  minute: "2-digit",
-});
-const DATE_TIME_FMT = new Intl.DateTimeFormat(LOCALE, {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
+const WEEKDAY_FMT = new Intl.DateTimeFormat(LOCALE, { weekday: "short" });
+const DATE_FMT = new Intl.DateTimeFormat(LOCALE, { month: "short", day: "numeric" });
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -65,6 +56,6 @@ export function formatExactReset(iso: string | null, now: Date = new Date()): st
   if (isSameDay(then, tomorrow)) return `Resets tomorrow at ${time}`;
 
   const daysAway = Math.round((then.getTime() - now.getTime()) / 86_400_000);
-  if (daysAway < 7) return `Resets ${WEEKDAY_TIME_FMT.format(then)}`;
-  return `Resets ${DATE_TIME_FMT.format(then)}`;
+  if (daysAway < 7) return `Resets ${WEEKDAY_FMT.format(then)} at ${time}`;
+  return `Resets ${DATE_FMT.format(then)} at ${time}`;
 }

@@ -43,3 +43,10 @@ export const onQuotaRefresh: (callback: (event: ScheduledRefreshEvent) => void) 
 /** R2-4: no-op in the browser harness — useSubscriptions.ts only calls this
  * on the native path, where a real scheduler exists to kick. */
 export const kickScheduler: () => Promise<void> = isTauri ? live.kickScheduler : async () => {};
+
+/** B3/B5: no real tray glyph exists in the browser mock harness to compute
+ * an offset from — App.tsx keeps its own static fallback constant for that
+ * case, matching setTrayStatus's pattern above. */
+export const onPanelBeakOffset: (callback: (offsetPx: number) => void) => Promise<() => void> = isTauri
+  ? live.onPanelBeakOffset
+  : async () => () => {};

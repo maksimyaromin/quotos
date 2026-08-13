@@ -34,20 +34,38 @@ describe("claude mapOutcome", () => {
     expect(mapOutcome({ kind: "error", error: err }, true).state).toBe("behind");
   });
 
-  it("unauthorized is 'broken' on a first read, 'behind' once real data existed, with a fixed reason", () => {
+  it("unauthorized is 'broken' on a first read, 'behind' once real data existed, with F17's exact reason", () => {
     const err = { kind: "unauthorized" as const, message: "still unauthorized after refreshing the credential" };
     const first = mapOutcome({ kind: "error", error: err }, false);
     expect(first.state).toBe("broken");
-    expect(first.reason).toMatch(/sign-in expired/i);
+    // F17, handoff's exact wording — character for character, not just "mentions sign-in".
+    expect(first.reason).toBe("The sign-in expired. Log in again in Claude Code and Quotos will pick it up.");
     expect(mapOutcome({ kind: "error", error: err }, true).state).toBe("behind");
   });
 
-  it("network failures are 'broken' first, 'behind' thereafter, carrying the raw message", () => {
+  it("network failures are 'broken' first, carrying the raw message", () => {
     const err = { kind: "network" as const, message: "the connection timed out" };
     const first = mapOutcome({ kind: "error", error: err }, false);
     expect(first.state).toBe("broken");
     expect(first.reason).toBe("the connection timed out");
-    expect(mapOutcome({ kind: "error", error: err }, true).state).toBe("behind");
+  });
+
+  it("F16: any error once real data existed reads 'behind' with the fixed stale reason, not the raw error text", () => {
+    // Handoff's exact wording — this must win over the underlying error's
+    // own (often technical) message, e.g. "the connection timed out" below
+    // must not leak into the UI once there's a prior good read to fall
+    // back on.
+    const fixed = "The provider didn't answer. These numbers are from the last successful read.";
+    const cases = [
+      { kind: "not_connected" as const, message: "no credentials" },
+      { kind: "unauthorized" as const, message: "still unauthorized after refreshing the credential" },
+      { kind: "network" as const, message: "the connection timed out" },
+    ];
+    for (const err of cases) {
+      const result = mapOutcome({ kind: "error", error: err }, true);
+      expect(result.state).toBe("behind");
+      expect(result.reason).toBe(fixed);
+    }
   });
 
   it("a non-FetchError (unexpected throw) still degrades gracefully", () => {

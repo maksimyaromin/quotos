@@ -54,13 +54,15 @@ describe("formatExactReset", () => {
   it("names the weekday for a reset within the week but not today/tomorrow", () => {
     const iso = new Date(2026, 7, 16, 9, 0, 0).toISOString(); // Sunday, 4 days out
     const label = formatExactReset(iso, now);
-    expect(label).toMatch(/^Resets (Sun|Sunday)/);
+    // F10: the handoff's exact wording is "Resets Sun at 10:00 AM" — the
+    // weekday and time must not run together without "at" between them.
+    expect(label).toMatch(/^Resets (Sun|Sunday) at/);
     expect(label).not.toMatch(/today|tomorrow/);
   });
 
   it("names the calendar date for a reset more than a week out", () => {
     const iso = new Date(2026, 7, 24, 9, 0, 0).toISOString(); // 12 days out
-    expect(formatExactReset(iso, now)).toMatch(/^Resets Aug 24/);
+    expect(formatExactReset(iso, now)).toMatch(/^Resets Aug 24 at/);
   });
 
   it("never emits a relative offset like 'in 5d'", () => {
