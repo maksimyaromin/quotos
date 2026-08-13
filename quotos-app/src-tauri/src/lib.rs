@@ -15,7 +15,6 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
-use tauri_plugin_positioner::{Position, WindowExt};
 
 use persistence::{Store, TrackedAccount};
 use providers::{AccountDescriptor, FetchError, RawSnapshot};
@@ -338,33 +337,72 @@ fn forget_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
     state.sign_in.forget(&account_id);
 }
 
-/// Followup-1: the round-2 handoff moved the popover's beak off-center — it
-/// now sits at the panel's own left edge, under the glyph, with the panel
-/// unfolding rightward (`Panel.jsx`'s `beakLeft`, `App.tsx`'s `BEAK_LEFT`).
-/// `Position::TrayBottomCenter` centers the window under the icon instead,
-/// which now visibly contradicts the beak (confirmed live on the captain's
-/// screen — see `data/quotos-fixes-f2/measurements.md`). `TrayBottomLeft`
-/// gets us the right *edge* alignment (window left = icon left), then two
-/// handoff-specified adjustments get applied on top: the left edge sits 6px
-/// inside the icon's own left edge, and the top is pinned at a fixed 32px
-/// from the screen top (6px under the menu bar) rather than flush against
-/// the icon's bottom. The x nudge is re-clamped to the monitor's left edge;
-/// the plugin's own `move_window_constrained` already clamped the right
-/// edge using the window's real width, and nudging further left can only
-/// keep that satisfied, never violate it.
-fn show_panel(window: &tauri::WebviewWindow) {
-    let _ = window.move_window_constrained(Position::TrayBottomLeft);
-    if let (Ok(pos), Ok(Some(monitor))) = (window.outer_position(), window.current_monitor()) {
+/// Followup-1 fix (round 2 regression, the panel-never-opens defect): the
+/// round-2 handoff moved the popover's beak off-center — it now sits at the
+/// panel's own left edge, under the glyph, with the panel unfolding
+/// rightward (`Panel.jsx`'s `beakLeft`, `App.tsx`'s `BEAK_LEFT`).
+///
+/// This used to go through `tauri-plugin-positioner`'s
+/// `move_window_constrained(Position::TrayBottomLeft)`, primed by its own
+/// `on_tray_event` cache. On a real click that produced a window position
+/// wildly inconsistent with the tray icon's own rect (e.g. tray at physical
+/// x=2444 on a 3456-wide monitor placed the window at physical x=1368 —
+/// nowhere near clamped-to-monitor math could explain), landing the panel
+/// off in empty space on the correct monitor, which reads on screen as
+/// "nothing opened" — exactly this bug. Confirmed with the tray rect and
+/// computed target logged and diffed against the window's real post-move
+/// bounds (read independently of Tauri's own position getters, via
+/// `CGWindowListCopyWindowInfo`, since `WebviewWindow::outer_position()`
+/// itself was also observed misreporting immediately after a window's
+/// first-ever `show()`); root cause narrowed to the plugin's own
+/// `calculate_position`/`get_monitor_for_tray_icon` path, not chased further
+/// upstream. Rather than depend on that plugin at all (the whole
+/// `tauri-plugin-positioner` dependency is dropped by this fix), this now
+/// computes the position itself directly from the tray icon's own `Rect`
+/// (handed to us fresh on every click via `TrayIconEvent::Click`'s `rect`
+/// field — always physical pixels, per `tray-icon` v0.24.2's own `Rect`
+/// type) plus `monitor_from_point` on that same rect, per the handoff: left
+/// edge = icon left − 6px (clamped to no further right than screen right −
+/// 340px, never left of the monitor's own left edge — this is what keeps
+/// both displays working, including an external display positioned such
+/// that its coordinates are negative), top pinned at a fixed 32px from that
+/// monitor's own top edge (6px under the menu bar, not flush against the
+/// icon's bottom). The reposition happens after `show()`/`set_focus()`
+/// rather than before — empirically, positioning a still-hidden window on
+/// its very first ever appearance was less reliable than repositioning it
+/// once already shown; the `Moved`/`Focused(true)` window events and the
+/// WindowServer's own reported bounds both confirm the final position lands
+/// exactly on target either way, but this ordering was what was verified.
+fn show_panel(window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
+    let monitor = window
+        .monitor_from_point(tray_x, tray_y)
+        .ok()
+        .flatten()
+        .or_else(|| window.current_monitor().ok().flatten());
+
+    let target = monitor.map(|monitor| {
         let scale = monitor.scale_factor();
+        let monitor_pos = *monitor.position();
+        let monitor_size = *monitor.size();
+
         let left_offset_px = (6.0 * scale).round() as i32;
         let top_px = (32.0 * scale).round() as i32;
-        let monitor_pos = monitor.position();
-        let x = (pos.x - left_offset_px).max(monitor_pos.x);
+        let right_clamp_px = (340.0 * scale).round() as i32;
+
+        let mut x = tray_x.round() as i32 - left_offset_px;
+        x = x.max(monitor_pos.x);
+        let max_x = (monitor_pos.x + monitor_size.width as i32 - right_clamp_px).max(monitor_pos.x);
+        x = x.min(max_x);
+
         let y = monitor_pos.y + top_px;
-        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-    }
+        (x, y)
+    });
+
     let _ = window.show();
     let _ = window.set_focus();
+    if let Some((x, y)) = target {
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
     let _ = window.emit("panel-visibility", true);
 }
 
@@ -372,13 +410,13 @@ fn show_panel(window: &tauri::WebviewWindow) {
 /// instead of hiding it — closing a window the captain deliberately parked
 /// on screen must be an explicit action, not an accidental side effect of
 /// clicking the tray glyph again.
-fn toggle_panel(window: &tauri::WebviewWindow, detached: bool) {
+fn toggle_panel(window: &tauri::WebviewWindow, detached: bool, tray_x: f64, tray_y: f64) {
     let visible = window.is_visible().unwrap_or(false);
     if visible && !detached {
         let _ = window.hide();
         let _ = window.emit("panel-visibility", false);
     } else {
-        show_panel(window);
+        show_panel(window, tray_x, tray_y);
     }
 }
 
@@ -386,7 +424,6 @@ fn toggle_panel(window: &tauri::WebviewWindow, detached: bool) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_positioner::init())
         .invoke_handler(tauri::generate_handler![
             list_accounts,
             fetch_snapshot,
@@ -405,6 +442,15 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // R2-T1: log once at startup which font the tray's percentage
+            // digits actually resolved to on this machine — MonoLisa if
+            // installed, otherwise the system tabular-figure UI font (see
+            // `tray_render.rs`'s `text` submodule for the lookup/fallback).
+            eprintln!(
+                "quotos: tray digit font = {}",
+                if tray_render::used_fallback_font() { "system fallback (MonoLisa not found)" } else { "MonoLisa" }
+            );
 
             // Built here rather than via the builder's own `.manage()`
             // because the tracked-list store needs `app.path()`, which
@@ -464,13 +510,21 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
                     if let TrayIconEvent::Click {
                         button: tauri::tray::MouseButton::Left,
                         button_state: tauri::tray::MouseButtonState::Up,
+                        rect,
                         ..
-                    } = event
+                    } = &event
                     {
+                        // Always physical pixels for a real tray click — see
+                        // `show_panel`'s doc comment for why this is read
+                        // straight off the event rather than through the
+                        // positioner plugin's own cached/derived position.
+                        let (tray_x, tray_y) = match rect.position {
+                            tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                            tauri::Position::Logical(p) => (p.x, p.y),
+                        };
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let detached = app
@@ -479,7 +533,7 @@ pub fn run() {
                                 .lock()
                                 .map(|d| *d)
                                 .unwrap_or(false);
-                            toggle_panel(&window, detached);
+                            toggle_panel(&window, detached, tray_x, tray_y);
                         }
                     }
                 })
