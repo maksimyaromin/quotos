@@ -56,3 +56,15 @@ This runs `tauri build` with `src-tauri/tauri.v2.conf.json` merged on top of
 
 The resulting bundle is `src-tauri/target/release/bundle/macos/Quotos 2.app`.
 Copy it to `~/Downloads/Quotos 2.app` to run beside `~/Downloads/Quotos.app`.
+
+## Round-2 build ("v3")
+
+`tauri.v3.conf.json` follows the same pattern (`npx tauri build --config
+src-tauri/tauri.v3.conf.json`, `productName` "Quotos 3") but **reuses v2's
+`identifier`, `com.quotos.desktop.v2`, on purpose** — the opposite of v1→v2's
+"always diverge" choice. This round moved the tracked-subscriptions list from
+`localStorage` to a native, Rust-owned file, migrated on first run; sharing
+v2's identity is what lets that migration run against the captain's real
+in-use data (his actual tracked accounts and custom names, already sitting in
+`Quotos 2`'s WKWebView storage) instead of booting empty. See the
+corresponding `AGENTS.md` sharp-edges entry before changing this.

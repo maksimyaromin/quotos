@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AccountDescriptor, FetchError, RawSnapshot, Subscription, SubscriptionState, TraySegment } from "../types/entities";
 import { isFetchError } from "../types/entities";
-import { fetchSnapshot, setTrayStatus, onQuotaRefresh, kickScheduler } from "../lib/tauriClient";
+import {
+  fetchSnapshot,
+  setTrayStatus,
+  onQuotaRefresh,
+  kickScheduler,
+  startSignIn as startSignInIpc,
+  submitSignInCode as submitSignInCodeIpc,
+  cancelSignIn as cancelSignInIpc,
+  forgetSignIn,
+  onSignInFinished,
+} from "../lib/tauriClient";
 import { normalizeFor, providerDisplayName, mapOutcomeFor } from "../providers/registry";
 import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
 
@@ -31,6 +41,7 @@ function initialSubscription(account: AccountDescriptor, labelOverride: string |
     pinned,
     configDir: account.config_dir,
     rateLimitedUntil: null,
+    signInInProgress: false,
   };
 }
 
@@ -215,7 +226,60 @@ export function useSubscriptions() {
 
   const removeSubscription = useCallback((id: string) => {
     setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+    void cancelSignInIpc(id);
   }, []);
+
+  // R2-6: starts Claude Code's own sign-in for a broken row — see
+  // signin.rs. Quotos never touches the Keychain or a credential; it only
+  // starts the process and later relays a pasted code back into it.
+  const startSignIn = useCallback(
+    async (id: string) => {
+      const sub = subscriptionsRef.current.find((s) => s.id === id);
+      if (!sub) return;
+      patch(id, { signInInProgress: true });
+      try {
+        await startSignInIpc(id, sub.configDir);
+      } catch {
+        patch(id, { signInInProgress: false });
+      }
+    },
+    [patch],
+  );
+
+  const submitSignInCode = useCallback(async (id: string, code: string) => {
+    await submitSignInCodeIpc(id, code);
+  }, []);
+
+  const cancelSignIn = useCallback(
+    async (id: string) => {
+      await cancelSignInIpc(id);
+      patch(id, { signInInProgress: false });
+    },
+    [patch],
+  );
+
+  // R2-6: fires once when a sign-in process exits (success or failure — see
+  // signin.rs's doc comment on why `success` there is only the process's
+  // own exit status). Either way, Quotos re-reads the account itself; that
+  // read is the real proof, never the process's exit code alone.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void onSignInFinished((event) => {
+      patch(event.account_id, { signInInProgress: false });
+      void forgetSignIn(event.account_id);
+      if (subscriptionsRef.current.some((s) => s.id === event.account_id)) {
+        void refreshAccountById(event.account_id);
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [patch, refreshAccountById]);
 
   // Loads the tracked list once at mount (async — see hasLoadedRef above),
   // then either:
@@ -299,30 +363,30 @@ export function useSubscriptions() {
   }, [subscriptions]);
 
   // Mirror pinned subscriptions' headline figures beside the tray glyph
-  // (I2: consumed, not remaining). A broken pin shows "!" instead of a
-  // stale number, never a number presented as current; a pin with no number
-  // yet draws nothing at all (per the handoff: "Нет данных — цифра не
-  // рисуется"). Unpinned means gone — this effect is a pure function of
-  // current state every time it runs.
+  // (I2: consumed, not remaining). Handoff, verbatim: "Никаких знаков и
+  // многоточий там, где ожидается число. Либо цифра, либо ничего" — so a
+  // pin with no number yet (including a broken one) draws nothing at all,
+  // never "!" or "…"; the glyph alone is the signal that something needs
+  // attention (the row's own badge carries the detail). Unpinned means gone
+  // — this effect is a pure function of current state every time it runs.
   //
-  // R2-2: color now comes from severity (any window >=90%/75%), not from
-  // the headline percentage's own magnitude, so a 20%-headline account with
-  // a near-exhausted session still reads amber in the tray. A stale
-  // ("behind") read is always amber regardless of severity — the number
-  // itself is no longer trustworthy. See tauriClient.ts for why this is a
-  // structured call instead of a plain colored string.
+  // R2-2: color comes from severity (any window >=90%/75%), not from the
+  // headline percentage's own magnitude, so a 20%-headline account with a
+  // near-exhausted session still reads amber in the tray. Followup-2, same
+  // handoff table: "если хотя бы одно значение устарело — все цифры
+  // янтарные" — if *any* pinned value is stale, every digit in the tray
+  // turns amber, not just that one account's own.
   useEffect(() => {
-    const segments: TraySegment[] = subscriptions
-      .filter((s) => s.pinned)
-      .map((s): TraySegment | null => {
-        if (s.state === "broken") return { text: "!", color: "red" };
-        if (typeof s.used !== "number") return null;
-        if (s.state === "behind") return { text: `${s.used}%`, color: "amber" };
-        if (s.severity === "critical") return { text: `${s.used}%`, color: "red" };
-        if (s.severity === "warn") return { text: `${s.used}%`, color: "amber" };
-        return { text: `${s.used}%`, color: "neutral" };
-      })
-      .filter((s): s is TraySegment => s !== null);
+    const pinned = subscriptions.filter(
+      (s): s is Subscription & { used: number } => s.pinned && typeof s.used === "number",
+    );
+    const anyStale = pinned.some((s) => s.state === "behind");
+    const segments: TraySegment[] = pinned.map((s): TraySegment => {
+      if (anyStale) return { text: `${s.used}%`, color: "amber" };
+      if (s.severity === "critical") return { text: `${s.used}%`, color: "red" };
+      if (s.severity === "warn") return { text: `${s.used}%`, color: "amber" };
+      return { text: `${s.used}%`, color: "neutral" };
+    });
     setTrayStatus(segments);
   }, [subscriptions]);
 
@@ -334,5 +398,8 @@ export function useSubscriptions() {
     renameSubscription,
     addSubscription,
     removeSubscription,
+    startSignIn,
+    submitSignInCode,
+    cancelSignIn,
   };
 }

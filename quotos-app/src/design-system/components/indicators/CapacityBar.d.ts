@@ -7,6 +7,11 @@ export interface CapacityBarProps {
   reading?: boolean;
   /** Dim the fill when the data is behind (stale). */
   stale?: boolean;
+  /** "healthy" | "warn" | "critical" — when given, overrides `used`-based
+   * color (the subscription's own headline bar, colored by the worst of
+   * every window). Omit for a single window's own bar, which colors from
+   * its own `used` instead. */
+  severity?: "healthy" | "warn" | "critical" | null;
   /** Override the bar height (default `--cap-bar-height`, 4px). */
   height?: string;
   style?: React.CSSProperties;

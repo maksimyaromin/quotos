@@ -23,7 +23,12 @@ interface PersistedShape {
 }
 
 const LEGACY_KEY = "quotos.tracked.v1";
-const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+// Read fresh on every call (not module scope) so tests can toggle it; in the
+// real app Tauri injects this global before any app JS runs, so it's
+// equivalent to a constant in practice.
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 function loadLegacyLocalStorage(): TrackedAccount[] {
   try {
@@ -52,22 +57,25 @@ function saveLocalStorage(tracked: TrackedAccount[]): void {
  * exactly once. Only runs when the native store is genuinely empty — once
  * it has any data (even an empty save from the user removing everything),
  * this never fires again, so a deliberately-emptied list can't be
- * resurrected from stale `localStorage` on a later launch. */
+ * resurrected from stale `localStorage` on a later launch.
+ *
+ * Followup-3: the old `localStorage` key is deliberately left untouched
+ * after migrating — never cleared, never overwritten. If the native file
+ * turns out wrong, going back to the previous build must still show his
+ * real list; a migration that deletes its own source as it runs would make
+ * that recovery impossible. Leftover legacy data is otherwise inert: once
+ * the native store is non-empty, this function returns before ever reading
+ * `localStorage` again. */
 async function migrateFromLocalStorageIfEmpty(native: TrackedAccount[]): Promise<TrackedAccount[]> {
   if (native.length > 0) return native;
   const legacy = loadLegacyLocalStorage();
   if (legacy.length === 0) return native;
   await saveTracked(legacy);
-  try {
-    window.localStorage.removeItem(LEGACY_KEY);
-  } catch {
-    // Leftover legacy data is harmless once migrated — it's never read again.
-  }
   return legacy;
 }
 
 export async function loadTracked(): Promise<TrackedAccount[]> {
-  if (!isTauri) return loadLegacyLocalStorage();
+  if (!isTauri()) return loadLegacyLocalStorage();
   let native: TrackedAccount[] = [];
   try {
     native = await invoke<TrackedAccount[]>("load_tracked");
@@ -78,7 +86,7 @@ export async function loadTracked(): Promise<TrackedAccount[]> {
 }
 
 export async function saveTracked(tracked: TrackedAccount[]): Promise<void> {
-  if (!isTauri) {
+  if (!isTauri()) {
     saveLocalStorage(tracked);
     return;
   }

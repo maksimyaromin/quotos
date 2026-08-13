@@ -1,5 +1,5 @@
 import React from "react";
-import { CapacityBar, capacityColor } from "../indicators/CapacityBar.jsx";
+import { CapacityBar } from "../indicators/CapacityBar.jsx";
 import { StatusDot } from "../indicators/StatusDot.jsx";
 import { Badge } from "../indicators/Badge.jsx";
 import { LimitWindow } from "./LimitWindow.jsx";
@@ -64,6 +64,7 @@ export function SubscriptionRow({
   account,
   state = "working",
   used = null,
+  severity = "healthy",
   resetLabel = null,
   lastRead = null,
   windows = [],
@@ -81,11 +82,30 @@ export function SubscriptionRow({
   onRename,
   onReadNow,
   onStopTracking,
+  signInInProgress = false,
+  onSubmitSignInCode,
+  onCancelSignIn,
   style,
 }) {
   const [renaming, setRenaming] = React.useState(false);
   const [draft, setDraft] = React.useState(label);
   const inputRef = React.useRef(null);
+  const [codeDraft, setCodeDraft] = React.useState("");
+  const codeInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (signInInProgress) {
+      setCodeDraft("");
+      requestAnimationFrame(() => codeInputRef.current?.focus());
+    }
+  }, [signInInProgress]);
+
+  const submitCode = () => {
+    const trimmed = codeDraft.trim();
+    if (trimmed.length === 0) return;
+    onSubmitSignInCode?.(trimmed);
+    setCodeDraft("");
+  };
 
   React.useEffect(() => {
     if (renaming) {
@@ -105,10 +125,18 @@ export function SubscriptionRow({
   const hasData = typeof used === "number";
   const badge = stale ? "Not current" : state === "broken" ? "Needs sign-in" : null;
 
+  // R2-2/followup-3: the headline number and bar take their color from the
+  // provider-computed severity (the worst of *every* window), not from the
+  // headline percentage's own magnitude — the captain's own example is a
+  // 20%-weekly account whose session is nearly out, which must still read
+  // amber. The handoff's own rule still applies on top: tint only from warn
+  // upward, stay neutral below it.
   const numColor = stale
     ? "var(--amber)"
-    : hasData && used >= 75
-    ? capacityColor(used)
+    : severity === "critical"
+    ? "var(--red)"
+    : severity === "warn"
+    ? "var(--amber)"
     : "var(--text-primary)";
 
   const dotColor = STATE_DOT_COLOR[stale ? "behind" : state] || "var(--status-progress)";
@@ -204,7 +232,54 @@ export function SubscriptionRow({
       </div>
 
       {/* body */}
-      {hasData ? (
+      {signInInProgress ? (
+        // R2-6: Claude Code's own sign-in is running for this account (see
+        // signin.rs) — it opens the browser itself, so Quotos only needs to
+        // relay whatever code comes back. Replaces the reason text while
+        // active; the row's own action button is hidden by the caller.
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+          <div style={{
+            fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
+            lineHeight: "var(--leading-snug)", color: "var(--text-secondary)",
+          }}>
+            Finish signing in in the browser, then paste the code here.
+          </div>
+          <div style={{ display: "flex", gap: "var(--space-2)" }} onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={codeInputRef}
+              value={codeDraft}
+              onChange={(e) => setCodeDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitCode();
+                if (e.key === "Escape") { setCodeDraft(""); onCancelSignIn?.(); }
+              }}
+              placeholder="Paste code"
+              style={{
+                flex: 1, font: "inherit",
+                fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)",
+                color: "var(--text-primary)",
+                background: "var(--bg-input)", border: "0.5px solid var(--border-focus)",
+                borderRadius: "var(--radius-xs)", padding: "3px 6px",
+                outline: "none",
+              }}
+            />
+            <button type="button" onClick={submitCode} disabled={codeDraft.trim().length === 0}
+              style={{
+                padding: "0 10px", border: 0, borderRadius: "var(--radius-xs)",
+                background: "var(--bg-selected)",
+                color: codeDraft.trim().length === 0 ? "var(--text-quaternary)" : "var(--text-accent)",
+                fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", fontWeight: "var(--weight-medium)",
+                cursor: codeDraft.trim().length === 0 ? "default" : "pointer",
+              }}>Submit</button>
+            <button type="button" onClick={() => onCancelSignIn?.()}
+              style={{
+                padding: "0 8px", border: 0, borderRadius: "var(--radius-xs)",
+                background: "transparent", color: "var(--text-tertiary)",
+                fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", cursor: "pointer",
+              }}>Cancel</button>
+          </div>
+        </div>
+      ) : hasData ? (
         <>
           <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-2)" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-1)", flex: 1 }}>
@@ -221,7 +296,7 @@ export function SubscriptionRow({
               </span>
             ) : null}
           </div>
-          <CapacityBar used={used} reading={reading} stale={stale} />
+          <CapacityBar used={used} reading={reading} stale={stale} severity={severity} />
         </>
       ) : (
         <div style={{

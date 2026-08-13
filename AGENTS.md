@@ -37,33 +37,130 @@ rewritten each round, not appended to.
   and `quotos-app/src-tauri/src/providers/mod.rs` (backend). A second
   provider is a new module on each side plus one registry entry — nothing
   else (panel, hooks, state machine) may reference a provider by name.
-- `quotos-app/src/hooks/useSubscriptions.ts` is the single owner of refresh
-  cadence, tracked-subscription membership, and per-subscription state;
-  don't add a second timer elsewhere. The background refresh interval runs
-  for the app's lifetime regardless of panel visibility — opening/closing
-  the panel must never itself trigger a fetch (that was a real bug: five
-  open/close cycles alone exhausted the shared rate budget).
+  Two things live behind this seam on purpose, both provider-owned rather
+  than generic-shell logic: **headline selection** (`normalizeUsage.ts`'s
+  `pickAccountWideWeekly` — for Claude the headline is the account-wide
+  weekly window, `weekly_all`/`seven_day`, never simply the most-consumed
+  window, which let a per-model weekly like Fable outrank the real account
+  total) and **outcome→state+reason mapping** (`providers/claude/index.ts`'s
+  `mapOutcome`, called via `registry.ts`'s `mapOutcomeFor` — the generic
+  hook only ever supplies the outcome and whether a prior good read
+  existed). `rate_limited` is deliberately excluded from that mapping — see
+  the B5/B6 note below.
+- `Subscription.severity` (`"healthy" | "warn" | "critical"`) is
+  provider-computed from *every* window, not just the headline one —
+  `critical` when any window is >=90% used, `warn` when any is >=75%,
+  matching `--cap-critical`/`--cap-warn` exactly, no separate thresholds.
+  This is what lets a 20%-headline account with an 85%-used session still
+  read amber: the headline number stays 20%, but its color and the tray
+  digit's color come from `severity`, not from the headline percentage's
+  own magnitude. Computed in `normalizeUsage.ts`, carried on `Subscription`
+  and `NormalizedRead`.
+- **Colored tray digits have no path through `tray-icon` v0.24.2's
+  `set_title`** — verified by reading `platform_impl/macos/mod.rs` (same
+  method that found the `set_title(None)` no-op below): it's a plain
+  `NSString`, no attributed-string/color channel anywhere in the crate.
+  `quotos-app/src-tauri/src/tray_render.rs` composites glyph + colored
+  digits into an RGBA bitmap instead (`set_icon`, `icon_as_template(false)`
+  when anything is colored), with a tiny embedded 3x5 pixel font — no font
+  library needed for digits and `%`/`!`. `set_icon_for_ns_status_item_button`
+  always requests an 18pt-tall `NSImage` regardless of the source bitmap's
+  pixel size, so rendering at 2x that height is what keeps it crisp on
+  Retina without needing a separate `@2x` asset. The tray also never shows
+  `"!"` or `"…"` (handoff: digits or nothing) — a pin with no number yet
+  contributes no segment at all, and if *any* pinned value is stale every
+  digit turns amber, not just that one.
+- **Sign-in recovery drives Claude Code's own login, never Quotos's own.**
+  `quotos-app/src-tauri/src/signin.rs` spawns `claude setup-token` (pointed
+  at the broken account's `CLAUDE_CONFIG_DIR`) attached to a real pty via
+  `portable-pty` — plain pipes risk the CLI detecting a non-tty stdin and
+  changing behavior, confirmed by one careful, throwaway-config-dir
+  observation showing it renders an interactive, cursor-positioning prompt.
+  The CLI opens the browser and prints the authorization URL *itself*;
+  Quotos never parses that output, never opens a browser, and never reads
+  or writes a credential — it only starts the process and relays a pasted
+  code (from the panel's own field) into the process's stdin. Completion is
+  detected by the process exiting, at which point Quotos re-reads the
+  account normally; the exit status is informational only; the re-read is
+  the real proof either way.
+- **Refresh cadence lives natively, not in JS.** `quotos-app/src-tauri/src/scheduler.rs`
+  is the single scheduler: one automatic read per account per minute,
+  anchored to the last attempt (manual or scheduled — both funnel through
+  the same `fetch_snapshot` command, which is what makes "a manual refresh
+  resets the minute" fall out for free with no extra wiring). This replaced
+  a JS `setInterval` in `useSubscriptions.ts` after reproducing, on a real
+  build, that macOS suspends timers in a hidden/occluded WKWebView (0 ticks
+  in 150s+ of an 8s interval while the panel stayed closed, process alive)
+  — a native OS-level timer has no notion of "hidden webview" to be
+  throttled by. `useSubscriptions.ts` still owns tracked-subscription
+  membership and per-subscription state, and reacts to the scheduler's
+  `quota-refresh` push event the same way it applies a manual refresh's
+  direct result — don't add a second timer anywhere. Opening/closing the
+  panel still triggers no read (unchanged, still correct — that was always
+  about panel visibility, never about where the clock lives).
+- `ratelimit.rs`'s sliding window prunes with `duration_since(front) >=
+  window`, not `>` — at exactly `window` old, a reservation must age out
+  or the limiter fights the 1-read-per-minute schedule that expects the
+  budget to be exactly full after 5 minutes.
 - **Percent fields are "consumed", not "remaining", everywhere** —
   `Subscription.used`, `LimitWindowEntity.used`, `NormalizedUsage.used`. Do
   not reintroduce a "remaining" field; the whole surface (headline, bars,
   tray) was deliberately inverted to one consistent meaning.
-- I6: nothing is tracked by default. `quotos-app/src/lib/persistence.ts`
-  (localStorage, key `quotos.tracked.v1`) is the user-owned list; discovery
+- **I6: nothing is tracked by default, and the tracked list is now natively
+  owned.** `quotos-app/src-tauri/src/persistence.rs` writes a plain JSON
+  file (`tracked.json` in the app's config dir) via temp-file + `fsync` +
+  atomic rename, not SQLite (the list is a handful of accounts; a file is
+  simpler, reviewable, and survives everything SQLite would here, and this
+  round confirmed the write itself is durable — see below). `quotos-app/src/lib/persistence.ts`
+  is the frontend seam: on the native path it's a thin wrapper over the
+  `load_tracked`/`save_tracked` commands; the browser/mock harness (no Rust
+  side to call) keeps using `localStorage` as a fallback. Discovery
   (`tauriClient.listAccounts`) only ever feeds the add-subscription flow, it
-  is never rendered directly. When seeding this list into React state, do it
-  via a lazy `useState(() => ...)` initializer, not a `useEffect` — an
-  effect-based load leaves one render where the list is genuinely `[]`, and
-  a persistence-writing effect watching that state will clobber real stored
-  data with `[]` before the loaded value ever commits.
+  is never rendered directly. Because loading the native store is
+  inherently async (a real IPC round-trip), seeding React state can no
+  longer use the old "lazy `useState` initializer" trick — instead,
+  `useSubscriptions.ts` gates the persistence-writing effect behind a
+  `hasLoadedRef` flag that only flips true once the async load has actually
+  committed to state, so the effect can't fire on the empty pre-load render
+  and clobber real stored data with `[]`.
+  **What the round found, and a correction worth recording:** the captain's
+  original report ("renamed a subscription, reopened, name was gone") was
+  first attributed to `localStorage`'s value write losing a race against
+  `app.exit(0)` — a `strings`-based check on WebKit's `localstorage.sqlite3`
+  found the *key* on disk but not the *value* shortly after an abrupt quit.
+  That specific diagnosis turned out to be a tooling artifact: WebKit stores
+  localStorage values UTF-16-encoded, which `strings` (ASCII) can't see at
+  all — re-checked with `sqlite3 ... "SELECT value FROM ItemTable"` (or
+  `hex(value)` piped through `iconv -f UTF-16LE`), the value *was* present
+  even after `kill -9` within ~1s of the write. The move to a native,
+  `fsync`'d file is still correct and still what the captain asked for
+  (durability doesn't depend on WKWebView's internal flush timing at all
+  now, whatever that timing actually is) — but the original bug's true root
+  cause was never conclusively identified. If a similar report resurfaces,
+  don't assume the localStorage-race explanation without re-verifying with
+  `sqlite3`, not `strings`.
+- **Migrating his real data across a bundle-identifier change needs the same
+  identifier.** `tauri.v3.conf.json` deliberately reuses v2's
+  `com.quotos.desktop.v2` rather than minting a new one — see the
+  side-by-side-packaging entry below for why, and never clear the
+  pre-migration `localStorage` key when writing this kind of migration
+  (`persistence.ts`'s `migrateFromLocalStorageIfEmpty`): a bad migration
+  must stay recoverable by going back to the previous build.
 - Health (`Subscription.state`) and the shared rate budget
   (`Subscription.rateLimitedUntil`) are separate fields on purpose — a
   rate-limited response must never overwrite a real diagnosis (e.g. Broken).
-  When touching `refreshOne` in `useSubscriptions.ts`, remember the
-  optimistic "reading"/"connecting" patch issued before the fetch starts is
-  itself capable of erasing prior health state if a subsequent rate-limited
-  response doesn't explicitly restore `state`/`reason` from what was
-  captured before that patch — this exact race was a real regression caught
-  in manual testing (see the `useSubscriptions.test.ts` "B6" describe block).
+  `rate_limited` is intercepted in `useSubscriptions.ts` before it ever
+  reaches a provider's `mapOutcome` (it's not part of the `ReadOutcome`
+  union `registry.ts` defines) and instead restores whatever
+  `state`/`reason` existed *before* the attempt started. When touching
+  `refreshOne` (manual path) or the `quota-refresh` event handler (native
+  scheduled path) in `useSubscriptions.ts`, remember the optimistic
+  "reading"/"connecting" patch issued before a manual fetch starts is
+  itself capable of erasing prior health state if the rate-limited branch
+  doesn't explicitly restore `state`/`reason` from what was captured
+  *before* that patch — this exact race was a real regression caught in
+  manual testing (see the `useSubscriptions.test.ts` "B6" describe blocks,
+  including the native-path variant).
 - The Rust side never returns a stale number as current: on read failure it
   returns a typed `FetchError` (see `providers/mod.rs`), and the frontend
   decides `behind` vs `broken` based on whether prior good data exists.
@@ -115,22 +212,37 @@ rewritten each round, not appended to.
   Verified by reading `platform_impl/macos/mod.rs` in the crate source
   directly — don't trust the `Option<S>` signature's apparent symmetry.
 - **`tauri-plugin-positioner`'s tray anchor mode must match the popover's
-  beak alignment — as of round 2 they no longer do, and fixing one without
-  the other breaks it.** `Position::TrayBottomRight` places the window's
-  *left* edge at the icon's right edge; `Position::TrayCenter`/
-  `TrayBottomCenter` center the window under the icon. The round-2 handoff
-  moved the beak off-center: it's now pinned to the panel's left edge,
-  under the glyph, with the panel opening rightward (`Panel.jsx`'s
-  `beakLeft` prop, `App.tsx`'s `BEAK_LEFT` constant). `lib.rs` still uses
-  `Position::TrayBottomCenter` (round-2 surface work didn't touch
-  `src-tauri`, per that task's file ownership) — this anchor now
-  contradicts the beak, and the two must change together. Confirmed live on
-  the captain's screen (see firstmate's `measurements.md`): "the beak is
-  horizontally centred under the icon... this follows from
-  `Position::TrayBottomCenter`... so the anchor has to change together with
-  the beak." Whoever fixes the native anchor should also revisit
-  `BEAK_LEFT` in `App.tsx` (currently a static approximation, documented
-  in-place, since there's no in-page tray glyph to measure from).
+  beak alignment.** The round-2 handoff moved the beak off-center: it's now
+  pinned to the panel's left edge, under the glyph, with the panel opening
+  rightward (`Panel.jsx`'s `beakLeft` prop, `App.tsx`'s `BEAK_LEFT`
+  constant). `lib.rs`'s `show_panel` uses `Position::TrayBottomLeft`
+  (window's left edge = icon's left edge, per the plugin's own
+  `calculate_position`) plus two handoff-specified adjustments applied
+  afterward: the panel's left edge sits 6px inside the icon's own left edge
+  (re-clamped to the monitor's left edge; the plugin's own
+  `move_window_constrained` already clamps the right edge using the
+  window's real width, and nudging further left can only keep that
+  satisfied), and the top is pinned at a fixed 32px from the screen top
+  (6px under the menu bar) rather than flush against the icon's bottom.
+  **Not empirically pixel-verified this round.** A real tray click was
+  ruled unsafe to drive from here: with the captain's real Quotos also
+  running, both `System Events`-based accessibility queries (`tell process
+  "quotos-app"`, by name *and* by `unix id`) resolved to the identical menu
+  bar item rectangle for both processes, so there was no reliable way to
+  prove a click would land on the dev build and not his. A follow-up
+  attempt to prime `tauri-plugin-positioner`'s cached tray position from
+  `TrayIcon::rect()` (no OS event, fully in-process) and call
+  `show_panel()` directly produced a window position inconsistent with the
+  primed tray coordinates in a way not resolved within this round — logged
+  here rather than left silent. What *is* settled: `TrayBottomLeft` is the
+  semantically correct anchor (the previous `TrayBottomCenter` was
+  confirmed live on the captain's screen to center the window instead —
+  see firstmate's `measurements.md`), and the same `on_tray_event` →
+  `move_window_constrained` mechanism this relies on was already proven
+  correct with *real* click events in the prior round (that's how
+  `TrayBottomCenter`'s centering behavior was confirmed working before).
+  Confirm the exact pixel alignment on the merged build via a real click,
+  not synthetic data.
 - I7's `set_detached` IPC command is unchanged, but its trigger moved:
   round 2 removed the detach *button* — dragging the header is now the only
   way to detach (`App.tsx`'s `handleHeaderPointerDown`), matching the
@@ -141,13 +253,6 @@ rewritten each round, not appended to.
   interaction by fixed-positioning the Panel via CSS instead (see
   `position`/`docked` props) — this is why dragging is fully testable via
   `npm run dev` even though `startDragging()` itself isn't.
-- **The tray title can still show `"!"` and `"…"`**, which the round-2
-  handoff explicitly forbids ("Никаких знаков и многоточий... Либо цифра,
-  либо ничего") — found while reading `useSubscriptions.ts`'s tray-title
-  effect (`s.state === "broken" ? "!" : ... : "…"`). That file is outside
-  round-2 surface work's file ownership (`src/hooks/`); flagged here rather
-  than fixed, since acceptance criterion 2 depends on it and the next
-  worker touching that effect should know.
 - **`--shadow-popover`'s blur radius must stay inside the transparent
   window's own margin** around the panel (`--panel-width` vs the window
   width in `tauri.conf.json`, currently a 14px margin per side via
@@ -155,13 +260,24 @@ rewritten each round, not appended to.
   hard-clipped by the window edge instead of fading, which reads as a dark
   halo band against a bright desktop rather than a soft shadow.
 - Side-by-side packaging (a second identity for the same product) is done
-  at packaging time via `quotos-app/src-tauri/tauri.v2.conf.json` merged
-  with `--config` (`npx tauri build --config src-tauri/tauri.v2.conf.json`
+  at packaging time via a config in `quotos-app/src-tauri/` merged with
+  `--config` (e.g. `npx tauri build --config src-tauri/tauri.v3.conf.json`
   from `quotos-app/`) — see that file and `quotos-app/README.md`. Don't put
   `--config` before the `build` subcommand; each subcommand defines its own
   flag. A distinct `identifier` is sufficient to diverge WKWebView storage
   (verified empirically: `~/Library/WebKit/<identifier>/` is a separate
   directory per bundle identifier, confirmed by launching both builds).
+  **`identifier` is not always meant to diverge, though** —
+  `tauri.v3.conf.json` deliberately reuses v2's `com.quotos.desktop.v2`
+  rather than minting a new one, on purpose, reversing round-1's own
+  "always diverge" convention: v3 carries the R2-5 native-persistence
+  migration, and that migration only has real data to prove itself against
+  if the build shares the captain's actual in-use identity (`Quotos 2`'s
+  WKWebView storage, where his real tracked list and custom names already
+  live). A fresh identifier would boot empty and migrate nothing. The next
+  person tidying up packaging configs should not "fix" this back to a
+  unique identifier without checking whether the same reasoning still
+  applies.
 
 ## Maintaining this file
 

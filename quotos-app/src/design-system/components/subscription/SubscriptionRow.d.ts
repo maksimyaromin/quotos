@@ -14,8 +14,13 @@ export interface SubscriptionRowProps {
   /** Account/plan qualifier shown beside the provider (e.g. "Personal · Max"). */
   account?: string;
   state?: SubscriptionState;
-  /** Headline % consumed (the most-consumed active limit). Null for no-data states. */
+  /** Headline % consumed — the account-wide weekly window, not simply the
+   * most-consumed one. Null for no-data states. */
   used?: number | null;
+  /** "healthy" | "warn" | "critical" — provider-computed from *every*
+   * window, not just the headline one. Colors the headline number and bar;
+   * a 20%-headline account with an 85%-used session still reads amber. */
+  severity?: "healthy" | "warn" | "critical";
   /** Reset copy for the binding window, e.g. "Resets today at 4:05 PM". */
   resetLabel?: string | null;
   /** Relative age of the last successful read, e.g. "2 min ago". Always shown. */
@@ -44,6 +49,14 @@ export interface SubscriptionRowProps {
   onReadNow?: () => void;
   /** "Stop tracking" menu item. */
   onStopTracking?: () => void;
+  /** R2-6: a `claude setup-token` session is running for this account —
+   * shows the paste-code field in place of the reason text and hides the
+   * caller's own action button. */
+  signInInProgress?: boolean;
+  /** Called with the pasted code on submit. */
+  onSubmitSignInCode?: (code: string) => void;
+  /** Cancels the in-progress sign-in. */
+  onCancelSignIn?: () => void;
   style?: React.CSSProperties;
 }
 

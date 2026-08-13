@@ -2,6 +2,7 @@ mod persistence;
 mod providers;
 mod ratelimit;
 mod scheduler;
+mod signin;
 mod tray_render;
 
 use std::collections::HashMap;
@@ -35,6 +36,9 @@ struct AppState {
     /// R2-4: one automatic read per account per minute, on a native timer
     /// (see `scheduler.rs` for why — also reproduced first).
     scheduler: Scheduler,
+    /// R2-6: in-progress `claude setup-token` sessions, keyed by account id.
+    /// See `signin.rs`.
+    sign_in: signin::SignInRegistry,
 }
 
 #[tauri::command]
@@ -297,8 +301,68 @@ fn set_detached(
     Ok(())
 }
 
+/// R2-6: starts Claude Code's own sign-in for a broken row's account. See
+/// `signin.rs`'s module doc for exactly what this does and does not do —
+/// in short, `claude setup-token` opens the browser and prints the
+/// authorization URL itself; Quotos never touches that, it only starts the
+/// process and later relays a pasted code into it.
+#[tauri::command]
+fn start_sign_in(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    config_dir: String,
+) -> Result<(), String> {
+    state.sign_in.start(app, account_id, config_dir)
+}
+
+/// R2-6: relays a code pasted into the panel's own field to the waiting
+/// `claude setup-token` process, exactly as if it had been typed into a
+/// real terminal.
+#[tauri::command]
+fn submit_sign_in_code(state: tauri::State<'_, AppState>, account_id: String, code: String) -> Result<(), String> {
+    state.sign_in.submit_code(&account_id, &code)
+}
+
+/// R2-6: cancels an in-progress sign-in (panel action, or cleanup if the
+/// row is removed mid-flow).
+#[tauri::command]
+fn cancel_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
+    state.sign_in.cancel(&account_id);
+}
+
+/// R2-6: called after the frontend has handled `sign-in-finished`, so a
+/// retry starts clean.
+#[tauri::command]
+fn forget_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
+    state.sign_in.forget(&account_id);
+}
+
+/// Followup-1: the round-2 handoff moved the popover's beak off-center — it
+/// now sits at the panel's own left edge, under the glyph, with the panel
+/// unfolding rightward (`Panel.jsx`'s `beakLeft`, `App.tsx`'s `BEAK_LEFT`).
+/// `Position::TrayBottomCenter` centers the window under the icon instead,
+/// which now visibly contradicts the beak (confirmed live on the captain's
+/// screen — see `data/quotos-fixes-f2/measurements.md`). `TrayBottomLeft`
+/// gets us the right *edge* alignment (window left = icon left), then two
+/// handoff-specified adjustments get applied on top: the left edge sits 6px
+/// inside the icon's own left edge, and the top is pinned at a fixed 32px
+/// from the screen top (6px under the menu bar) rather than flush against
+/// the icon's bottom. The x nudge is re-clamped to the monitor's left edge;
+/// the plugin's own `move_window_constrained` already clamped the right
+/// edge using the window's real width, and nudging further left can only
+/// keep that satisfied, never violate it.
 fn show_panel(window: &tauri::WebviewWindow) {
-    let _ = window.move_window_constrained(Position::TrayBottomCenter);
+    let _ = window.move_window_constrained(Position::TrayBottomLeft);
+    if let (Ok(pos), Ok(Some(monitor))) = (window.outer_position(), window.current_monitor()) {
+        let scale = monitor.scale_factor();
+        let left_offset_px = (6.0 * scale).round() as i32;
+        let top_px = (32.0 * scale).round() as i32;
+        let monitor_pos = monitor.position();
+        let x = (pos.x - left_offset_px).max(monitor_pos.x);
+        let y = monitor_pos.y + top_px;
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
     let _ = window.show();
     let _ = window.set_focus();
     let _ = window.emit("panel-visibility", true);
@@ -333,6 +397,10 @@ pub fn run() {
             set_tray_status,
             set_detached,
             debug_rate_limit_snapshot,
+            start_sign_in,
+            submit_sign_in_code,
+            cancel_sign_in,
+            forget_sign_in,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -353,6 +421,7 @@ pub fn run() {
                 detached: Mutex::new(false),
                 tracked_store: Store::load(tracked_path),
                 scheduler: Scheduler::new(),
+                sign_in: signin::SignInRegistry::new(),
             });
             spawn_scheduler(app.handle().clone());
 

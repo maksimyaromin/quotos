@@ -5,20 +5,32 @@ const fetchSnapshot = vi.fn();
 const setTrayStatus = vi.fn();
 const onQuotaRefresh = vi.fn();
 const kickScheduler = vi.fn();
+const startSignIn = vi.fn();
+const submitSignInCode = vi.fn();
+const cancelSignIn = vi.fn();
+const forgetSignIn = vi.fn();
+const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.resolve(() => {}));
 
 vi.mock("../lib/tauriClient", () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
   setTrayStatus: (...args: unknown[]) => setTrayStatus(...args),
   onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
   kickScheduler: (...args: unknown[]) => kickScheduler(...args),
+  startSignIn: (...args: unknown[]) => startSignIn(...args),
+  submitSignInCode: (...args: unknown[]) => submitSignInCode(...args),
+  cancelSignIn: (...args: unknown[]) => cancelSignIn(...args),
+  forgetSignIn: (...args: unknown[]) => forgetSignIn(...args),
+  onSignInFinished: (callback: (event: unknown) => void) => onSignInFinished(callback),
 }));
 
 const TRACKED = [
   { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: false },
 ];
 
+const loadTracked = vi.fn(() => Promise.resolve(TRACKED));
+
 vi.mock("../lib/persistence", () => ({
-  loadTracked: () => Promise.resolve(TRACKED),
+  loadTracked: () => loadTracked(),
   saveTracked: vi.fn(),
 }));
 
@@ -231,5 +243,185 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
     expect(result.current.subscriptions[0].state).toBe("broken");
     expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i);
     expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
+  });
+});
+
+// Followup-2: the handoff forbids any tray glyph but a digit ("Никаких
+// знаков и многоточий... Либо цифра, либо ничего") — a broken pin must
+// never show "!" and a numberless pin must never show "…", only be absent.
+// It also restates the stale-taints-everything rule: if *any* pinned value
+// is stale, every digit in the tray turns amber, not just that account's.
+describe("useSubscriptions tray segments (followup-2)", () => {
+  const TWO_PINNED = [
+    { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    { id: "claude:team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: true },
+  ];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    loadTracked.mockResolvedValue(TWO_PINNED);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    loadTracked.mockResolvedValue(TRACKED);
+  });
+
+  it("a broken pin with no number contributes no segment at all — never '!'", async () => {
+    fetchSnapshot.mockImplementation(async (account: { id: string }) => {
+      if (account.id === "claude:claude") {
+        throw { kind: "unauthorized", message: "still unauthorized after refreshing the credential" };
+      }
+      return {
+        account_id: account.id,
+        provider: "claude",
+        config_dir: "~/.claude-team",
+        fetched_at: new Date().toISOString(),
+        usage: { limits: [{ kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null }] },
+        profile: null,
+      };
+    });
+
+    renderHook(() => useSubscriptions());
+    await flush();
+
+    const calls = setTrayStatus.mock.calls;
+    const lastCall = calls[calls.length - 1]?.[0];
+    expect(lastCall).toEqual([{ text: "40%", color: "neutral" }]);
+    for (const call of setTrayStatus.mock.calls) {
+      for (const segment of call[0]) {
+        expect(segment.text).not.toBe("!");
+        expect(segment.text).not.toContain("…");
+      }
+    }
+  });
+
+  it("one stale pinned account turns every pinned digit amber, not just its own", async () => {
+    fetchSnapshot.mockImplementation(async (account: { id: string }) => {
+      const base = {
+        account_id: account.id,
+        provider: "claude",
+        config_dir: account.id === "claude:claude" ? "~/.claude" : "~/.claude-team",
+        fetched_at: new Date().toISOString(),
+        profile: null,
+      };
+      if (account.id === "claude:claude") {
+        return { ...base, usage: { limits: [{ kind: "weekly_all", percent: 10, is_active: true, resets_at: null, scope: null }] } };
+      }
+      return { ...base, usage: { limits: [{ kind: "weekly_all", percent: 20, is_active: true, resets_at: null, scope: null }] } };
+    });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual(
+      expect.arrayContaining([
+        { text: "10%", color: "neutral" },
+        { text: "20%", color: "neutral" },
+      ]),
+    );
+
+    // Now the team account goes stale (a failed retry after real data).
+    fetchSnapshot.mockImplementationOnce(async () => {
+      throw { kind: "network", message: "the connection timed out" };
+    });
+    await act(async () => {
+      await result.current.refreshAccountById("claude:team");
+    });
+
+    const trayCalls = setTrayStatus.mock.calls;
+    const segments = trayCalls[trayCalls.length - 1]?.[0];
+    expect(segments).toEqual(
+      expect.arrayContaining([
+        { text: "10%", color: "amber" },
+        { text: "20%", color: "amber" },
+      ]),
+    );
+  });
+});
+
+// R2-6: startSignIn/submitSignInCode/cancelSignIn and the sign-in-finished
+// reaction — Quotos never inspects a credential itself, so a finished
+// session (success or failure) always triggers a real re-read rather than
+// trusting the process's exit status alone.
+describe("useSubscriptions sign-in flow", () => {
+  let signInFinishedCallback: ((event: { account_id: string; success: boolean }) => void) | undefined;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    startSignIn.mockReset();
+    submitSignInCode.mockReset();
+    cancelSignIn.mockReset();
+    forgetSignIn.mockReset();
+    signInFinishedCallback = undefined;
+    onSignInFinished.mockImplementation((cb: (event: { account_id: string; success: boolean }) => void) => {
+      signInFinishedCallback = cb;
+      return Promise.resolve(() => {});
+    });
+    startSignIn.mockResolvedValue(undefined);
+    fetchSnapshot.mockRejectedValue({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("startSignIn marks the row in-progress and calls the IPC with its config dir", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    await act(async () => {
+      await result.current.startSignIn("claude:claude");
+    });
+
+    expect(startSignIn).toHaveBeenCalledWith("claude:claude", "~/.claude");
+    expect(result.current.subscriptions[0].signInInProgress).toBe(true);
+  });
+
+  it("a finished sign-in clears signInInProgress and triggers a re-read", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    await act(async () => {
+      await result.current.startSignIn("claude:claude");
+    });
+    expect(result.current.subscriptions[0].signInInProgress).toBe(true);
+
+    fetchSnapshot.mockResolvedValueOnce({
+      account_id: "claude:claude",
+      provider: "claude",
+      config_dir: "~/.claude",
+      fetched_at: new Date().toISOString(),
+      usage: { limits: [{ kind: "weekly_all", percent: 5, is_active: true, resets_at: null, scope: null }] },
+      profile: null,
+    });
+
+    await act(async () => {
+      signInFinishedCallback?.({ account_id: "claude:claude", success: true });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.subscriptions[0].signInInProgress).toBe(false);
+    expect(forgetSignIn).toHaveBeenCalledWith("claude:claude");
+    expect(result.current.subscriptions[0].state).toBe("working");
+    expect(result.current.subscriptions[0].used).toBe(5);
+  });
+
+  it("cancelSignIn calls the IPC and clears the in-progress flag", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    await act(async () => {
+      await result.current.startSignIn("claude:claude");
+    });
+
+    await act(async () => {
+      await result.current.cancelSignIn("claude:claude");
+    });
+
+    expect(cancelSignIn).toHaveBeenCalledWith("claude:claude");
+    expect(result.current.subscriptions[0].signInInProgress).toBe(false);
   });
 });

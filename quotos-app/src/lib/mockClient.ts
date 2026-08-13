@@ -9,10 +9,17 @@
  * deliberately decoupled from what's tracked/shown (I6: the tracked list,
  * persisted in localStorage via lib/persistence.ts, starts empty and is the
  * only thing the panel renders). */
-import type { AccountDescriptor, FetchError, RawSnapshot } from "../types/entities";
+import type { AccountDescriptor, FetchError, RawSnapshot, SignInFinishedEvent } from "../types/entities";
 
 const DELAY_MS = 500;
 const callCounts = new Map<string, number>();
+// R2-6: browser-only simulation of claude setup-token, since the real
+// process (and the browser it opens) can't be driven from here — see
+// signin.rs. Lets the paste-code UI itself be reviewed end-to-end even
+// though the real CLI flow can only be verified on a packaged build.
+const signInSessions = new Set<string>();
+const recoveredAccounts = new Set<string>();
+let signInListeners: Array<(event: SignInFinishedEvent) => void> = [];
 
 function delay<T>(value: T): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), DELAY_MS));
@@ -69,6 +76,7 @@ const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:demo-behind", provider: "claude", config_dir: "~/.claude-demo-behind" },
   { id: "claude:demo-nolimits", provider: "claude", config_dir: "~/.claude-demo-nolimits" },
   { id: "claude:demo-longnames", provider: "claude", config_dir: "~/.claude-demo-longnames" },
+  { id: "claude:demo-severity", provider: "claude", config_dir: "~/.claude-demo-severity" },
 ];
 
 export async function listAccounts(): Promise<AccountDescriptor[]> {
@@ -117,6 +125,19 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
     case "claude:demo-idle":
       return fail({ kind: "not_connected", message: "No Claude Code credentials in the Keychain for this account." });
     case "claude:demo-broken":
+      // R2-6: once the mock sign-in flow has "finished" (see
+      // submitSignInCode below), the account reads healthy again — this is
+      // what lets the paste-code UI be reviewed end to end in a browser.
+      if (recoveredAccounts.has(account.id)) {
+        return delay({
+          account_id: account.id,
+          provider: "claude",
+          config_dir: account.config_dir,
+          fetched_at: new Date().toISOString(),
+          usage: usagePayload(5, 8, 2),
+          profile: profilePayload("Recovered demo", "claude_pro"),
+        });
+      }
       // B6: the first read surfaces the real, diagnosable failure (an
       // expired login). Every read after that — simulating the shared
       // rate budget running dry from repeated automatic retries — comes
@@ -155,6 +176,21 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         fetched_at: new Date().toISOString(),
         usage: { limits: [] },
         profile: profilePayload("No limits demo", "claude_pro"),
+      });
+    case "claude:demo-severity":
+      // R2-2/followup-3: the captain's own example — the account-wide
+      // weekly headline is low (20%), but the session is nearly out (85%).
+      // The headline number, bar, and (if pinned) tray digit must all read
+      // amber from severity, even though 20% alone would otherwise stay
+      // neutral. Exercises the case none of the other demo accounts do:
+      // headline and severity disagreeing.
+      return delay({
+        account_id: account.id,
+        provider: "claude",
+        config_dir: account.config_dir,
+        fetched_at: new Date().toISOString(),
+        usage: usagePayload(85, 20, 8),
+        profile: profilePayload("Severity demo", "claude_pro"),
       });
     case "claude:demo-longnames":
       // A provider-supplied window name long enough to force the ellipsis
@@ -215,4 +251,35 @@ export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>>
   return Object.fromEntries(
     Array.from(callCounts.entries()).map(([id, n]) => [id, { used: Math.min(n, 5), max: 5, retry_after_secs: null }]),
   );
+}
+
+// R2-6: see the `signInSessions`/`recoveredAccounts` note near the top of
+// this file — this simulates just enough of `claude setup-token`'s
+// lifecycle for the paste-code UI to be reviewable here, without a real
+// process or browser.
+export async function startSignIn(accountId: string, _configDir: string): Promise<void> {
+  signInSessions.add(accountId);
+}
+
+export async function submitSignInCode(accountId: string, _code: string): Promise<void> {
+  if (!signInSessions.has(accountId)) return;
+  signInSessions.delete(accountId);
+  recoveredAccounts.add(accountId);
+  await delay(undefined);
+  signInListeners.forEach((listener) => listener({ account_id: accountId, success: true }));
+}
+
+export async function cancelSignIn(accountId: string): Promise<void> {
+  signInSessions.delete(accountId);
+}
+
+export async function forgetSignIn(_accountId: string): Promise<void> {
+  // no-op in the browser — nothing native to clean up
+}
+
+export function onSignInFinished(callback: (event: SignInFinishedEvent) => void): Promise<() => void> {
+  signInListeners.push(callback);
+  return Promise.resolve(() => {
+    signInListeners = signInListeners.filter((l) => l !== callback);
+  });
 }

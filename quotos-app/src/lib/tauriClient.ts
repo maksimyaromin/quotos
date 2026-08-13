@@ -15,6 +15,16 @@ export const onPanelVisibility = client.onPanelVisibility;
 export const setDetached = client.setDetached;
 export const debugRateLimitSnapshot = client.debugRateLimitSnapshot;
 
+/** R2-6: both sides implement the same sign-in lifecycle — mockClient.ts
+ * simulates `claude setup-token` well enough for the paste-code UI to be
+ * reviewed in a browser, since the real process (and the browser it opens)
+ * can't be driven from here. See signin.rs and mockClient.ts. */
+export const startSignIn = client.startSignIn;
+export const submitSignInCode = client.submitSignInCode;
+export const cancelSignIn = client.cancelSignIn;
+export const forgetSignIn = client.forgetSignIn;
+export const onSignInFinished = client.onSignInFinished;
+
 /** R2-2: colored tray digits only exist on the native side (see
  * liveClient.ts's doc comment) — there's no real tray to update in the
  * browser mock harness, so this branches directly here rather than adding

@@ -62,6 +62,10 @@ export interface Subscription {
    * this must never replace `state` — it is rendered as a quiet fact
    * alongside whatever health state already holds. */
   rateLimitedUntil: string | null;
+  /** R2-6: a `claude setup-token` session is running for this account —
+   * shell-owned UI state, not provider data (see `signin.rs`). Drives
+   * whether the panel shows the code-paste field for this row. */
+  signInInProgress: boolean;
 }
 
 /** Wire shape returned by the Rust `list_accounts` command. */
@@ -116,6 +120,16 @@ export interface NormalizedRead {
 export type ScheduledRefreshEvent =
   | { kind: "ok"; snapshot: RawSnapshot }
   | { kind: "err"; account_id: string; error: FetchError };
+
+/** R2-6: pushed once when a `start_sign_in` session ends (the `claude
+ * setup-token` process exited), so the panel can re-read the account and
+ * drop out of the "waiting for a pasted code" UI. `success` only reflects
+ * the process's own exit status — Quotos never inspects the credential
+ * itself, so the row's next read is still the real proof either way. */
+export interface SignInFinishedEvent {
+  account_id: string;
+  success: boolean;
+}
 
 /** One colored piece of the tray title (R2-2). `tray-icon` v0.24.2's macOS
  * `set_title` takes a plain string with no color channel — verified by

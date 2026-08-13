@@ -39,6 +39,9 @@ export default function App() {
     renameSubscription,
     addSubscription,
     removeSubscription,
+    startSignIn,
+    submitSignInCode,
+    cancelSignIn,
   } = useSubscriptions();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -297,7 +300,16 @@ export default function App() {
             return <UndoRow key={sub.id} label={pendingRemovals[sub.id].label} onUndo={() => handleUndo(sub.id)} />;
           }
           const blocked = isBlocked(sub.rateLimitedUntil, now);
-          const baseAction = sub.state === "broken" ? "Open Claude Code" : sub.state === "behind" ? "Try again" : null;
+          // R2-6: the broken row's action starts Claude Code's own sign-in
+          // (signin.rs) instead of just retrying the same failed read —
+          // once a session is running, the row shows the paste-code field
+          // instead of this button (see SubscriptionRow's signInInProgress).
+          const baseAction =
+            sub.state === "broken" && !sub.signInInProgress
+              ? "Open Claude Code"
+              : sub.state === "behind"
+              ? "Try again"
+              : null;
           const label = sub.labelOverride ?? sub.label;
           return (
             <SubscriptionRow
@@ -307,6 +319,7 @@ export default function App() {
               account={sub.account ?? undefined}
               state={sub.state}
               used={sub.used}
+              severity={sub.severity}
               resetLabel={formatExactReset(sub.resetsAt, nowDate) ?? undefined}
               lastRead={formatRelativePast(sub.lastReadAt, nowDate) ?? undefined}
               windows={sub.windows.map((w) => ({
@@ -322,13 +335,16 @@ export default function App() {
               actionLabel={baseAction ? (blocked ? `Retry at ${formatClockTime(sub.rateLimitedUntil)}` : baseAction) : null}
               actionDisabled={blocked}
               footerNote={blocked && !sub.lastReadAt ? `Waiting for the rate budget — available ${formatClockTime(sub.rateLimitedUntil)}` : null}
-              onAction={() => refreshAccountById(sub.id)}
+              onAction={() => (sub.state === "broken" ? startSignIn(sub.id) : refreshAccountById(sub.id))}
               onReadNow={() => refreshAccountById(sub.id)}
               onTogglePin={() => togglePin(sub.id)}
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}
               onStopTracking={() => handleStopTracking(sub.id, label)}
+              signInInProgress={sub.signInInProgress}
+              onSubmitSignInCode={(code: string) => submitSignInCode(sub.id, code)}
+              onCancelSignIn={() => cancelSignIn(sub.id)}
             />
           );
         })

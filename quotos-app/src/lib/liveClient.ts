@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AccountDescriptor, RawSnapshot, ScheduledRefreshEvent, TraySegment } from "../types/entities";
+import type { AccountDescriptor, RawSnapshot, ScheduledRefreshEvent, SignInFinishedEvent, TraySegment } from "../types/entities";
 
 export async function listAccounts(): Promise<AccountDescriptor[]> {
   return invoke<AccountDescriptor[]>("list_accounts");
@@ -51,4 +51,30 @@ export async function setDetached(detached: boolean): Promise<void> {
 
 export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
   return invoke("debug_rate_limit_snapshot");
+}
+
+/** R2-6: starts Claude Code's own sign-in for a broken row's account (see
+ * `src-tauri/src/signin.rs`). Quotos never touches the Keychain or a
+ * credential — it only starts the process and later relays a pasted code
+ * back into it. */
+export async function startSignIn(accountId: string, configDir: string): Promise<void> {
+  return invoke("start_sign_in", { accountId, configDir });
+}
+
+/** R2-6: relays a code pasted into the panel to the waiting process. */
+export async function submitSignInCode(accountId: string, code: string): Promise<void> {
+  return invoke("submit_sign_in_code", { accountId, code });
+}
+
+export async function cancelSignIn(accountId: string): Promise<void> {
+  return invoke("cancel_sign_in", { accountId });
+}
+
+export async function forgetSignIn(accountId: string): Promise<void> {
+  return invoke("forget_sign_in", { accountId });
+}
+
+/** R2-6: fires once when the sign-in process for `accountId` exits. */
+export function onSignInFinished(callback: (event: SignInFinishedEvent) => void): Promise<() => void> {
+  return listen<SignInFinishedEvent>("sign-in-finished", (event) => callback(event.payload));
 }
