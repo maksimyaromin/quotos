@@ -92,3 +92,42 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(screen.getByLabelText("More").getAttribute("data-quotos-menu-scope")).toBe("true");
   });
 });
+
+// R6: expanding a row used to be pointer-only — the row div's onClick was the
+// sole expand path, and the "N limits" affordance it pointed at was an inert
+// span, unreachable by keyboard and invisible to the accessibility tree.
+describe("the 'N limits' disclosure is a real, focusable control (R6)", () => {
+  const windows = [
+    { id: "w1", label: "Session", used: 40 },
+    { id: "w2", label: "Weekly", used: 10 },
+  ];
+
+  it("is a button carrying aria-expanded", () => {
+    const { rerender } = render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} />,
+    );
+    const disclosure = screen.getByRole("button", { name: /2 limits/ });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    rerender(
+      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
+    );
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("toggles expansion itself, without the row's own click undoing it", () => {
+    const onToggleExpand = vi.fn();
+    render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows}
+        onToggleExpand={onToggleExpand} />,
+    );
+    screen.getByRole("button", { name: /2 limits/ }).click();
+    // Exactly once: the button's stopPropagation must keep the row div's
+    // onClick (the pointer expand path) from firing a second toggle.
+    expect(onToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render at all without windows", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={[]} />);
+    expect(screen.queryByRole("button", { name: /limits?/ })).toBeNull();
+  });
+});

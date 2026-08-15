@@ -409,13 +409,22 @@ export function SubscriptionRow({
             }}>{actionLabel}</button>
         ) : null}
         {windows && windows.length > 0 ? (
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)",
-          }}>
+          // R6: a real button, not a span — the row div's own onClick is the
+          // pointer path, but a div is unreachable by keyboard and invisible
+          // to the accessibility tree, so this is the row's only focusable
+          // expand control. stopPropagation keeps the row's click from
+          // toggling it straight back.
+          <button type="button" aria-expanded={expanded}
+            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              margin: 0, padding: 0, border: 0, background: "transparent",
+              fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)",
+              cursor: "pointer",
+            }}>
             {windows.length} {windows.length === 1 ? "limit" : "limits"}
             <Chevron open={expanded} />
-          </span>
+          </button>
         ) : null}
       </div>
 
