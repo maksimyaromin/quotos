@@ -14,6 +14,7 @@ import {
   setDetached as setDetachedIpc,
   debugRateLimitSnapshot,
   onPanelBeakOffset,
+  onPanelVisibility,
   dragWindowStep,
   endWindowDrag,
 } from "./lib/tauriClient";
@@ -81,12 +82,40 @@ export default function App() {
     };
   }, []);
 
+  // Escape dismisses the innermost transient layer first: an open "…" menu
+  // closes and the panel stays up; only a bare Escape hides the panel. The
+  // rename and sign-in fields own their layer the same way — their handlers
+  // stopPropagation, so the key never reaches this window listener.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") hidePanel();
+      if (event.key !== "Escape") return;
+      if (openMenuId) {
+        setOpenMenuId(null);
+        return;
+      }
+      hidePanel();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openMenuId]);
+
+  // The menu must not still be hanging open when the panel comes back after
+  // a hide — the prototype resets it on every open for the same reason.
+  // Only visible=false is acted on: the mock harness fires an initial
+  // visible=true at subscribe time.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void onPanelVisibility((visible) => {
+      if (!visible) setOpenMenuId(null);
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   // Keeps relative "ago" text, exact reset copy, and rate-limit availability

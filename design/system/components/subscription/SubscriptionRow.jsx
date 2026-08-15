@@ -295,7 +295,8 @@ export function SubscriptionRow({
         {badge ? (
           <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>{badge}</Badge>
         ) : null}
-        <button type="button" title="More" aria-label="More" data-quotos-menu-scope="true"
+        <button type="button" title="More" aria-label="More" aria-expanded={menuOpen}
+          data-quotos-menu-scope="true"
           ref={menuButtonRef}
           onClick={(e) => { e.stopPropagation(); onToggleMenu?.(); }}
           style={{

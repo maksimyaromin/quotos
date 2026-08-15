@@ -275,7 +275,12 @@ rewritten each round, not appended to.
   only ever *closes* — never (re)opens — so it can't race the trigger
   button's own toggle-on-click. Keep both elements' `data-quotos-menu-scope`
   attribute if you touch this markup, or the menu will close itself on its
-  own click. **R4-5: it is `position: fixed`, placed from the trigger
+  own click. Escape follows the same layering (R6b, App.test.tsx): the
+  window keydown handler closes an open menu first and only a bare Escape
+  hides the panel, a panel hide also resets the menu (via
+  `onPanelVisibility` false — the prototype's `menuId: null`-on-open rule),
+  and the rename/sign-in fields stopPropagation so their Escape never
+  reaches that listener at all. **R4-5: it is `position: fixed`, placed from the trigger
   button's own viewport rect, and that is load-bearing.** As an
   absolutely-positioned child it lived inside the panel body's
   `overflow-y: auto` box, which both clipped its last item at the panel's

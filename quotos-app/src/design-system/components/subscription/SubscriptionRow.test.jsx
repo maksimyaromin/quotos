@@ -91,6 +91,13 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(screen.getByText("Stop tracking").closest("[data-quotos-menu-scope]")).not.toBeNull();
     expect(screen.getByLabelText("More").getAttribute("data-quotos-menu-scope")).toBe("true");
   });
+
+  it("the trigger reports the menu's open state via aria-expanded", () => {
+    const { rerender } = render(<SubscriptionRow label="Claude Team" state="working" used={40} />);
+    expect(screen.getByLabelText("More").getAttribute("aria-expanded")).toBe("false");
+    rerender(<SubscriptionRow label="Claude Team" state="working" used={40} menuOpen />);
+    expect(screen.getByLabelText("More").getAttribute("aria-expanded")).toBe("true");
+  });
 });
 
 // R6: expanding a row used to be pointer-only — the row div's onClick was the
