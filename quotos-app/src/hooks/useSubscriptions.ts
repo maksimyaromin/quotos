@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AccountDescriptor, FetchError, RawSnapshot, Subscription, SubscriptionState, TraySegment } from "../types/entities";
 import { isFetchError } from "../types/entities";
 import {
@@ -15,20 +15,35 @@ import {
 import { normalizeFor, providerDisplayName, mapOutcomeFor } from "../providers/registry";
 import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
 
-/** The provider-derived default label for an account before any read has
- * come back (or before a custom rename) — shared with the add-subscription
- * flow so a candidate shows the same name there as it will once tracked. */
+/** The id-derived default label for an account before any read has come back
+ * (or before a custom rename) — shared with the add-subscription flow so a
+ * candidate shows the same name there as it will once tracked.
+ *
+ * R4-4: title-cased. The old version special-cased `claude` → "Claude" and
+ * left every other slug exactly as the directory is spelled, so `~/.claude-team`
+ * rendered "claude team" in the Subscriptions screen while the panel showed
+ * "Claude Team" for the same account — two spellings of one thing, side by
+ * side, in the captain's 2026-08-15 screencast. This is presentation
+ * consistency, not a naming policy: the same words, capitalised the way every
+ * other name in the panel is. */
 export function accountLabel(account: AccountDescriptor): string {
   const slug = account.id.split(":")[1] ?? account.id;
-  return slug === "claude" ? "Claude" : slug.replace(/[-_]/g, " ");
+  return slug
+    .replace(/[-_]/g, " ")
+    .replace(/\S+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1));
 }
 
-function initialSubscription(account: AccountDescriptor, labelOverride: string | null, pinned: boolean): Subscription {
+function initialSubscription(
+  account: AccountDescriptor,
+  labelOverride: string | null,
+  pinned: boolean,
+  label = accountLabel(account),
+): Subscription {
   return {
     id: account.id,
     provider: account.provider,
     providerName: providerDisplayName(account.provider),
-    label: accountLabel(account),
+    label,
     labelOverride,
     account: null,
     state: "connecting",
@@ -43,7 +58,25 @@ function initialSubscription(account: AccountDescriptor, labelOverride: string |
     configDir: account.config_dir,
     rateLimitedUntil: null,
     signInInProgress: false,
+    pendingRemoval: false,
   };
+}
+
+/** How long "Stop tracking" stays undoable. The account is untracked from the
+ * moment the button is pressed (R4-3); this is only how long the Undo row
+ * keeps its slot in the panel. */
+export const STOP_TRACKING_UNDO_MS = 5_000;
+
+/** The persisted projection of a subscription: membership, custom name, pin —
+ * and nothing that a read produced. */
+function toTrackedAccounts(subscriptions: Subscription[]): TrackedAccount[] {
+  return subscriptions.map((s) => ({
+    id: s.id,
+    provider: s.provider,
+    config_dir: s.configDir,
+    label: s.labelOverride,
+    pinned: s.pinned,
+  }));
 }
 
 /** Everything a read outcome needs to know about what came *before* it —
@@ -86,6 +119,26 @@ export function useSubscriptions() {
   const subscriptionsRef = useRef<Subscription[]>(subscriptions);
   subscriptionsRef.current = subscriptions;
 
+  // R4-4: the best name we have ever learned for an account, by id — the
+  // provider's own (`organization.name`, e.g. "Claude Max"), kept after the
+  // account stops being tracked. Without it, untracking an account renamed the
+  // captain's "Claude Max" back to a bare "Claude" in the very same list, the
+  // instant it moved from the tracked half to the untracked half, because the
+  // untracked half had nothing but the config directory's name to go on. A
+  // session-lifetime cache, deliberately: it is a presentation nicety derived
+  // from reads this session actually made, not a new thing to persist.
+  const [knownLabels, setKnownLabels] = useState<Record<string, string>>({});
+  const knownLabelsRef = useRef<Record<string, string>>(knownLabels);
+  knownLabelsRef.current = knownLabels;
+
+  // R4-3: the live "Stop tracking" undo timers, by id. Owned here rather than
+  // in App.tsx because the state they resolve into (membership) is owned here
+  // — that split is exactly what let the two views disagree.
+  const removalTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  /** The exact JSON last handed to `saveTracked` — see the save effect. */
+  const lastSavedRef = useRef<string | null>(null);
+
   // R2-5: the async-load equivalent of the old "lazy useState initializer"
   // trick — loading the tracked list is now inherently async (a real IPC
   // round-trip to the Rust-owned file, see persistence.ts), so it can no
@@ -117,6 +170,10 @@ export function useSubscriptions() {
         const raw = outcome.raw;
         const normalized = normalizeFor(provider, raw.usage, raw.profile, fallbackLabel);
         const mapped = mapOutcomeFor(provider, { kind: "ok", normalized }, prior.hadGoodRead);
+        // R4-4: remember it for the Subscriptions screen, which otherwise has
+        // only the config directory's name to show once this account stops
+        // being tracked.
+        setKnownLabels((prev) => (prev[accountId] === normalized.label ? prev : { ...prev, [accountId]: normalized.label }));
         patch(accountId, {
           state: mapped.state,
           label: normalized.label,
@@ -202,7 +259,9 @@ export function useSubscriptions() {
   const refreshAll = useCallback(async () => {
     if (refreshAllInFlight.current) return refreshAllInFlight.current;
     const run = (async () => {
-      const targets = subscriptionsRef.current;
+      // R4-3: a row inside its "Stop tracking" undo window is untracked
+      // already — never spend a read on it.
+      const targets = subscriptionsRef.current.filter((s) => !s.pendingRemoval);
       await Promise.allSettled(targets.map((s) => refreshOne({ id: s.id, provider: s.provider, config_dir: s.configDir })));
     })();
     refreshAllInFlight.current = run;
@@ -218,7 +277,7 @@ export function useSubscriptions() {
       const inFlight = refreshOneInFlight.current.get(id);
       if (inFlight) return inFlight;
       const sub = subscriptionsRef.current.find((s) => s.id === id);
-      if (!sub) return;
+      if (!sub || sub.pendingRemoval) return;
       const run = refreshOne({ id: sub.id, provider: sub.provider, config_dir: sub.configDir });
       refreshOneInFlight.current.set(id, run);
       try {
@@ -238,22 +297,83 @@ export function useSubscriptions() {
     setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, labelOverride: label } : s)));
   }, []);
 
+  /** R4-3: cancels a pending "Stop tracking" timer, if one is running. */
+  const clearRemovalTimer = useCallback((id: string) => {
+    const timer = removalTimers.current[id];
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    delete removalTimers.current[id];
+  }, []);
+
   const addSubscription = useCallback(
     (account: AccountDescriptor) => {
+      clearRemovalTimer(account.id);
       setSubscriptions((prev) => {
-        if (prev.some((s) => s.id === account.id)) return prev;
-        return [...prev, initialSubscription(account, null, false)];
+        // Adding back something whose undo window is still open is the same
+        // action as undoing it — same account, same slot, same name.
+        const existing = prev.find((s) => s.id === account.id);
+        if (existing) {
+          return existing.pendingRemoval ? prev.map((s) => (s.id === account.id ? { ...s, pendingRemoval: false } : s)) : prev;
+        }
+        return [...prev, initialSubscription(account, null, false, knownLabelsRef.current[account.id])];
       });
       // Brief §5.3 step 4: verify by reading once immediately, so the
       // person sees what came back rather than a cold placeholder.
       void refreshOne(account);
     },
-    [refreshOne],
+    [refreshOne, clearRemovalTimer],
   );
 
-  const removeSubscription = useCallback((id: string) => {
-    setSubscriptions((prev) => prev.filter((s) => s.id !== id));
-    void cancelSignInIpc(id);
+  /** Hard, immediate removal — the Subscriptions screen's own [Remove], which
+   * has no undo affordance of its own. */
+  const removeSubscription = useCallback(
+    (id: string) => {
+      clearRemovalTimer(id);
+      setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+      void cancelSignInIpc(id);
+    },
+    [clearRemovalTimer],
+  );
+
+  /** R4-3: the panel row menu's "Stop tracking". Untracks the account *now*
+   * — it leaves the tray, stops being read, and stops being persisted this
+   * instant — and keeps its slot in the panel for [`STOP_TRACKING_UNDO_MS`] so
+   * the Undo row can sit there.
+   *
+   * The previous shape deferred the entire removal by five seconds, which is
+   * how the Subscriptions screen came to be showing [Remove] for two accounts
+   * the captain had already stopped tracking (his 2026-08-15 screencast, at
+   * t=25.0: both Undo rows visible in the panel, both accounts still listed as
+   * tracked; "Claude Team" only flipped at t≈26.0 and "Claude Max" at t≈29.2 —
+   * both exactly five seconds after their own click, because the timer, not
+   * the click, was what actually untracked them). */
+  const stopTracking = useCallback(
+    (id: string) => {
+      clearRemovalTimer(id);
+      setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, pendingRemoval: true } : s)));
+      void cancelSignInIpc(id);
+      removalTimers.current[id] = setTimeout(() => {
+        delete removalTimers.current[id];
+        setSubscriptions((prev) => prev.filter((s) => !(s.id === id && s.pendingRemoval)));
+      }, STOP_TRACKING_UNDO_MS);
+    },
+    [clearRemovalTimer],
+  );
+
+  const undoStopTracking = useCallback(
+    (id: string) => {
+      clearRemovalTimer(id);
+      setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, pendingRemoval: false } : s)));
+    },
+    [clearRemovalTimer],
+  );
+
+  useEffect(() => {
+    const timers = removalTimers;
+    return () => {
+      Object.values(timers.current).forEach(clearTimeout);
+      timers.current = {};
+    };
   }, []);
 
   // R2-6: starts Claude Code's own sign-in for a broken row — see
@@ -336,6 +456,10 @@ export function useSubscriptions() {
         initialSubscription({ id: t.id, provider: t.provider, config_dir: t.config_dir }, t.label, t.pinned),
       );
       setSubscriptions(loaded);
+      // What is already on disk *is* the last saved state — recording it here
+      // keeps the save effect's first run from writing it straight back
+      // (an `fsync` at launch that changes nothing).
+      lastSavedRef.current = JSON.stringify(toTrackedAccounts(loaded));
       hasLoadedRef.current = true;
 
       if (!isTauri) {
@@ -348,7 +472,11 @@ export function useSubscriptions() {
       unlisten = await onQuotaRefresh((event) => {
         const accountId = event.kind === "ok" ? event.snapshot.account_id : event.account_id;
         const existing = subscriptionsRef.current.find((s) => s.id === accountId);
-        if (!existing) return; // no longer tracked — a race with removal, ignore it
+        // No longer tracked — either already gone, or inside its "Stop
+        // tracking" undo window, which is the same thing everywhere but the
+        // panel's own row list (R4-3). Either way an in-flight read's result
+        // must not resurrect it.
+        if (!existing || existing.pendingRemoval) return;
         const prior = priorReadOf(existing);
         const fallbackLabel = accountLabel({ id: accountId, provider: existing.provider, config_dir: existing.configDir });
         if (event.kind === "ok") {
@@ -372,22 +500,32 @@ export function useSubscriptions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** R4-3: what "tracked" means everywhere except the panel's own row list —
+   * persistence, the tray, the Subscriptions screen. A row inside its undo
+   * window is already gone from all three; it survives only as a slot in the
+   * panel, which is why `subscriptions` (returned below) still carries it. */
+  const trackedSubscriptions = useMemo(() => subscriptions.filter((s) => !s.pendingRemoval), [subscriptions]);
+
   // Persist the user-owned parts of the list (membership, custom labels,
   // pins) on every change, once the initial load has actually committed.
   // Ephemeral read state (windows, used %, reason) is deliberately not
   // persisted — a stale number must never be shown as current after a
   // restart; every subscription re-verifies on launch.
+  //
+  // R4-2: compares against what was last written and skips an identical save.
+  // This effect is keyed on the whole subscription list, so before the compare
+  // it also fired on every automatic read — and the native `save_tracked` it
+  // calls is a temp-file write plus an `fsync` plus a rename (persistence.rs).
+  // Two tracked accounts read once a minute each meant two durable, blocking
+  // writes a minute that changed nothing.
   useEffect(() => {
     if (!hasLoadedRef.current) return;
-    const tracked: TrackedAccount[] = subscriptions.map((s) => ({
-      id: s.id,
-      provider: s.provider,
-      config_dir: s.configDir,
-      label: s.labelOverride,
-      pinned: s.pinned,
-    }));
+    const tracked = toTrackedAccounts(trackedSubscriptions);
+    const serialized = JSON.stringify(tracked);
+    if (lastSavedRef.current === serialized) return;
+    lastSavedRef.current = serialized;
     void saveTracked(tracked);
-  }, [subscriptions]);
+  }, [trackedSubscriptions]);
 
   // Mirror pinned subscriptions' headline figures beside the tray glyph
   // (I2: consumed, not remaining). Handoff, verbatim: "Никаких знаков и
@@ -403,8 +541,12 @@ export function useSubscriptions() {
   // handoff table: "если хотя бы одно значение устарело — все цифры
   // янтарные" — if *any* pinned value is stale, every digit in the tray
   // turns amber, not just that one account's own.
+  //
+  // R4-3: keyed on the *tracked* list, so "Stop tracking" drops a pinned
+  // account's digits from the menu bar the instant it is pressed rather than
+  // when its undo window expires.
   useEffect(() => {
-    const pinned = subscriptions.filter(
+    const pinned = trackedSubscriptions.filter(
       (s): s is Subscription & { used: number } => s.pinned && typeof s.used === "number",
     );
     const anyStale = pinned.some((s) => s.state === "behind");
@@ -415,16 +557,33 @@ export function useSubscriptions() {
       return { text: `${s.used}%`, color: "neutral" };
     });
     setTrayStatus(segments);
-  }, [subscriptions]);
+  }, [trackedSubscriptions]);
+
+  /** R4-4: the name to show for an account the panel isn't currently
+   * rendering — the Subscriptions screen's untracked half. Prefers whatever a
+   * real read last reported over the directory-derived fallback, so one
+   * account reads the same in both halves of that list. */
+  const displayLabelFor = useCallback(
+    (account: AccountDescriptor) => knownLabels[account.id] ?? accountLabel(account),
+    [knownLabels],
+  );
 
   return {
+    /** Everything the panel draws, in order — including rows inside their
+     * "Stop tracking" undo window, which is what an Undo row is. */
     subscriptions,
+    /** Everything that is actually tracked. What persistence, the tray and
+     * the Subscriptions screen see. */
+    trackedSubscriptions,
     refreshAll,
     refreshAccountById,
     togglePin,
     renameSubscription,
     addSubscription,
     removeSubscription,
+    stopTracking,
+    undoStopTracking,
+    displayLabelFor,
     startSignIn,
     submitSignInCode,
     cancelSignIn,

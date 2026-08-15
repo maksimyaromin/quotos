@@ -27,6 +27,7 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
     configDir: "/Users/someone/.claude",
     rateLimitedUntil: null,
     signInInProgress: false,
+    pendingRemoval: false,
     ...overrides,
   };
 }

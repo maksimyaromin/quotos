@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Panel } from "./design-system/components/shell/Panel";
 import { IconButton } from "./design-system/components/controls/IconButton";
@@ -14,7 +14,6 @@ import { hidePanel, setDetached as setDetachedIpc, debugRateLimitSnapshot, onPan
 import "./app.css";
 
 const NOW_TICK_MS = 30_000;
-const STOP_TRACKING_UNDO_MS = 5_000;
 
 // Beak offset (px) from the panel's own left edge. B3/B5: the native side
 // computes and pushes the real value on every dock/re-dock (see
@@ -38,12 +37,16 @@ function isBlocked(rateLimitedUntil: string | null, now: number): boolean {
 export default function App() {
   const {
     subscriptions,
+    trackedSubscriptions,
     refreshAll,
     refreshAccountById,
     togglePin,
     renameSubscription,
     addSubscription,
     removeSubscription,
+    stopTracking,
+    undoStopTracking,
+    displayLabelFor,
     startSignIn,
     submitSignInCode,
     cancelSignIn,
@@ -56,8 +59,6 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [pendingRemovals, setPendingRemovals] = useState<Record<string, { label: string }>>({});
-  const removalTimers = useRef<Record<string, number>>({});
   const [beakLeft, setBeakLeft] = useState<number | null>(isTauri ? null : BEAK_LEFT_MOCK_FALLBACK);
 
   // B3/B5: keep the beak centered under the real tray glyph position.
@@ -105,12 +106,6 @@ export default function App() {
     return () => window.removeEventListener("mousedown", onMouseDown);
   }, [openMenuId]);
 
-  useEffect(() => {
-    return () => {
-      Object.values(removalTimers.current).forEach((id) => clearTimeout(id));
-    };
-  }, []);
-
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -127,33 +122,6 @@ export default function App() {
     } finally {
       setRefreshing(false);
     }
-  };
-
-  const handleStopTracking = (id: string, label: string) => {
-    setPendingRemovals((prev) => ({ ...prev, [id]: { label } }));
-    const timerId = window.setTimeout(() => {
-      removeSubscription(id);
-      setPendingRemovals((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-      delete removalTimers.current[id];
-    }, STOP_TRACKING_UNDO_MS);
-    removalTimers.current[id] = timerId;
-  };
-
-  const handleUndo = (id: string) => {
-    const timerId = removalTimers.current[id];
-    if (timerId) {
-      clearTimeout(timerId);
-      delete removalTimers.current[id];
-    }
-    setPendingRemovals((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
   };
 
   // Dragging the header is the only way to detach — there is no detach
@@ -262,9 +230,10 @@ export default function App() {
   const nowDate = new Date(now);
   // Same exclusion the rows use (lib/rowPresentation.ts): a subscription
   // whose answer is "sign in" is not waiting on the rate budget, so it must
-  // not make the header claim everything is.
-  const blockedSubs = subscriptions.filter((s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now));
-  const allBlocked = subscriptions.length > 0 && blockedSubs.length === subscriptions.length;
+  // not make the header claim everything is. R4-3: and the summaries describe
+  // what is *tracked*, so a row inside its undo window is out of all of them.
+  const blockedSubs = trackedSubscriptions.filter((s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now));
+  const allBlocked = trackedSubscriptions.length > 0 && blockedSubs.length === trackedSubscriptions.length;
   const earliestAvailable = blockedSubs.length
     ? blockedSubs.reduce((min, s) =>
         new Date(s.rateLimitedUntil as string).getTime() < new Date(min.rateLimitedUntil as string).getTime() ? s : min,
@@ -281,7 +250,7 @@ export default function App() {
     : allBlocked
     ? `Waiting for the rate budget — retry at ${formatClockTime(earliestAvailable)}`
     : "Read all now";
-  const mostRecentRead = subscriptions.reduce<string | null>((latest, s) => {
+  const mostRecentRead = trackedSubscriptions.reduce<string | null>((latest, s) => {
     if (!s.lastReadAt) return latest;
     if (!latest || new Date(s.lastReadAt).getTime() > new Date(latest).getTime()) return s.lastReadAt;
     return latest;
@@ -341,15 +310,30 @@ export default function App() {
       }
     >
       {screen === "manage" ? (
-        <SubscriptionsScreen tracked={subscriptions} onAdd={addSubscription} onRemove={removeSubscription} />
+        // R4-3: the *tracked* list, not the panel's row list — a row inside
+        // its "Stop tracking" undo window is already untracked, and this
+        // screen must not go on offering [Remove] for it (the desync in the
+        // captain's 2026-08-15 screencast).
+        <SubscriptionsScreen
+          tracked={trackedSubscriptions}
+          onAdd={addSubscription}
+          onRemove={removeSubscription}
+          displayLabelFor={displayLabelFor}
+        />
       ) : subscriptions.length === 0 ? (
         <div className="quotos-empty">
           <p>Nothing tracked yet. Add a subscription and you'll see what's left on it here.</p>
         </div>
       ) : (
         subscriptions.map((sub) => {
-          if (pendingRemovals[sub.id]) {
-            return <UndoRow key={sub.id} label={pendingRemovals[sub.id].label} onUndo={() => handleUndo(sub.id)} />;
+          if (sub.pendingRemoval) {
+            return (
+              <UndoRow
+                key={sub.id}
+                label={sub.labelOverride ?? sub.label}
+                onUndo={() => undoStopTracking(sub.id)}
+              />
+            );
           }
           // R2-6: a row that needs signing in offers Claude Code's own
           // sign-in (signin.rs) instead of retrying the same failed read —
@@ -390,7 +374,7 @@ export default function App() {
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}
-              onStopTracking={() => handleStopTracking(sub.id, label)}
+              onStopTracking={() => stopTracking(sub.id)}
               signInInProgress={sub.signInInProgress}
               onSubmitSignInCode={(code: string) => submitSignInCode(sub.id, code)}
               onCancelSignIn={() => cancelSignIn(sub.id)}

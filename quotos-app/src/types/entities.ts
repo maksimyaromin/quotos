@@ -75,6 +75,17 @@ export interface Subscription {
    * shell-owned UI state, not provider data (see `signin.rs`). Drives
    * whether the panel shows the code-paste field for this row. */
   signInInProgress: boolean;
+  /** R4-3: "Stop tracking" has been pressed and the undo window is still
+   * open. The account is *already* untracked as far as every consumer is
+   * concerned — persistence, the tray, the Subscriptions screen — and this
+   * flag exists only so the panel can keep its slot in the list and draw the
+   * Undo row there. It is what makes the panel and the Subscriptions screen
+   * observe one state change instead of two: the row used to be dropped from
+   * this list five seconds later, by a timer the Subscriptions screen knew
+   * nothing about, which is why that screen went on offering [Remove] for
+   * something the captain had already stopped tracking. Never persisted (see
+   * `useSubscriptions`'s save effect, which filters on it). */
+  pendingRemoval: boolean;
 }
 
 /** Wire shape returned by the Rust `list_accounts` command. */

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Button } from "../design-system/components/controls/Button";
 import type { AccountDescriptor, Subscription } from "../types/entities";
 import { listAccounts } from "../lib/tauriClient";
-import { accountLabel } from "../hooks/useSubscriptions";
 
 interface Row {
   id: string;
@@ -21,10 +20,16 @@ export function SubscriptionsScreen({
   tracked,
   onAdd,
   onRemove,
+  displayLabelFor,
 }: {
   tracked: Subscription[];
   onAdd: (account: AccountDescriptor) => void;
   onRemove: (id: string) => void;
+  /** R4-4: how to name an account this screen lists but the panel isn't
+   * showing. Supplied by `useSubscriptions` rather than derived here, so both
+   * halves of this list — and the panel — spell one account the same way; see
+   * that hook's `displayLabelFor`. */
+  displayLabelFor: (account: AccountDescriptor) => string;
 }) {
   const [discovered, setDiscovered] = useState<AccountDescriptor[] | null>(null);
 
@@ -49,7 +54,7 @@ export function SubscriptionsScreen({
   const trackedIds = new Set(trackedRows.map((r) => r.id));
   const untrackedRows: Row[] = (discovered ?? [])
     .filter((a) => !trackedIds.has(a.id))
-    .map((a) => ({ id: a.id, name: accountLabel(a), path: a.config_dir, tracked: false, account: a }));
+    .map((a) => ({ id: a.id, name: displayLabelFor(a), path: a.config_dir, tracked: false, account: a }));
   const rows = [...trackedRows, ...untrackedRows];
 
   return (

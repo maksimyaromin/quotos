@@ -32,6 +32,13 @@ const STATE_DOT_COLOR = {
   broken: "var(--status-broken)",
 };
 
+// R4-5: the row menu's geometry, in viewport coordinates. It is `position:
+// fixed` rather than `position: absolute` inside the row, and that is a fix,
+// not a style choice — see the `useLayoutEffect` below.
+const MENU_GAP = 4; // between the "…" button's bottom edge and the menu's top
+const MENU_VIEWPORT_MARGIN = 8; // never closer than this to the window's own edge
+const MENU_MIN_WIDTH = 168;
+
 function MenuItem({ danger, onClick, children }) {
   const [hover, setHover] = React.useState(false);
   return (
@@ -97,6 +104,66 @@ export function SubscriptionRow({
   const inputRef = React.useRef(null);
   const [codeDraft, setCodeDraft] = React.useState("");
   const codeInputRef = React.useRef(null);
+  const menuButtonRef = React.useRef(null);
+  const menuRef = React.useRef(null);
+  const [menuPos, setMenuPos] = React.useState(null);
+
+  // R4-5: place the open menu in *viewport* coordinates, under its own "…"
+  // button.
+  //
+  // It used to be `position: absolute` inside the row, which put it inside the
+  // panel body's `overflow-y: auto` box. Two separate consequences, both in
+  // the captain's 2026-08-15 screencast: the menu was clipped by the panel's
+  // bottom edge (its last item, "Stop tracking", cut in half), and — because
+  // an absolutely-positioned element *does* count toward its scroll
+  // container's scrollable area — merely opening it made a two-row panel
+  // scrollable, so reaching the clipped item meant scrolling the rows out from
+  // under the cursor first. `position: fixed` fixes both at once and for the
+  // same reason: its containing block is the viewport, so no ancestor's
+  // `overflow` can clip it and it adds nothing to any scroll extent. (It works
+  // here only because nothing above this row establishes a containing block
+  // for fixed descendants — no `transform`, `filter`, `backdrop-filter`,
+  // `perspective`, `will-change` or `contain` on the panel's own wrappers. The
+  // panel's blurred backdrop layer is a *sibling*, not an ancestor.)
+  //
+  // Measured after mount rather than computed from constants, because whether
+  // the menu opens downward or flips above depends on where the row happens to
+  // sit in a 560px-tall window. `useLayoutEffect` (not `useEffect`) so the
+  // resulting state update is flushed before paint — the menu is rendered
+  // hidden for exactly one layout pass, never a visible frame at 0,0.
+  React.useLayoutEffect(() => {
+    if (!menuOpen) {
+      setMenuPos(null);
+      return undefined;
+    }
+    const place = () => {
+      const trigger = menuButtonRef.current;
+      const menu = menuRef.current;
+      if (!trigger || !menu) return;
+      const anchor = trigger.getBoundingClientRect();
+      const width = menu.offsetWidth || MENU_MIN_WIDTH;
+      const height = menu.offsetHeight;
+      const below = anchor.bottom + MENU_GAP;
+      const top =
+        below + height <= window.innerHeight - MENU_VIEWPORT_MARGIN
+          ? below
+          : Math.max(MENU_VIEWPORT_MARGIN, anchor.top - MENU_GAP - height);
+      // Right-aligned with the button, then held inside the window.
+      const left = Math.min(
+        Math.max(MENU_VIEWPORT_MARGIN, anchor.right - width),
+        Math.max(MENU_VIEWPORT_MARGIN, window.innerWidth - width - MENU_VIEWPORT_MARGIN),
+      );
+      setMenuPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
+    };
+    place();
+    // Capture phase: the panel body is the scroller, not the window.
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [menuOpen]);
 
   React.useEffect(() => {
     if (signInInProgress) {
@@ -226,6 +293,7 @@ export function SubscriptionRow({
           <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>{badge}</Badge>
         ) : null}
         <button type="button" title="More" aria-label="More" data-quotos-menu-scope="true"
+          ref={menuButtonRef}
           onClick={(e) => { e.stopPropagation(); onToggleMenu?.(); }}
           style={{
             flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -374,13 +442,20 @@ export function SubscriptionRow({
         </div>
       </div>
 
-      {/* the "…" menu — one fixed set of actions, always the same place */}
+      {/* the "…" menu — one fixed set of actions, always the same place.
+          Overlays everything (see the placement effect above): never clipped
+          by the panel body, never part of its scroll extent. */}
       {menuOpen ? (
         <div
+          ref={menuRef}
           data-quotos-menu-scope="true"
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: "absolute", top: 30, right: 8, zIndex: 30, minWidth: 168,
+            position: "fixed",
+            top: menuPos ? menuPos.top : 0,
+            left: menuPos ? menuPos.left : 0,
+            visibility: menuPos ? "visible" : "hidden",
+            zIndex: 30, minWidth: MENU_MIN_WIDTH,
             padding: "var(--space-1)", borderRadius: "var(--radius-lg)",
             background: "var(--bg-elevated)", border: "0.5px solid var(--border-default)",
             boxShadow: "var(--shadow-menu)", display: "flex", flexDirection: "column",

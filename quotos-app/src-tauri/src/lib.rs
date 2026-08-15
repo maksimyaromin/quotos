@@ -1,3 +1,4 @@
+mod panel_window;
 mod persistence;
 mod providers;
 mod ratelimit;
@@ -103,7 +104,15 @@ struct AppState {
     last_known_position: Mutex<(f64, f64)>,
 }
 
-#[tauri::command]
+/// R4-2: `async` purely for its *threading* effect, not because the body
+/// awaits anything. A `#[tauri::command]` without it is `ExecutionContext::
+/// Blocking` — Tauri runs it **on the main thread**, inline with the IPC — and
+/// this one forks a `security(1)` process per candidate config dir (see
+/// `providers/claude.rs`). On the main thread that is a UI stall of however
+/// long the Keychain takes, landing exactly when the captain opens the
+/// Subscriptions screen. The same reasoning applies to the two `tracked_store`
+/// commands below (one of them `fsync`s).
+#[tauri::command(async)]
 fn list_accounts() -> Vec<AccountDescriptor> {
     providers::claude::discover_accounts()
 }
@@ -206,12 +215,19 @@ async fn fetch_snapshot(
     result
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_tracked(state: tauri::State<'_, AppState>) -> Vec<TrackedAccount> {
     state.tracked_store.list()
 }
 
-#[tauri::command]
+/// R4-2: off the main thread — see `list_accounts`. This one matters most:
+/// `Store::save` is a temp-file write plus an **`fsync`** plus a rename
+/// (deliberately, for durability — see persistence.rs), and an `fsync` on the
+/// main thread stalls the webview's own rendering for as long as the
+/// filesystem takes. The frontend calls this on every membership/label/pin
+/// change, which used to include every automatic read's state patch until the
+/// caller learned to compare first (`persistence.ts`).
+#[tauri::command(async)]
 fn save_tracked(state: tauri::State<'_, AppState>, tracked: Vec<TrackedAccount>) -> Result<(), String> {
     state.tracked_store.save(tracked)
 }
@@ -310,7 +326,7 @@ fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {
     clear_docked_target(&app);
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TraySegmentDto {
     text: String,
@@ -326,7 +342,22 @@ fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Resu
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
     };
-    *app.state::<AppState>().last_tray_segments.lock().expect("last_tray_segments mutex poisoned") = segments;
+    {
+        // R4-2: this command runs on the main thread (it has to — it touches
+        // `NSStatusItem`) and its body is a full bitmap composite plus a
+        // `set_icon`. The frontend calls it from an effect keyed on the whole
+        // subscription list, so it fires on *every* state change, most of
+        // which leave the pinned digits byte-for-byte identical. Comparing
+        // first turns those into nothing at all rather than into main-thread
+        // work — and, more importantly, stops them reaching
+        // `schedule_resync_after_icon_change`, which moves the open panel.
+        let state = app.state::<AppState>();
+        let mut last = state.last_tray_segments.lock().expect("last_tray_segments mutex poisoned");
+        if *last == segments {
+            return Ok(());
+        }
+        *last = segments;
+    }
     repaint_tray_icon(&app, &tray)
 }
 
@@ -402,7 +433,12 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
         tray.set_icon_as_template(false).map_err(|e| e.to_string())?;
         w
     };
-    *state.last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned") = icon_width_px;
+    let width_changed = {
+        let mut last = state.last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned");
+        let changed = *last != icon_width_px;
+        *last = icon_width_px;
+        changed
+    };
 
     // R3-1 fix: pinning/unpinning a subscription (or A11's highlight
     // toggling) lands here and can change the tray item's own width
@@ -419,7 +455,17 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
     // makes pin/unpin a no-op for beak position instead of a drift. See
     // `schedule_resync_after_icon_change`'s doc comment for why this can't
     // just be one synchronous `tray.rect()` call.
-    schedule_resync_after_icon_change(app, tray.clone());
+    //
+    // R4-2: gated on the width having *actually* changed. A repaint that
+    // produces the same-width image cannot have moved the item, so re-docking
+    // after one is pure cost — and not cheap cost: three `tray.rect()` reads
+    // and up to three `setFrameTopLeftPoint:` calls on the open panel, on the
+    // main thread. The highlight toggle in particular never changes the width
+    // (by construction — see `tray_render::SIDE_PAD_PX`), and it fires on
+    // every single open and close.
+    if width_changed {
+        schedule_resync_after_icon_change(app, tray.clone());
+    }
     Ok(())
 }
 
@@ -518,7 +564,15 @@ fn set_detached(
         // Dragging must never fight the docked-position self-correction —
         // see `AppState.docked_target`'s doc comment.
         clear_docked_target(&app);
-        let _ = window.set_focus();
+        // R4-1: same reason as `order_panel_front` — `set_focus()` would
+        // activate the application, and activating while another app owns a
+        // full-screen Space is what makes macOS leave that Space. Tearing the
+        // panel off must not move the captain either.
+        if panel_window::make_nonactivating_panel(&window) {
+            panel_window::order_front_without_activating(&window);
+        } else {
+            let _ = window.set_focus();
+        }
     } else {
         // C6 fix: snapping back must actually re-dock the window under the
         // tray icon, not just restore the chrome (beak, no titlebar) —
@@ -1222,8 +1276,14 @@ fn space_diagnostics(window: &tauri::WebviewWindow) -> Option<String> {
     }
     let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
     let app_active = NSApplication::sharedApplication(mtm).isActive();
+    // R4-1: `class` and `style_mask` are the two facts that say whether the
+    // non-activating panel conversion actually took (a plain `NSWindow` would
+    // ignore the style bit entirely), and `app_active` is the one the whole
+    // Space fix turns on — see panel_window.rs.
+    let class = unsafe { (*(ptr as *const objc2::runtime::AnyObject)).class() }.name().to_string_lossy().into_owned();
+    let style_mask: usize = unsafe { objc2::msg_send![ns_window, styleMask] };
     Some(format!(
-        "on_active_space={} visible={} key={} level={} occlusion={:?} app_active={app_active}",
+        "on_active_space={} visible={} key={} level={} occlusion={:?} app_active={app_active} class={class} style_mask={style_mask:#x}",
         ns_window.isOnActiveSpace(),
         ns_window.isVisible(),
         ns_window.isKeyWindow(),
@@ -1237,65 +1297,60 @@ fn space_diagnostics(_window: &tauri::WebviewWindow) -> Option<String> {
     None
 }
 
-/// R3-9: shows the panel, focuses it, **and** orders it front regardless.
+/// R4-1: shows the panel and gives it keyboard focus **without activating the
+/// application** — see `panel_window.rs`'s module doc for the whole argument.
 ///
-/// `WebviewWindow::set_focus()` bottoms out in `tao`'s `util::set_focus`,
-/// which is `makeKeyAndOrderFront:` followed by
-/// `activateIgnoringOtherApps: YES` (read straight from
-/// `tao-0.35.3/.../util/async.rs`) — "bring my application forward, wherever
-/// its windows happen to live". `orderFrontRegardless` asks for the opposite:
-/// "put this window at the front of its level here and now, even if my
-/// application is not the active one", which is what a status-item popover
-/// actually wants and is the call the captain's own report points at:
-/// *"оно открывается на основном столе (которого я не вижу)"*.
+/// The short version: `WebviewWindow::set_focus()` ends in
+/// `activateIgnoringOtherApps: YES` (`tao`'s `util::set_focus`), and activating
+/// another application while a full-screen Space is frontmost is *exactly* what
+/// makes macOS slide out of that Space — which is the transition caught
+/// mid-animation in the captain's 2026-08-15 screencast. Round 3 kept that call
+/// on purpose, because dropping it left the window non-key and a non-key window
+/// breaks click-away-to-close, the rename field and the sign-in field. Making
+/// the window a non-activating `NSPanel` is what dissolves that trade: a panel
+/// can be key while another application stays active, so the app never has to
+/// activate at all.
 ///
-/// Both, in that order — see the honest limits below. Dropping `set_focus`
-/// was tried and measured here to leave the window non-key, which would break
-/// click-away-to-close (it rides on `Focused(false)`) and the rename and
-/// sign-in text fields. That is a certain regression traded for an unproven
-/// fix.
-///
-/// **Unverified from this machine, and the reason is worth recording.** With a
-/// real full-screen Space active — the captain's exact reproduction, which
-/// happened to be live here — the panel window never joined it, and
-/// `-[NSWindow isOnActiveSpace]` read `false` under *every* variant tried:
-/// five collection behaviours (including `CanJoinAllSpaces` alone and
-/// `empty()`), window levels 3/25/101, with and without app activation, and
-/// launched both by direct exec and through LaunchServices. Identical results
-/// across `CanJoinAllSpaces` and `empty()` means the measurement is not
-/// discriminating on this box, so it is evidence about the environment, not
-/// about the fix. `QUOTOS_DEBUG_SPACE_BEHAVIOR` and `QUOTOS_DEBUG_WINDOW_LEVEL`
-/// are left in place so the next attempt can sweep them against a real click
-/// without a rebuild.
-#[cfg(target_os = "macos")]
+/// The fallback branch is the old behaviour verbatim, taken only if the panel
+/// conversion did not happen (`QUOTOS_PANEL_MODE=window`, a non-macOS build, or
+/// an AppKit that refused the class swap). A window that can never take
+/// keyboard focus would be a much worse regression than a Space switch, so
+/// "couldn't become a panel" must fall back rather than press on.
 fn order_panel_front(window: &tauri::WebviewWindow) {
+    // Idempotent, and re-asserted on every show rather than only at launch for
+    // the same reason the collection behaviour is: cheap insurance against
+    // anything resetting it.
+    let is_panel = panel_window::make_nonactivating_panel(window);
+    // `show()` is `tao`'s `makeKeyAndOrderFront:` — ordering and key-ness, no
+    // activation of its own. It is the activation in `set_focus()` below, not
+    // this, that was ever the problem.
+    let _ = window.show();
+    if is_panel {
+        panel_window::order_front_without_activating(window);
+    } else {
+        let _ = window.set_focus();
+        order_front_regardless(window);
+    }
+}
+
+/// "Put this window at the front of its level here and now, even if my
+/// application is not the active one." Only needed on the non-panel fallback
+/// path — `order_front_without_activating` does this itself.
+#[cfg(target_os = "macos")]
+fn order_front_regardless(window: &tauri::WebviewWindow) {
     use objc2_app_kit::NSWindow;
     use objc2_foundation::MainThreadMarker;
 
-    let _ = window.show();
-    // Keeps every existing behaviour that depends on the panel being key:
-    // click-away-to-close rides on `Focused(false)`, and the rename and
-    // sign-in fields need real keyboard focus. Dropping it in favour of
-    // `orderFrontRegardless` alone was measured here to leave the window
-    // non-key (`key=false`) — a certain regression traded for an unproven
-    // fix, which is the wrong trade.
-    let _ = window.set_focus();
     let (Some(_mtm), Ok(ptr)) = (MainThreadMarker::new(), window.ns_window()) else { return };
     if ptr.is_null() {
         return;
     }
-    // ...then order front *regardless* on top of that: this is the call that
-    // asks for "appear here, on the Space in front of the user, now" rather
-    // than "bring my application forward wherever it lives".
     let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
     ns_window.orderFrontRegardless();
 }
 
 #[cfg(not(target_os = "macos"))]
-fn order_panel_front(window: &tauri::WebviewWindow) {
-    let _ = window.show();
-    let _ = window.set_focus();
-}
+fn order_front_regardless(_window: &tauri::WebviewWindow) {}
 
 /// R3-7: **position first, then show.** `show()` reveals the window wherever
 /// it was last left — on a two-display machine, routinely the other display —
@@ -1354,7 +1409,7 @@ fn log_docked_placement(
     // likely to be final.
     let later = window.clone();
     tauri::async_runtime::spawn(async move {
-        for delay_ms in [50u64, 400, 1500] {
+        for delay_ms in [50u64, 400, 1500, 3000] {
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             let w = later.clone();
             let _ = w.clone().run_on_main_thread(move || {
@@ -1470,6 +1525,11 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("the 'main' window must be declared in tauri.conf.json");
             let _ = window.hide();
+            // R4-1: before anything else touches the window — the class swap
+            // is what lets every later show avoid activating the application
+            // (and therefore avoid dragging the captain off a full-screen
+            // Space). See panel_window.rs.
+            panel_window::make_nonactivating_panel(&window);
             set_popover_collection_behavior(&window);
 
             {

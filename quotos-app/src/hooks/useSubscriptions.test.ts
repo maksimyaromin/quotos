@@ -28,15 +28,16 @@ const TRACKED = [
 ];
 
 const loadTracked = vi.fn(() => Promise.resolve(TRACKED));
+const saveTracked = vi.fn();
 
 vi.mock("../lib/persistence", () => ({
   loadTracked: () => loadTracked(),
-  saveTracked: vi.fn(),
+  saveTracked: (...args: unknown[]) => saveTracked(...args),
 }));
 
 // vi.mock calls above are hoisted by Vitest, so this static import safely
 // resolves against the mocked modules.
-import { useSubscriptions } from "./useSubscriptions";
+import { accountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from "./useSubscriptions";
 
 async function flush() {
   await act(async () => {
@@ -543,5 +544,206 @@ describe("useSubscriptions sign-in flow", () => {
 
     expect(cancelSignIn).toHaveBeenCalledWith("claude:claude");
     expect(result.current.subscriptions[0].signInInProgress).toBe(false);
+  });
+});
+
+// R4-3: the captain's 2026-08-15 screencast — with both panel rows already
+// stop-tracked and showing their Undo rows, the Subscriptions screen went on
+// listing both accounts as tracked ([Remove]) for a further five seconds,
+// because "Stop tracking" only scheduled a removal that a timer inside App.tsx
+// would apply later. These pin the one-source-of-truth shape that replaced it:
+// stop-tracking untracks *now* everywhere, and the undo window is nothing but a
+// slot the panel keeps.
+describe("useSubscriptions stop-tracking is immediate everywhere but the panel's own slot (R4-3)", () => {
+  const TWO = [
+    { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: true },
+  ];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    saveTracked.mockReset();
+    cancelSignIn.mockReset();
+    loadTracked.mockResolvedValue(TWO);
+    fetchSnapshot.mockImplementation(async (account: { id: string; config_dir: string }) => ({
+      account_id: account.id,
+      provider: "claude",
+      config_dir: account.config_dir,
+      fetched_at: new Date().toISOString(),
+      usage: { limits: [{ kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null }] },
+      profile: null,
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    loadTracked.mockResolvedValue(TRACKED);
+  });
+
+  it("drops the account from the tracked list the moment it is pressed, while the panel keeps its slot", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+
+    // What the Subscriptions screen sees: gone, immediately.
+    expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual(["claude:claude"]);
+    // What the panel sees: still there, in its own slot, flagged for the Undo row.
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions[1].pendingRemoval).toBe(true);
+  });
+
+  it("persists the removal immediately, not when the undo window expires", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    saveTracked.mockClear();
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+    await flush();
+
+    const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0];
+    expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude"]);
+  });
+
+  it("drops a pinned account's tray digits immediately", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toHaveLength(2);
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+    await flush();
+
+    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toHaveLength(1);
+  });
+
+  it("undo restores it in its original slot, with its data intact", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    const before = result.current.subscriptions[1];
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+    act(() => result.current.undoStopTracking("claude:claude-team"));
+
+    expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
+    expect(result.current.subscriptions[1].used).toBe(before.used);
+  });
+
+  it("keeps the slot for exactly the undo window, then gives it up", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS - 1);
+    });
+    expect(result.current.subscriptions).toHaveLength(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
+    });
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude"]);
+  });
+
+  it("an undone row is never removed by its own expired timer", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+    act(() => result.current.undoStopTracking("claude:claude-team"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2);
+    });
+
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+  });
+
+  it("adding an account back during its undo window is the same as undoing it", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    act(() => result.current.stopTracking("claude:claude-team"));
+    act(() =>
+      result.current.addSubscription({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2);
+    });
+
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
+  });
+
+  // R4-2: the save effect is keyed on the whole subscription list, so before it
+  // learned to compare, every automatic read wrote the tracked file again —
+  // each write a temp file plus an `fsync` plus a rename, on the main thread.
+  it("does not re-persist when only read state changed", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    saveTracked.mockClear();
+
+    await act(async () => {
+      await result.current.refreshAll();
+    });
+
+    expect(saveTracked).not.toHaveBeenCalled();
+  });
+});
+
+// R4-4: one account, one spelling. The same screencast showed "Claude Max" in
+// the panel and "Claude" in the Subscriptions screen for one account, and
+// "Claude Team" / "claude team" for the other.
+describe("useSubscriptions display names are consistent between the panel and the Subscriptions screen (R4-4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    loadTracked.mockResolvedValue(TRACKED);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("titles the id-derived fallback the way every other name in the panel is titled", () => {
+    expect(accountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" })).toBe("Claude");
+    expect(accountLabel({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" })).toBe(
+      "Claude Team",
+    );
+    expect(accountLabel({ id: "claude:work_eu", provider: "claude", config_dir: "~/.claude-work_eu" })).toBe("Work Eu");
+  });
+
+  it("keeps the provider's own name for an account after it stops being tracked", async () => {
+    fetchSnapshot.mockResolvedValue({
+      account_id: "claude:claude",
+      provider: "claude",
+      config_dir: "~/.claude",
+      fetched_at: new Date().toISOString(),
+      usage: { limits: [{ kind: "weekly_all", percent: 12, is_active: true, resets_at: null, scope: null }] },
+      profile: { organization: { name: "Claude Max", organization_type: "claude_max" } },
+    });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(result.current.subscriptions[0].label).toBe("Claude Max");
+
+    act(() => result.current.removeSubscription("claude:claude"));
+
+    // The Subscriptions screen asks for this account by descriptor now that
+    // there is no subscription to read a label off — it must still be the name
+    // the captain knows it by, not the config directory's.
+    expect(
+      result.current.displayLabelFor({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" }),
+    ).toBe("Claude Max");
+  });
+
+  it("falls back to the id-derived title for an account never read", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(
+      result.current.displayLabelFor({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" }),
+    ).toBe("Claude Team");
   });
 });
