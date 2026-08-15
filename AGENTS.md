@@ -175,7 +175,11 @@ rewritten each round, not appended to.
   `quota-refresh` push event the same way it applies a manual refresh's
   direct result — don't add a second timer anywhere. Opening/closing the
   panel still triggers no read (unchanged, still correct — that was always
-  about panel visibility, never about where the clock lives).
+  about panel visibility, never about where the clock lives). The panel's
+  own 30-second *presentation* tick (`App.tsx`'s `NOW_TICK_MS`, feeding the
+  "ago"/reset/budget-wait copy) is subject to the same suspension, so
+  `App.tsx` re-reads `now` on the panel-visibility show event — a clock
+  re-read, never a data read.
 - `ratelimit.rs`'s sliding window prunes with `duration_since(front) >=
   window`, not `>` — at exactly `window` old, a reservation must age out
   or the limiter fights the 1-read-per-minute schedule that expects the

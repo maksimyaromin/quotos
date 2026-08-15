@@ -113,3 +113,24 @@ describe("Escape dismissal layering", () => {
     expect(screen.queryByText("Stop tracking")).toBeNull();
   });
 });
+
+describe("panel reopen refreshes the presentation clock", () => {
+  beforeEach(() => {
+    visibilityCallback = null;
+  });
+
+  // macOS suspends a hidden WKWebView's timers, so the NOW_TICK interval
+  // does not run while the panel is closed — modeled here by moving the
+  // wall clock without ever letting the interval fire.
+  it("re-reads `now` on visible=true so relative times are not hours stale", async () => {
+    await renderAppWithRow();
+    expect(screen.getByText("Last read just now")).toBeTruthy();
+
+    const twoHoursLater = Date.now() + 2 * 60 * 60 * 1000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(twoHoursLater);
+    act(() => visibilityCallback!(true));
+    nowSpy.mockRestore();
+
+    expect(screen.getByText("Last read 2h ago")).toBeTruthy();
+  });
+});

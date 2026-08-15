@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**268 automated tests pass** (163 vitest, 105 `cargo test`); `tsc --noEmit`,
+**269 automated tests pass** (164 vitest, 105 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -131,6 +131,12 @@ clean.
     everywhere, so the persisted list and the tray's digit order follow the
     same swap. An edge row's impossible direction renders disabled
     (macOS-style) rather than hidden, keeping the menu's fixed item set.
+14. **Reopening the panel no longer shows an hours-stale clock** — the same
+    WKWebView timer suspension that moved the refresh cadence native also
+    freezes the panel's 30-second presentation tick, so a panel reopened
+    after hours painted "Last read 2 min ago", stale "Resets today at …"
+    copy, and wrong rate-budget waits until the first post-resume tick. The
+    clock now re-reads on the panel-visibility show event.
 
 ## Honest gaps, still open
 

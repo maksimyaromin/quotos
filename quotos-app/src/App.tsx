@@ -100,15 +100,23 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openMenuId]);
 
-  // The menu must not still be hanging open when the panel comes back after
-  // a hide — the prototype resets it on every open for the same reason.
-  // Only visible=false is acted on: the mock harness fires an initial
-  // visible=true at subscribe time.
+  // Panel visibility drives two resets. On hide, the "…" menu must not
+  // still be hanging open when the panel comes back — the prototype resets
+  // it on every open for the same reason. On show, the `now` clock is
+  // re-read immediately: macOS suspends a hidden WKWebView's timers (the
+  // same suspension that moved the refresh cadence into scheduler.rs), so
+  // the NOW_TICK interval below simply does not run while the panel is
+  // closed, and a panel reopened hours later would otherwise paint "Last
+  // read 2 min ago", stale "Resets today at …" copy, and wrong rate-budget
+  // waits until the first post-resume tick. The mock harness fires an
+  // initial visible=true at subscribe time; re-reading the clock then is
+  // harmless.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     void onPanelVisibility((visible) => {
-      if (!visible) setOpenMenuId(null);
+      if (visible) setNow(Date.now());
+      else setOpenMenuId(null);
     }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;

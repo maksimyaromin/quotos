@@ -284,10 +284,6 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
   return Promise.resolve(() => {});
 }
 
-export async function setTrayTitle(_title: string): Promise<void> {
-  // no-op in the browser — there is no real tray to update
-}
-
 export async function setDetached(_detached: boolean): Promise<void> {
   // no-op in the browser — there is no real window chrome to change
 }
