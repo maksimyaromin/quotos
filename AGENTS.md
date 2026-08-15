@@ -305,6 +305,16 @@ rewritten each round, not appended to.
   untracked half. Without it an account silently renamed itself from the
   provider's own "Claude Max" to a bare "Claude" the moment it stopped being
   tracked. Not persisted — it is derived from this session's reads.
+- **The Subscriptions screen's footer hint deliberately deviates from the
+  handoff/prototype string table.** Their "Quit and reopen Quotos to pick it
+  up" assumed launch-only account discovery, which is false of this build:
+  `list_accounts` re-scans `~/.claude*` + the Keychain fresh on every call,
+  the screen calls it on every mount, and (same pass) also on the panel's
+  hidden→visible transition — `SubscriptionsScreen.tsx`'s `onPanelVisibility`
+  subscription, that seam's only consumer — so a terminal sign-in (which
+  hides the panel via hide-on-blur) just appears when the panel reopens. The
+  copy now says "Reopen this screen to pick it up"; don't "fix" it back to
+  the prototype's.
 - **S2: the Claude Code statusline feed is a second, zero-cost usage
   source, opt-in per subscription, installed from the Subscriptions
   screen.** `quotos-app/src-tauri/src/statusline.rs` owns install/status/

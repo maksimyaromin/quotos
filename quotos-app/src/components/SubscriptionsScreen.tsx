@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../design-system/components/controls/Button";
 import type { AccountDescriptor, Subscription } from "../types/entities";
-import { listAccounts } from "../lib/tauriClient";
+import { listAccounts, onPanelVisibility } from "../lib/tauriClient";
 import { StatuslineControl } from "./StatuslineControl";
 
 interface Row {
@@ -36,12 +36,34 @@ export function SubscriptionsScreen({
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const found = await listAccounts();
-      if (!cancelled) setDiscovered(found);
-    })();
+    let unlisten: (() => void) | undefined;
+    const scan = () => {
+      void listAccounts().then((found) => {
+        if (!cancelled) setDiscovered(found);
+      });
+    };
+    scan();
+    // Signing in to a new account happens in a terminal, which blurs (and so
+    // hides) the panel — by the time it is back on screen, the new account is
+    // already discoverable, so a rescan on the hidden→visible transition
+    // makes it simply appear. The transition guard also keeps the browser
+    // harness's subscribe-time "visible" signal from double-scanning a fresh
+    // mount.
+    let wasHidden = false;
+    void onPanelVisibility((visible) => {
+      if (!visible) {
+        wasHidden = true;
+      } else if (wasHidden) {
+        wasHidden = false;
+        scan();
+      }
+    }).then((stop) => {
+      if (cancelled) stop();
+      else unlisten = stop;
+    });
     return () => {
       cancelled = true;
+      unlisten?.();
     };
   }, []);
 
@@ -107,7 +129,11 @@ export function SubscriptionsScreen({
         fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)",
         lineHeight: "var(--leading-snug)", color: "var(--text-quaternary)",
       }}>
-        Signed in to another account just now? Quit and reopen Quotos to pick it up.
+        {/* Deviates from the handoff's string table on purpose: its "Quit and
+            reopen Quotos to pick it up" assumed launch-only discovery, but
+            discovery is a fresh scan on every mount (and on every panel
+            re-show, above) — the advice was simply false of this build. */}
+        Signed in to another account just now? Reopen this screen to pick it up.
       </div>
     </div>
   );
