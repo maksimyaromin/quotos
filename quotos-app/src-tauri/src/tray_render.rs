@@ -181,8 +181,8 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     const GAP_HALF_WIDTH_RAD: f64 = 31.0 * std::f64::consts::PI / 180.0;
     const ARC_GAP_LOW_RAD: f64 = GAP_CENTER_RAD - GAP_HALF_WIDTH_RAD; // ~14°
     const ARC_GAP_HIGH_RAD: f64 = GAP_CENTER_RAD + GAP_HALF_WIDTH_RAD; // ~76°
-    // The tail: same diagonal as the gap's own centre, r 3.2 → 8.0, same
-    // stroke weight as the arc.
+                                                                       // The tail: same diagonal as the gap's own centre, r 3.2 → 8.0, same
+                                                                       // stroke weight as the arc.
     const TAIL_ANGLE_RAD: f64 = GAP_CENTER_RAD;
     const TAIL_R_INNER_SVG: f64 = 3.2;
     const TAIL_R_OUTER_SVG: f64 = 8.0;
@@ -211,8 +211,14 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     let (cap_start_x, cap_start_y) = cap_point(arc_start);
     let (cap_end_x, cap_end_y) = cap_point(arc_start + sweep);
 
-    let (tail_x1, tail_y1) = (TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.cos(), TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.sin());
-    let (tail_x2, tail_y2) = (TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.cos(), TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.sin());
+    let (tail_x1, tail_y1) = (
+        TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.cos(),
+        TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.sin(),
+    );
+    let (tail_x2, tail_y2) = (
+        TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.cos(),
+        TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.sin(),
+    );
     let (tail_dx, tail_dy) = (tail_x2 - tail_x1, tail_y2 - tail_y1);
     let tail_len_sq = tail_dx * tail_dx + tail_dy * tail_dy;
 
@@ -229,7 +235,8 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
             }
 
             let track_edge = (dist - TRACK_RADIUS_SVG).abs() - TRACK_STROKE_SVG / 2.0;
-            let track_cov = (1.0 - (track_edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0) * TRACK_OPACITY;
+            let track_cov =
+                (1.0 - (track_edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0) * TRACK_OPACITY;
 
             // Where along the swept arc this pixel's angle falls, measured
             // forward from `arc_start` (0..TAU). The un-swept remainder of
@@ -258,10 +265,12 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
             // The tail: a straight capsule (point-to-segment distance),
             // always drawn regardless of `used_fraction` — "empty quota,
             // empty letter".
-            let t = (((ux - tail_x1) * tail_dx + (uy - tail_y1) * tail_dy) / tail_len_sq).clamp(0.0, 1.0);
+            let t = (((ux - tail_x1) * tail_dx + (uy - tail_y1) * tail_dy) / tail_len_sq)
+                .clamp(0.0, 1.0);
             let (cx, cy) = (tail_x1 + t * tail_dx, tail_y1 + t * tail_dy);
             let tail_dist = ((ux - cx).powi(2) + (uy - cy).powi(2)).sqrt();
-            let tail_cov = (1.0 - ((tail_dist - TAIL_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0);
+            let tail_cov = (1.0 - ((tail_dist - TAIL_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX)
+                .clamp(0.0, 1.0);
 
             let coverage = track_cov.max(arc_cov).max(tail_cov);
             if coverage <= 0.0 {
@@ -281,7 +290,12 @@ fn is_dark_mode() -> bool {
     Command::new("defaults")
         .args(["read", "-g", "AppleInterfaceStyle"])
         .output()
-        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("dark"))
+        .map(|o| {
+            o.status.success()
+                && String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .eq_ignore_ascii_case("dark")
+        })
         .unwrap_or(false)
 }
 
@@ -320,7 +334,8 @@ fn blend_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8
         return;
     }
     let blend_channel = |src_c: u8, dst_c: u8| -> u8 {
-        (((src_c as u32 * src_a) + (dst_c as u32 * dst_a * (255 - src_a) / 255)) / out_a).min(255) as u8
+        (((src_c as u32 * src_a) + (dst_c as u32 * dst_a * (255 - src_a) / 255)) / out_a).min(255)
+            as u8
     };
     buf[idx] = blend_channel(rgba.0, buf[idx]);
     buf[idx + 1] = blend_channel(rgba.1, buf[idx + 1]);
@@ -394,7 +409,15 @@ fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
 /// straight from CoreGraphics instead (see its `draw_text_impl`'s doc
 /// comment for why a coverage-mask-only approach doesn't work for text).
 #[cfg(not(target_os = "macos"))]
-fn composite_mask(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, mask: &[u8], mask_w: u32, rgba: (u8, u8, u8, u8)) {
+fn composite_mask(
+    buf: &mut [u8],
+    buf_w: u32,
+    buf_h: u32,
+    x0: u32,
+    mask: &[u8],
+    mask_w: u32,
+    rgba: (u8, u8, u8, u8),
+) {
     if mask_w == 0 {
         return;
     }
@@ -405,7 +428,14 @@ fn composite_mask(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, mask: &[u8], 
                 continue;
             }
             let alpha = ((coverage as u16 * rgba.3 as u16) / 255) as u8;
-            blend_pixel(buf, buf_w, buf_h, x0 + x, y, (rgba.0, rgba.1, rgba.2, alpha));
+            blend_pixel(
+                buf,
+                buf_w,
+                buf_h,
+                x0 + x,
+                y,
+                (rgba.0, rgba.1, rgba.2, alpha),
+            );
         }
     }
 }
@@ -420,13 +450,17 @@ mod text {
     use super::blend_pixel;
     use objc2::rc::Retained;
     use objc2_app_kit::{NSFont, NSFontWeightMedium};
-    use objc2_core_foundation::{CFArray, CFAttributedString, CFDictionary, CFNumber, CFRetained, CFString, CFType};
+    use objc2_core_foundation::{
+        CFArray, CFAttributedString, CFDictionary, CFNumber, CFRetained, CFString, CFType,
+    };
     use objc2_core_graphics::{
-        kCGColorSpaceSRGB, CGBitmapContextCreateWithData, CGColor, CGColorSpace, CGContext, CGImageAlphaInfo,
+        kCGColorSpaceSRGB, CGBitmapContextCreateWithData, CGColor, CGColorSpace, CGContext,
+        CGImageAlphaInfo,
     };
     use objc2_core_text::{
-        kCTFontAttributeName, kCTFontFamilyNameAttribute, kCTForegroundColorAttributeName, kCTFontTraitsAttribute,
-        kCTFontWeightTrait, CTFont, CTFontDescriptor, CTFontManagerCopyAvailableFontFamilyNames, CTLine,
+        kCTFontAttributeName, kCTFontFamilyNameAttribute, kCTFontTraitsAttribute,
+        kCTFontWeightTrait, kCTForegroundColorAttributeName, CTFont, CTFontDescriptor,
+        CTFontManagerCopyAvailableFontFamilyNames, CTLine,
     };
     use std::ffi::c_void;
 
@@ -493,7 +527,9 @@ mod text {
         let traits: CFRetained<CFDictionary<CFString, CFType>> =
             CFDictionary::from_slices(&[unsafe { kCTFontWeightTrait }], &[weight.as_ref()]);
         let attrs: CFRetained<CFDictionary<CFString, CFType>> = CFDictionary::from_slices(
-            &[unsafe { kCTFontFamilyNameAttribute }, unsafe { kCTFontTraitsAttribute }],
+            &[unsafe { kCTFontFamilyNameAttribute }, unsafe {
+                kCTFontTraitsAttribute
+            }],
             &[family.as_ref(), traits.as_ref()],
         );
         let descriptor = unsafe { CTFontDescriptor::with_attributes(attrs.as_ref()) };
@@ -517,10 +553,16 @@ mod text {
     /// though the lookups themselves are safe to call off the main thread).
     pub fn load_font(size_pt: f64) -> LoadedFont {
         if let Some(font) = try_load_monolisa(size_pt) {
-            return LoadedFont { handle: FontHandle::Mono(font), used_fallback: false };
+            return LoadedFont {
+                handle: FontHandle::Mono(font),
+                used_fallback: false,
+            };
         }
         let font = NSFont::monospacedDigitSystemFontOfSize_weight(size_pt, medium_weight());
-        LoadedFont { handle: FontHandle::Fallback(font), used_fallback: true }
+        LoadedFont {
+            handle: FontHandle::Fallback(font),
+            used_fallback: true,
+        }
     }
 
     /// Builds a `CTLine` laying out `text` with `font` in color `rgba`.
@@ -563,10 +605,13 @@ mod text {
             rgba.3 as f64 / 255.0,
         );
         let attrs: CFRetained<CFDictionary<CFString, CFType>> = CFDictionary::from_slices(
-            &[unsafe { kCTFontAttributeName }, unsafe { kCTForegroundColorAttributeName }],
+            &[unsafe { kCTFontAttributeName }, unsafe {
+                kCTForegroundColorAttributeName
+            }],
             &[font.as_ref(), color.as_ref()],
         );
-        let attr_string = unsafe { CFAttributedString::new(None, Some(&string), Some(attrs.as_opaque())) }?;
+        let attr_string =
+            unsafe { CFAttributedString::new(None, Some(&string), Some(attrs.as_opaque())) }?;
         Some(unsafe { CTLine::with_attributed_string(&attr_string) })
     }
 
@@ -574,11 +619,25 @@ mod text {
     /// `buf` at horizontal offset `x0` (buffer height `buf_h`), returning
     /// the pixel width it occupied so callers can lay out the next segment
     /// after it.
-    fn draw_text_impl(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, font: &CTFont, text: &str, rgba: (u8, u8, u8, u8)) -> u32 {
+    fn draw_text_impl(
+        buf: &mut [u8],
+        buf_w: u32,
+        buf_h: u32,
+        x0: u32,
+        font: &CTFont,
+        text: &str,
+        rgba: (u8, u8, u8, u8),
+    ) -> u32 {
         let Some(line) = make_line(font, text, rgba) else {
             return 0;
         };
-        let line_width = unsafe { line.typographic_bounds(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
+        let line_width = unsafe {
+            line.typographic_bounds(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
         let width = line_width.ceil().max(0.0) as u32;
         if width == 0 {
             return 0;
@@ -633,8 +692,21 @@ mod text {
                     continue;
                 }
                 // Unpremultiply: premultiplied RGB = straight RGB * a/255.
-                let unpremul = |c: u8| ((c as u32 * 255 + (a as u32 / 2)) / a as u32).min(255) as u8;
-                blend_pixel(buf, buf_w, buf_h, x0 + x, y, (unpremul(pixels[idx]), unpremul(pixels[idx + 1]), unpremul(pixels[idx + 2]), a));
+                let unpremul =
+                    |c: u8| ((c as u32 * 255 + (a as u32 / 2)) / a as u32).min(255) as u8;
+                blend_pixel(
+                    buf,
+                    buf_w,
+                    buf_h,
+                    x0 + x,
+                    y,
+                    (
+                        unpremul(pixels[idx]),
+                        unpremul(pixels[idx + 1]),
+                        unpremul(pixels[idx + 2]),
+                        a,
+                    ),
+                );
             }
         }
 
@@ -644,7 +716,15 @@ mod text {
     /// Renders `text` and composites it onto `buf` at horizontal offset
     /// `x0`, returning the pixel width it occupied (so callers can lay out
     /// the next segment after it).
-    pub fn draw_text(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, font: &LoadedFont, text: &str, rgba: (u8, u8, u8, u8)) -> u32 {
+    pub fn draw_text(
+        buf: &mut [u8],
+        buf_w: u32,
+        buf_h: u32,
+        x0: u32,
+        font: &LoadedFont,
+        text: &str,
+        rgba: (u8, u8, u8, u8),
+    ) -> u32 {
         draw_text_impl(buf, buf_w, buf_h, x0, font.handle.as_ct_font(), text, rgba)
     }
 
@@ -654,7 +734,13 @@ mod text {
         let Some(line) = make_line(font.handle.as_ct_font(), text, (0, 0, 0, 0)) else {
             return 0;
         };
-        let width = unsafe { line.typographic_bounds(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut()) };
+        let width = unsafe {
+            line.typographic_bounds(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
         width.ceil().max(0.0) as u32
     }
 }
@@ -744,7 +830,15 @@ mod text {
         (mask, width)
     }
 
-    pub fn draw_text(buf: &mut [u8], buf_w: u32, buf_h: u32, x0: u32, _font: &LoadedFont, text: &str, rgba: (u8, u8, u8, u8)) -> u32 {
+    pub fn draw_text(
+        buf: &mut [u8],
+        buf_w: u32,
+        buf_h: u32,
+        x0: u32,
+        _font: &LoadedFont,
+        text: &str,
+        rgba: (u8, u8, u8, u8),
+    ) -> u32 {
         let (mask, mask_w) = render_mask(text, buf_h);
         composite_mask(buf, buf_w, buf_h, x0, &mask, mask_w, rgba);
         mask_w
@@ -800,13 +894,20 @@ pub fn used_fallback_font() -> bool {
 /// raw text width — `text::measure` is only used to *centre* text inside
 /// that reserve, not to size the layout), and `TraySegment::group_start`
 /// segments get a hairline gutter drawn immediately before them.
-pub fn render(segments: &[TraySegment], highlighted: bool, worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
+pub fn render(
+    segments: &[TraySegment],
+    highlighted: bool,
+    worst_used_percent: u8,
+) -> (Vec<u8>, u32, u32) {
     let dark = is_dark_mode();
     let used_fraction = worst_used_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     let font = text::load_font(text_font_size_pt());
 
-    let widths: Vec<u32> = segments.iter().map(|s| text::measure(&font, &s.text)).collect();
+    let widths: Vec<u32> = segments
+        .iter()
+        .map(|s| text::measure(&font, &s.text))
+        .collect();
     // A `group_start` flag on the very first segment means nothing — there is
     // no prior group to part from — so it's excluded here the same way the
     // draw loop below excludes it.
@@ -835,7 +936,14 @@ pub fn render(segments: &[TraySegment], highlighted: bool, worst_used_percent: u
                 continue;
             }
             let blended = ((ink.3 as u16 * a as u16) / 255) as u8;
-            blend_pixel(&mut buf, total_w, total_h, SIDE_PAD_PX + x, y, (ink.0, ink.1, ink.2, blended));
+            blend_pixel(
+                &mut buf,
+                total_w,
+                total_h,
+                SIDE_PAD_PX + x,
+                y,
+                (ink.0, ink.1, ink.2, blended),
+            );
         }
     }
 
@@ -847,7 +955,15 @@ pub fn render(segments: &[TraySegment], highlighted: bool, worst_used_percent: u
             x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
         }
         let text_x = x + CELL_WIDTH_PX.saturating_sub(*w) / 2;
-        text::draw_text(&mut buf, total_w, total_h, text_x, &font, &seg.text, seg.color.rgba(dark));
+        text::draw_text(
+            &mut buf,
+            total_w,
+            total_h,
+            text_x,
+            &font,
+            &seg.text,
+            seg.color.rgba(dark),
+        );
         x += CELL_WIDTH_PX;
     }
 
@@ -894,13 +1010,20 @@ mod tests {
     /// `TraySegment` literal helper — `group_start` defaults to false, which
     /// is what every pre-v4 test below wants (a single group).
     fn seg(text: &str, color: TrayColor) -> TraySegment {
-        TraySegment { text: text.into(), color, group_start: false }
+        TraySegment {
+            text: text.into(),
+            color,
+            group_start: false,
+        }
     }
 
     #[test]
     fn glyph_has_some_ink() {
         let cov = glyph_coverage(GLYPH_PX, 0.5);
-        assert!(cov.iter().any(|&a| a > 0), "glyph must have some opaque pixels");
+        assert!(
+            cov.iter().any(|&a| a > 0),
+            "glyph must have some opaque pixels"
+        );
     }
 
     // v4 design/NOTES.md §3: the tail must render even at 0% used ("empty
@@ -908,7 +1031,10 @@ mod tests {
     #[test]
     fn the_tail_renders_even_at_zero_percent_used() {
         let cov = glyph_coverage(GLYPH_PX, 0.0);
-        assert!(cov.iter().any(|&a| a > 0), "the tail (and track) must still draw at 0% used");
+        assert!(
+            cov.iter().any(|&a| a > 0),
+            "the tail (and track) must still draw at 0% used"
+        );
     }
 
     // v4: the arc's own end angle comes from data. 0% used draws no arc ink
@@ -960,8 +1086,14 @@ mod tests {
         // 14-16 CSS-pt at 2x = 28-32 physical px; a couple of px of slack
         // either side for the antialiasing threshold this test uses (>32
         // out of 255, not full opacity).
-        assert!((26..=34).contains(&width), "ink width {width}px should be roughly 28-32px (14-16pt @2x)");
-        assert!((26..=34).contains(&height), "ink height {height}px should be roughly 28-32px (14-16pt @2x)");
+        assert!(
+            (26..=34).contains(&width),
+            "ink width {width}px should be roughly 28-32px (14-16pt @2x)"
+        );
+        assert!(
+            (26..=34).contains(&height),
+            "ink height {height}px should be roughly 28-32px (14-16pt @2x)"
+        );
     }
 
     #[test]
@@ -999,16 +1131,30 @@ mod tests {
         let mid_row = h / 2;
         let alpha_at = |x: u32| buf[(((mid_row * w) + x) * 4 + 3) as usize];
         assert!(alpha_at(2) > 0, "highlight must cover the left padding");
-        assert!(alpha_at(w - 3) > 0, "highlight must cover the right padding");
+        assert!(
+            alpha_at(w - 3) > 0,
+            "highlight must cover the right padding"
+        );
         let (bare, _, _) = render(&[], false, 0);
-        assert_eq!(bare[(((mid_row * w) + 2) * 4 + 3) as usize], 0, "unhighlighted padding stays fully transparent");
+        assert_eq!(
+            bare[(((mid_row * w) + 2) * 4 + 3) as usize],
+            0,
+            "unhighlighted padding stays fully transparent"
+        );
     }
 
     #[test]
     fn render_grows_width_per_segment_and_never_touches_height() {
         let one = render(&[seg("2%", TrayColor::Neutral)], false, 0);
-        let two = render(&[seg("2%", TrayColor::Neutral), seg("78%", TrayColor::Amber)], false, 0);
-        assert!(one.1 > GLYPH_PX, "adding a segment must widen the image beyond the bare glyph");
+        let two = render(
+            &[seg("2%", TrayColor::Neutral), seg("78%", TrayColor::Amber)],
+            false,
+            0,
+        );
+        assert!(
+            one.1 > GLYPH_PX,
+            "adding a segment must widen the image beyond the bare glyph"
+        );
         assert!(two.1 > one.1, "a second segment must widen it further");
         assert_eq!(one.2, GLYPH_PX);
         assert_eq!(two.2, GLYPH_PX);
@@ -1024,16 +1170,27 @@ mod tests {
         let one_digit = render(&[seg("9%", TrayColor::Neutral)], false, 0);
         let two_digit = render(&[seg("42%", TrayColor::Neutral)], false, 0);
         let three_digit = render(&[seg("100%", TrayColor::Neutral)], false, 0);
-        assert_eq!(one_digit.1, two_digit.1, "1 vs 2 digits must reserve the same cell width");
-        assert_eq!(two_digit.1, three_digit.1, "2 vs 3 digits must reserve the same cell width");
+        assert_eq!(
+            one_digit.1, two_digit.1,
+            "1 vs 2 digits must reserve the same cell width"
+        );
+        assert_eq!(
+            two_digit.1, three_digit.1,
+            "2 vs 3 digits must reserve the same cell width"
+        );
     }
 
     #[test]
     fn a_digit_and_percent_segment_renders_some_exact_colored_pixels() {
         let (buf, w, h) = render(&[seg("78%", TrayColor::Red)], false, 0);
         let red = TrayColor::Red.rgba(true);
-        let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
-        assert!(found, "expected at least one pixel painted in the red channel across a {w}x{h} buffer");
+        let found = buf
+            .chunks_exact(4)
+            .any(|px| (px[0], px[1], px[2], px[3]) == red);
+        assert!(
+            found,
+            "expected at least one pixel painted in the red channel across a {w}x{h} buffer"
+        );
     }
 
     #[test]
@@ -1043,15 +1200,24 @@ mod tests {
         // correctly rather than being special-cased away.
         let (buf, w, h) = render(&[seg("!", TrayColor::Red)], false, 0);
         let red = TrayColor::Red.rgba(true);
-        let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
-        assert!(found, "expected at least one pixel painted in the red channel across a {w}x{h} buffer");
+        let found = buf
+            .chunks_exact(4)
+            .any(|px| (px[0], px[1], px[2], px[3]) == red);
+        assert!(
+            found,
+            "expected at least one pixel painted in the red channel across a {w}x{h} buffer"
+        );
     }
 
     // v4: a `group_start` segment draws its hairline gutter, widening the
     // image further than an equivalent same-group segment would.
     #[test]
     fn a_group_start_segment_widens_the_image_by_the_hairline_gutter() {
-        let same_group = render(&[seg("9%", TrayColor::Neutral), seg("9%", TrayColor::Neutral)], false, 0);
+        let same_group = render(
+            &[seg("9%", TrayColor::Neutral), seg("9%", TrayColor::Neutral)],
+            false,
+            0,
+        );
         let mut second_group = seg("9%", TrayColor::Neutral);
         second_group.group_start = true;
         let two_groups = render(&[seg("9%", TrayColor::Neutral), second_group], false, 0);
@@ -1072,12 +1238,18 @@ mod tests {
         first.group_start = true;
         let with_flag = render(&[first], false, 0);
         let without_flag = render(&[seg("9%", TrayColor::Neutral)], false, 0);
-        assert_eq!(with_flag.1, without_flag.1, "group_start on the first segment must not add a gutter");
+        assert_eq!(
+            with_flag.1, without_flag.1,
+            "group_start on the first segment must not add a gutter"
+        );
     }
 
     #[test]
     fn neutral_color_differs_between_dark_and_light() {
-        assert_ne!(TrayColor::Neutral.rgba(true), TrayColor::Neutral.rgba(false));
+        assert_ne!(
+            TrayColor::Neutral.rgba(true),
+            TrayColor::Neutral.rgba(false)
+        );
     }
 
     #[test]
@@ -1095,7 +1267,10 @@ mod tests {
         // `monospacedDigitSystemFontOfSize:weight:`, which guarantees this.
         let one = render(&[seg("1", TrayColor::Red)], false, 0);
         let eight = render(&[seg("8", TrayColor::Red)], false, 0);
-        assert_eq!(one.1, eight.1, "'1' and '8' must render at the same width (tabular figures)");
+        assert_eq!(
+            one.1, eight.1,
+            "'1' and '8' must render at the same width (tabular figures)"
+        );
     }
 
     #[test]
@@ -1120,16 +1295,25 @@ mod tests {
         let (x, y) = (2u32, h / 2);
         let idx = ((y * w + x) * 4) as usize;
         let edge_alpha = buf[idx + 3];
-        assert!(edge_alpha > 0, "expected the highlight to paint near the canvas edge, got alpha {edge_alpha}");
+        assert!(
+            edge_alpha > 0,
+            "expected the highlight to paint near the canvas edge, got alpha {edge_alpha}"
+        );
         // And it must be translucent, not a solid fill — a fully opaque
         // pixel there would misread as a filled square, not a soft tint.
-        assert!(edge_alpha < 255, "highlight should be translucent, got fully opaque alpha {edge_alpha}");
+        assert!(
+            edge_alpha < 255,
+            "highlight should be translucent, got fully opaque alpha {edge_alpha}"
+        );
     }
 
     #[test]
     fn unhighlighted_bare_glyph_leaves_the_corner_fully_transparent() {
         let (buf, _, _) = render(&[], false, 0);
-        assert_eq!(buf[3], 0, "no highlight requested, corner should stay fully transparent");
+        assert_eq!(
+            buf[3], 0,
+            "no highlight requested, corner should stay fully transparent"
+        );
     }
 
     #[test]
@@ -1139,8 +1323,12 @@ mod tests {
         // foreground (the digit glyph's solid interior) still wins outright.
         let (buf, w, h) = render(&[seg("78%", TrayColor::Red)], true, 0);
         let red = TrayColor::Red.rgba(true);
-        let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
-        assert!(found, "expected an unmodified red digit pixel somewhere in a {w}x{h} highlighted buffer");
+        let found = buf
+            .chunks_exact(4)
+            .any(|px| (px[0], px[1], px[2], px[3]) == red);
+        assert!(
+            found,
+            "expected an unmodified red digit pixel somewhere in a {w}x{h} highlighted buffer"
+        );
     }
 }
-

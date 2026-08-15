@@ -99,13 +99,18 @@ pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 /// physical pixels at all. The scale factor used to appear on both sides of
 /// this arithmetic and cancel out anyway; dropping it removes a place where
 /// the *wrong* scale factor could be supplied.
-fn glyph_center_offset_from_item_left_points(item_width_points: Option<f64>, icon_width_px: f64) -> f64 {
+fn glyph_center_offset_from_item_left_points(
+    item_width_points: Option<f64>,
+    icon_width_px: f64,
+) -> f64 {
     const GLYPH_WIDTH_POINTS: f64 = 18.0; // fixed: tray_render's glyph is always drawn at this size
-    // `last_icon_width_px` is a buffer width at the fixed "2x of an 18pt-tall
-    // image" convention `set_icon_for_ns_status_item_button` imposes, so /2
-    // is its real width in points on any display.
+                                          // `last_icon_width_px` is a buffer width at the fixed "2x of an 18pt-tall
+                                          // image" convention `set_icon_for_ns_status_item_button` imposes, so /2
+                                          // is its real width in points on any display.
     let image_width_points = icon_width_px / 2.0;
-    let margin_points = item_width_points.map(|w| ((w - image_width_points) / 2.0).max(0.0)).unwrap_or(0.0);
+    let margin_points = item_width_points
+        .map(|w| ((w - image_width_points) / 2.0).max(0.0))
+        .unwrap_or(0.0);
     // R3-11: the glyph is no longer the image's leftmost pixel — the image
     // carries its own side padding so A11's highlight has horizontal air. That
     // inset comes from `tray_render`, which owns it, rather than being
@@ -188,7 +193,10 @@ pub(crate) struct DisplayPoints {
 
 impl DisplayPoints {
     fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.origin.0 && x < self.origin.0 + self.size.0 && y >= self.origin.1 && y < self.origin.1 + self.size.1
+        x >= self.origin.0
+            && x < self.origin.0 + self.size.0
+            && y >= self.origin.1
+            && y < self.origin.1 + self.size.1
     }
 }
 
@@ -205,7 +213,11 @@ impl DisplayPoints {
 /// built-in ✗). Where an unusual arrangement could make two candidates both
 /// land in-bounds, the tie-break is the one property a menu bar always has:
 /// it hugs its own display's top edge.
-pub(crate) fn resolve_tray_point(displays: &[DisplayPoints], tray_x: f64, tray_y: f64) -> Option<(usize, f64, f64)> {
+pub(crate) fn resolve_tray_point(
+    displays: &[DisplayPoints],
+    tray_x: f64,
+    tray_y: f64,
+) -> Option<(usize, f64, f64)> {
     let mut best: Option<(usize, f64, f64, f64)> = None; // (index, x, y, distance below that display's top)
     for (index, display) in displays.iter().enumerate() {
         if display.scale <= 0.0 {
@@ -234,7 +246,9 @@ pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPo
     use objc2_app_kit::NSScreen;
     use objc2_foundation::MainThreadMarker;
 
-    let Some(mtm) = MainThreadMarker::new() else { return displays_in_points_via_tao(window) };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return displays_in_points_via_tao(window);
+    };
     let screens = NSScreen::screens(mtm);
     // AppKit's global space is y-up from the first screen's bottom-left; the
     // rest of this module is y-down from its top-left. That screen's own
@@ -251,7 +265,8 @@ pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPo
             // `visibleFrame` also excludes the Dock, but the Dock never sits at
             // the top, so the difference at the *top* edge is the menu bar and
             // nothing else.
-            let menu_bar_height = (frame.origin.y + frame.size.height) - (visible.origin.y + visible.size.height);
+            let menu_bar_height =
+                (frame.origin.y + frame.size.height) - (visible.origin.y + visible.size.height);
             DisplayPoints {
                 origin: (frame.origin.x, top),
                 size: (frame.size.width, frame.size.height),
@@ -352,7 +367,8 @@ pub(crate) fn docked_layout_in_points(
     const PANEL_INSET_X: f64 = (PANEL_WINDOW_WIDTH_LOGICAL - PANEL_WIDTH) / 2.0;
     const PANEL_INSET_TOP: f64 = 12.0; // == app.css's `body { padding-top }` / Panel.jsx's NOTCH_RESERVE
 
-    let glyph_center = tray_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
+    let glyph_center =
+        tray_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
 
     // Place the window so the beak lands at its wanted inset with its centre on
     // the glyph's centre, then clamp to the display — the clamp is what B5's
@@ -376,7 +392,10 @@ pub(crate) fn docked_layout_in_points(
     let inset_above_item = (tray_top - display.origin.1).max(0.0);
     // `NEG_INFINITY`, not 0 — a display left of the primary has negative
     // coordinates, where 0 is not a neutral floor but a point far below it.
-    let menu_bar_bottom = display.menu_bar_bottom.unwrap_or(f64::NEG_INFINITY).max(tray_bottom + inset_above_item);
+    let menu_bar_bottom = display
+        .menu_bar_bottom
+        .unwrap_or(f64::NEG_INFINITY)
+        .max(tray_bottom + inset_above_item);
     // Solve for the window top from where the beak's *tip* should end up:
     // tip = y + PANEL_INSET_TOP − BEAK_HEIGHT, and tip should be
     // BEAK_TIP_CLEARANCE below the bar.
@@ -389,7 +408,8 @@ pub(crate) fn docked_layout_in_points(
     // giving way (doing it the other way round moved the beak visibly off the
     // glyph — caught live: "центровки снова нет").
     let panel_left = x + PANEL_INSET_X;
-    let beak_left = (glyph_center - panel_left - BEAK_BASE_WIDTH / 2.0).clamp(0.0, PANEL_WIDTH - BEAK_BASE_WIDTH);
+    let beak_left = (glyph_center - panel_left - BEAK_BASE_WIDTH / 2.0)
+        .clamp(0.0, PANEL_WIDTH - BEAK_BASE_WIDTH);
 
     DockedLayout { x, y, beak_left }
 }
@@ -410,7 +430,10 @@ pub(crate) struct DragAnchor {
 /// across many small steps the way repeatedly re-anchoring to the previous
 /// step would.
 pub(crate) fn drag_target_from_anchor(anchor: DragAnchor, current_mouse: (f64, f64)) -> (f64, f64) {
-    (anchor.window_top_left.0 + (current_mouse.0 - anchor.mouse.0), anchor.window_top_left.1 + (current_mouse.1 - anchor.mouse.1))
+    (
+        anchor.window_top_left.0 + (current_mouse.0 - anchor.mouse.0),
+        anchor.window_top_left.1 + (current_mouse.1 - anchor.mouse.1),
+    )
 }
 
 #[cfg(test)]
@@ -431,7 +454,10 @@ mod glyph_offset_tests {
         // The glyph stays centred in that image, so its centre remains the
         // item's own centre.
         let offset = glyph_center_offset_from_item_left_points(Some(46.0), 60.0);
-        assert!((offset - 22.0).abs() < 0.01, "expected ~22pt offset, got {offset}pt");
+        assert!(
+            (offset - 22.0).abs() < 0.01,
+            "expected ~22pt offset, got {offset}pt"
+        );
     }
 
     // A wider (pinned-digits) image still centers correctly as long as the
@@ -449,7 +475,10 @@ mod glyph_offset_tests {
         // measurements — right edge held fixed), so the glyph's offset from
         // the item's own *current* left edge is unchanged even though the
         // item itself is much wider now.
-        assert!((offset - 22.0).abs() < 0.01, "expected ~22pt offset, got {offset}pt");
+        assert!(
+            (offset - 22.0).abs() < 0.01,
+            "expected ~22pt offset, got {offset}pt"
+        );
     }
 
     // R3-7: the offset is a property of the tray item and its own composited
@@ -486,10 +515,18 @@ mod docked_layout_tests {
     // built-in (`NSScreen` frame 1117 vs visibleFrame 1084), and a standard
     // 24pt on an unnotched external — deliberately different, because a single
     // constant being wrong on one of them is the R3-8 bug.
-    const BUILT_IN: DisplayPoints =
-        DisplayPoints { origin: (0.0, 0.0), size: (1728.0, 1117.0), scale: 2.0, menu_bar_bottom: Some(33.0) };
-    const EXTERNAL: DisplayPoints =
-        DisplayPoints { origin: (-2560.0, -855.0), size: (2560.0, 2880.0), scale: 1.0, menu_bar_bottom: Some(-831.0) };
+    const BUILT_IN: DisplayPoints = DisplayPoints {
+        origin: (0.0, 0.0),
+        size: (1728.0, 1117.0),
+        scale: 2.0,
+        menu_bar_bottom: Some(33.0),
+    };
+    const EXTERNAL: DisplayPoints = DisplayPoints {
+        origin: (-2560.0, -855.0),
+        size: (2560.0, 2880.0),
+        scale: 1.0,
+        menu_bar_bottom: Some(-831.0),
+    };
 
     // A tray item as macOS lays one out: a 24pt-tall button centred in
     // whatever menu bar it is in, so it can never extend below that bar.
@@ -506,7 +543,10 @@ mod docked_layout_tests {
     }
 
     fn item_top(display: DisplayPoints) -> f64 {
-        let bar_height = display.menu_bar_bottom.map(|b| b - display.origin.1).unwrap_or(33.0);
+        let bar_height = display
+            .menu_bar_bottom
+            .map(|b| b - display.origin.1)
+            .unwrap_or(33.0);
         display.origin.1 + (bar_height - 24.0).max(0.0) / 2.0
     }
 
@@ -525,7 +565,8 @@ mod docked_layout_tests {
     // dividing by the external's leaves 2366, which is off every display.
     #[test]
     fn a_tray_rect_from_the_retina_built_in_resolves_to_that_display_in_points() {
-        let (index, x, y) = resolve_tray_point(&displays(), 2366.0, 0.0).expect("built-in tray point must resolve");
+        let (index, x, y) =
+            resolve_tray_point(&displays(), 2366.0, 0.0).expect("built-in tray point must resolve");
         assert_eq!(index, 0);
         assert!((x - 1183.0).abs() < 0.01, "got {x}");
         assert!(y.abs() < 0.01, "got {y}");
@@ -539,7 +580,8 @@ mod docked_layout_tests {
     // captain's "прыгает по экрану".
     #[test]
     fn a_tray_rect_from_the_1x_external_display_resolves_to_that_display_in_points() {
-        let (index, x, y) = resolve_tray_point(&displays(), -400.0, -855.0).expect("external tray point must resolve");
+        let (index, x, y) = resolve_tray_point(&displays(), -400.0, -855.0)
+            .expect("external tray point must resolve");
         assert_eq!(index, 1);
         assert!((x + 400.0).abs() < 0.01, "got {x}");
         assert!((y + 855.0).abs() < 0.01, "got {y}");
@@ -560,11 +602,33 @@ mod docked_layout_tests {
     fn the_beaks_tip_sits_just_under_the_menu_bar_of_its_own_display() {
         let tip = |l: super::DockedLayout| l.y + (12.0 - 10.0);
 
-        let built_in = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
-        assert!((tip(built_in) - (33.0 + 2.0)).abs() < 0.01, "got {}", tip(built_in));
+        let built_in = docked_layout_in_points(
+            BUILT_IN,
+            1183.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        assert!(
+            (tip(built_in) - (33.0 + 2.0)).abs() < 0.01,
+            "got {}",
+            tip(built_in)
+        );
 
-        let external = docked_layout_in_points(EXTERNAL, -400.0, item_top(EXTERNAL), item_bottom(EXTERNAL), Some(ITEM_W), ICON_PX);
-        assert!((tip(external) - (-831.0 + 2.0)).abs() < 0.01, "got {}", tip(external));
+        let external = docked_layout_in_points(
+            EXTERNAL,
+            -400.0,
+            item_top(EXTERNAL),
+            item_bottom(EXTERNAL),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        assert!(
+            (tip(external) - (-831.0 + 2.0)).abs() < 0.01,
+            "got {}",
+            tip(external)
+        );
     }
 
     // R3-8 regression guard: two displays whose menu bars differ in height must
@@ -572,12 +636,37 @@ mod docked_layout_tests {
     // the same number for both, which is the bug.
     #[test]
     fn the_top_follows_each_displays_own_menu_bar_height_not_one_constant() {
-        let built_in = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
-        let external = docked_layout_in_points(EXTERNAL, -400.0, item_top(EXTERNAL), item_bottom(EXTERNAL), Some(ITEM_W), ICON_PX);
+        let built_in = docked_layout_in_points(
+            BUILT_IN,
+            1183.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        let external = docked_layout_in_points(
+            EXTERNAL,
+            -400.0,
+            item_top(EXTERNAL),
+            item_bottom(EXTERNAL),
+            Some(ITEM_W),
+            ICON_PX,
+        );
         let below_own_top = |l: super::DockedLayout, d: DisplayPoints| l.y - d.origin.1;
-        assert!((below_own_top(built_in, BUILT_IN) - 33.0).abs() < 0.01, "got {}", below_own_top(built_in, BUILT_IN));
-        assert!((below_own_top(external, EXTERNAL) - 24.0).abs() < 0.01, "got {}", below_own_top(external, EXTERNAL));
-        assert_ne!(below_own_top(built_in, BUILT_IN), below_own_top(external, EXTERNAL));
+        assert!(
+            (below_own_top(built_in, BUILT_IN) - 33.0).abs() < 0.01,
+            "got {}",
+            below_own_top(built_in, BUILT_IN)
+        );
+        assert!(
+            (below_own_top(external, EXTERNAL) - 24.0).abs() < 0.01,
+            "got {}",
+            below_own_top(external, EXTERNAL)
+        );
+        assert_ne!(
+            below_own_top(built_in, BUILT_IN),
+            below_own_top(external, EXTERNAL)
+        );
     }
 
     // The state the captain actually reproduces from — inside a full-screen
@@ -588,10 +677,32 @@ mod docked_layout_tests {
     // reading the bar directly, not on some degraded approximation.
     #[test]
     fn a_hidden_menu_bar_is_reconstructed_from_the_tray_item_to_the_same_answer() {
-        let hidden_bar = DisplayPoints { menu_bar_bottom: None, ..BUILT_IN };
-        let with_bar = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
-        let without = docked_layout_in_points(hidden_bar, 1183.0, item_top(hidden_bar), item_bottom(hidden_bar), Some(ITEM_W), ICON_PX);
-        assert!((without.y - with_bar.y).abs() < 0.01, "{} vs {}", without.y, with_bar.y);
+        let hidden_bar = DisplayPoints {
+            menu_bar_bottom: None,
+            ..BUILT_IN
+        };
+        let with_bar = docked_layout_in_points(
+            BUILT_IN,
+            1183.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        let without = docked_layout_in_points(
+            hidden_bar,
+            1183.0,
+            item_top(hidden_bar),
+            item_bottom(hidden_bar),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        assert!(
+            (without.y - with_bar.y).abs() < 0.01,
+            "{} vs {}",
+            without.y,
+            with_bar.y
+        );
     }
 
     // A display left of the primary has negative coordinates throughout — a
@@ -599,9 +710,23 @@ mod docked_layout_tests {
     // display's real bar rather than as neutral.
     #[test]
     fn the_fallback_floor_works_on_a_negative_coordinate_display() {
-        let hidden_bar = DisplayPoints { menu_bar_bottom: None, ..EXTERNAL };
-        let layout = docked_layout_in_points(hidden_bar, -400.0, item_top(hidden_bar), item_bottom(hidden_bar), Some(ITEM_W), ICON_PX);
-        assert!(layout.y < 0.0 && layout.y > EXTERNAL.origin.1, "got {}", layout.y);
+        let hidden_bar = DisplayPoints {
+            menu_bar_bottom: None,
+            ..EXTERNAL
+        };
+        let layout = docked_layout_in_points(
+            hidden_bar,
+            -400.0,
+            item_top(hidden_bar),
+            item_bottom(hidden_bar),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        assert!(
+            layout.y < 0.0 && layout.y > EXTERNAL.origin.1,
+            "got {}",
+            layout.y
+        );
     }
 
     // R3-10: the beak is held a comfortable distance inside the panel's own
@@ -610,14 +735,28 @@ mod docked_layout_tests {
     // achieved by moving the whole panel left rather than by moving the beak.
     #[test]
     fn the_beak_sits_clear_of_the_panels_left_corner_by_moving_the_panel_not_the_beak() {
-        let layout = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
-        assert!((layout.beak_left - 20.0).abs() < 0.01, "got {}", layout.beak_left);
+        let layout = docked_layout_in_points(
+            BUILT_IN,
+            1183.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        assert!(
+            (layout.beak_left - 20.0).abs() < 0.01,
+            "got {}",
+            layout.beak_left
+        );
         // Well clear of the 12pt corner radius, unlike the handoff's own
         // "pressed to the left edge" rule this replaces.
         assert!(layout.beak_left > 12.0);
         // ...and still exactly on the glyph.
         let beak_centre = layout.x + 14.0 + layout.beak_left + 10.0;
-        assert!((beak_centre - glyph_centre(1183.0, ITEM_W, ICON_PX)).abs() < 0.01, "got {beak_centre}");
+        assert!(
+            (beak_centre - glyph_centre(1183.0, ITEM_W, ICON_PX)).abs() < 0.01,
+            "got {beak_centre}"
+        );
     }
 
     // R3-1/the captain's own acceptance bar: pinning digits widens the tray
@@ -637,22 +776,59 @@ mod docked_layout_tests {
         let beak_centre = |l: super::DockedLayout| l.x + 14.0 + l.beak_left + 10.0;
 
         // Bare: 36pt item, 18pt image; right edge at 1183 + 36 = 1219.
-        let bare = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        let bare = docked_layout_in_points(
+            BUILT_IN,
+            1183.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
         let bare_glyph_centre: f64 = glyph_centre(1183.0, ITEM_W, ICON_PX);
-        assert!((beak_centre(bare) - bare_glyph_centre).abs() < 0.01, "bare: {}", beak_centre(bare));
-        assert!((bare.x - (bare_glyph_centre - 44.0)).abs() < 0.01, "bare panel: {}", bare.x);
+        assert!(
+            (beak_centre(bare) - bare_glyph_centre).abs() < 0.01,
+            "bare: {}",
+            beak_centre(bare)
+        );
+        assert!(
+            (bare.x - (bare_glyph_centre - 44.0)).abs() < 0.01,
+            "bare panel: {}",
+            bare.x
+        );
 
         // Pinned "29%": the item grows to 64pt with the same right edge, so
         // its left edge moves to 1219 − 64 = 1155, and the composited image
         // is 46pt wide (glyph + one segment).
-        let pinned = docked_layout_in_points(BUILT_IN, 1155.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(74.0), 58.0 * 2.0);
+        let pinned = docked_layout_in_points(
+            BUILT_IN,
+            1155.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(74.0),
+            58.0 * 2.0,
+        );
         let pinned_glyph_centre = glyph_centre(1155.0, 74.0, 58.0 * 2.0);
-        assert!((beak_centre(pinned) - pinned_glyph_centre).abs() < 0.01, "pinned: {}", beak_centre(pinned));
-        assert!((pinned.x - (pinned_glyph_centre - 44.0)).abs() < 0.01, "pinned panel: {}", pinned.x);
+        assert!(
+            (beak_centre(pinned) - pinned_glyph_centre).abs() < 0.01,
+            "pinned: {}",
+            beak_centre(pinned)
+        );
+        assert!(
+            (pinned.x - (pinned_glyph_centre - 44.0)).abs() < 0.01,
+            "pinned panel: {}",
+            pinned.x
+        );
 
         // Unpinning restores the bare geometry exactly — no hysteresis, since
         // every input is re-derived rather than accumulated.
-        let unpinned = docked_layout_in_points(BUILT_IN, 1183.0, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
+        let unpinned = docked_layout_in_points(
+            BUILT_IN,
+            1183.0,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
         assert_eq!(bare, unpinned);
     }
 
@@ -662,18 +838,43 @@ mod docked_layout_tests {
     fn at_the_right_screen_edge_the_panel_stops_and_the_beak_keeps_tracking() {
         // Icon hard against the built-in's right edge.
         let tray_left = 1728.0 - 40.0;
-        let layout = docked_layout_in_points(BUILT_IN, tray_left, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
-        assert!((layout.x - (1728.0 - 340.0)).abs() < 0.01, "panel must clamp, got {}", layout.x);
+        let layout = docked_layout_in_points(
+            BUILT_IN,
+            tray_left,
+            item_top(BUILT_IN),
+            item_bottom(BUILT_IN),
+            Some(ITEM_W),
+            ICON_PX,
+        );
+        assert!(
+            (layout.x - (1728.0 - 340.0)).abs() < 0.01,
+            "panel must clamp, got {}",
+            layout.x
+        );
         let beak_centre = layout.x + 14.0 + layout.beak_left + 10.0;
-        assert!((beak_centre - glyph_centre(tray_left, ITEM_W, ICON_PX)).abs() < 0.01, "beak must still track the glyph, got {beak_centre}");
+        assert!(
+            (beak_centre - glyph_centre(tray_left, ITEM_W, ICON_PX)).abs() < 0.01,
+            "beak must still track the glyph, got {beak_centre}"
+        );
     }
 
     // The notch can never leave the panel, however extreme the geometry.
     #[test]
     fn the_beak_stays_within_the_panel() {
         for tray_left in [-3000.0f64, -2560.0, 0.0, 900.0, 1727.0, 5000.0] {
-            let layout = docked_layout_in_points(BUILT_IN, tray_left, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
-            assert!(layout.beak_left >= 0.0 && layout.beak_left <= 332.0 - 20.0, "tray_left={tray_left} gave {}", layout.beak_left);
+            let layout = docked_layout_in_points(
+                BUILT_IN,
+                tray_left,
+                item_top(BUILT_IN),
+                item_bottom(BUILT_IN),
+                Some(ITEM_W),
+                ICON_PX,
+            );
+            assert!(
+                layout.beak_left >= 0.0 && layout.beak_left <= 332.0 - 20.0,
+                "tray_left={tray_left} gave {}",
+                layout.beak_left
+            );
         }
     }
 }
@@ -691,7 +892,10 @@ mod manual_drag_tests {
     #[test]
     fn the_target_preserves_the_grab_offset_across_a_move() {
         // Grabbed 80pt right, 50pt down of the window's own top-left.
-        let anchor = DragAnchor { mouse: (500.0, 200.0), window_top_left: (420.0, 150.0) };
+        let anchor = DragAnchor {
+            mouse: (500.0, 200.0),
+            window_top_left: (420.0, 150.0),
+        };
         let target = drag_target_from_anchor(anchor, (650.0, 120.0));
         assert_eq!(target, (570.0, 70.0));
     }
@@ -701,7 +905,13 @@ mod manual_drag_tests {
     // click) from nudging the window at all.
     #[test]
     fn no_cursor_movement_yields_no_window_movement() {
-        let anchor = DragAnchor { mouse: (100.0, 100.0), window_top_left: (10.0, 10.0) };
-        assert_eq!(drag_target_from_anchor(anchor, anchor.mouse), anchor.window_top_left);
+        let anchor = DragAnchor {
+            mouse: (100.0, 100.0),
+            window_top_left: (10.0, 10.0),
+        };
+        assert_eq!(
+            drag_target_from_anchor(anchor, anchor.mouse),
+            anchor.window_top_left
+        );
     }
 }

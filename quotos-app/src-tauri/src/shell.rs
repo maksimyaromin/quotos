@@ -15,7 +15,8 @@ use tauri::image::Image;
 use tauri::{Emitter, Manager};
 
 use crate::geometry::{
-    displays_in_points, docked_layout_in_points, drag_target_from_anchor, resolve_tray_point, DockedLayout, DragAnchor,
+    displays_in_points, docked_layout_in_points, drag_target_from_anchor, resolve_tray_point,
+    DockedLayout, DragAnchor,
 };
 use crate::{panel_window, tray_render, AppState};
 
@@ -44,7 +45,11 @@ pub(crate) struct TraySegmentDto {
 /// everything tracked", sent on every call regardless of `segments` so the
 /// arc stays current whether or not anything is pinned.
 #[tauri::command]
-pub(crate) fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>, worst_used_percent: u8) -> Result<(), String> {
+pub(crate) fn set_tray_status(
+    app: tauri::AppHandle,
+    segments: Vec<TraySegmentDto>,
+    worst_used_percent: u8,
+) -> Result<(), String> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
     };
@@ -58,8 +63,14 @@ pub(crate) fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDt
         // work — and, more importantly, stops them reaching
         // `schedule_resync_after_icon_change`, which moves the open panel.
         let state = app.state::<AppState>();
-        let mut last = state.last_tray_segments.lock().expect("last_tray_segments mutex poisoned");
-        let mut last_worst = state.last_tray_worst_used_percent.lock().expect("last_tray_worst_used_percent mutex poisoned");
+        let mut last = state
+            .last_tray_segments
+            .lock()
+            .expect("last_tray_segments mutex poisoned");
+        let mut last_worst = state
+            .last_tray_worst_used_percent
+            .lock()
+            .expect("last_tray_worst_used_percent mutex poisoned");
         if *last == segments && *last_worst == worst_used_percent {
             return Ok(());
         }
@@ -74,8 +85,13 @@ pub(crate) fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDt
 /// never from the frontend directly, since it's a pure reflection of native
 /// window visibility, not app data.
 pub(crate) fn set_tray_highlighted(app: &tauri::AppHandle, highlighted: bool) {
-    let Some(tray) = app.tray_by_id("main-tray") else { return };
-    *app.state::<AppState>().tray_highlighted.lock().expect("tray_highlighted mutex poisoned") = highlighted;
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return;
+    };
+    *app.state::<AppState>()
+        .tray_highlighted
+        .lock()
+        .expect("tray_highlighted mutex poisoned") = highlighted;
     let _ = repaint_tray_icon(app, &tray);
 }
 
@@ -103,9 +119,19 @@ pub(crate) fn set_tray_highlighted(app: &tauri::AppHandle, highlighted: bool) {
 /// to the plain template glyph exactly as before.
 fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let segments = state.last_tray_segments.lock().expect("last_tray_segments mutex poisoned").clone();
-    let highlighted = *state.tray_highlighted.lock().expect("tray_highlighted mutex poisoned");
-    let worst_used_percent = *state.last_tray_worst_used_percent.lock().expect("last_tray_worst_used_percent mutex poisoned");
+    let segments = state
+        .last_tray_segments
+        .lock()
+        .expect("last_tray_segments mutex poisoned")
+        .clone();
+    let highlighted = *state
+        .tray_highlighted
+        .lock()
+        .expect("tray_highlighted mutex poisoned");
+    let worst_used_percent = *state
+        .last_tray_worst_used_percent
+        .lock()
+        .expect("last_tray_worst_used_percent mutex poisoned");
 
     tray.set_title(Some("")).map_err(|e| e.to_string())?;
 
@@ -116,13 +142,22 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
     let tooltip = if segments.is_empty() {
         "Quotos".to_string()
     } else {
-        format!("Quotos — {}", segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" "))
+        format!(
+            "Quotos — {}",
+            segments
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
     };
-    tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
+    tray.set_tooltip(Some(&tooltip))
+        .map_err(|e| e.to_string())?;
 
     let icon_width_px = if segments.is_empty() && !highlighted {
         let (rgba, w, h) = tray_render::plain_glyph_rgba(worst_used_percent);
-        tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
+        tray.set_icon(Some(Image::new_owned(rgba, w, h)))
+            .map_err(|e| e.to_string())?;
         tray.set_icon_as_template(true).map_err(|e| e.to_string())?;
         w
     } else {
@@ -139,12 +174,17 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
             })
             .collect();
         let (rgba, w, h) = tray_render::render(&segs, highlighted, worst_used_percent);
-        tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
-        tray.set_icon_as_template(false).map_err(|e| e.to_string())?;
+        tray.set_icon(Some(Image::new_owned(rgba, w, h)))
+            .map_err(|e| e.to_string())?;
+        tray.set_icon_as_template(false)
+            .map_err(|e| e.to_string())?;
         w
     };
     let width_changed = {
-        let mut last = state.last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned");
+        let mut last = state
+            .last_icon_width_px
+            .lock()
+            .expect("last_icon_width_px mutex poisoned");
         let changed = *last != icon_width_px;
         *last = icon_width_px;
         changed
@@ -187,7 +227,10 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
 /// tray click to refresh `last_tray_rect` from. Returns whether it actually
 /// repositioned anything, so `schedule_resync_after_icon_change` knows
 /// whether a retry is still needed.
-fn resync_docked_position_after_icon_change(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Option<(f64, f64)> {
+fn resync_docked_position_after_icon_change(
+    app: &tauri::AppHandle,
+    tray: &tauri::tray::TrayIcon,
+) -> Option<(f64, f64)> {
     let window = app.get_webview_window("main")?;
     if !window.is_visible().unwrap_or(false) {
         return None;
@@ -202,7 +245,10 @@ fn resync_docked_position_after_icon_change(app: &tauri::AppHandle, tray: &tauri
         tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
         tauri::Position::Logical(p) => (p.x, p.y),
     };
-    *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") = Some((tray_x, tray_y));
+    *state
+        .last_tray_rect
+        .lock()
+        .expect("last_tray_rect mutex poisoned") = Some((tray_x, tray_y));
     reposition_under_tray(app, &window, tray_x, tray_y);
     Some((tray_x, tray_y))
 }
@@ -269,7 +315,9 @@ pub(crate) fn set_detached(
     detached: bool,
 ) -> Result<(), String> {
     *state.detached.lock().expect("detached mutex poisoned") = detached;
-    window.set_skip_taskbar(!detached).map_err(|e| e.to_string())?;
+    window
+        .set_skip_taskbar(!detached)
+        .map_err(|e| e.to_string())?;
     if detached {
         // R3-9's own doc comment: `NSFloatingWindowLevel` (what this sets) is
         // right for a free-floating detached window, and specifically wrong
@@ -317,28 +365,54 @@ pub(crate) fn set_detached(
         // rect seen by any tray icon event; `None` only before the very
         // first tray event of the app's lifetime, which can't happen here
         // since detaching itself requires the panel to already be open.
-        if let Some((tray_x, tray_y)) = *state.last_tray_rect.lock().expect("last_tray_rect mutex poisoned") {
+        if let Some((tray_x, tray_y)) = *state
+            .last_tray_rect
+            .lock()
+            .expect("last_tray_rect mutex poisoned")
+        {
             reposition_under_tray(&app, &window, tray_x, tray_y);
         }
     }
     Ok(())
 }
 
-fn compute_docked_layout(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<DockedLayout> {
+fn compute_docked_layout(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    tray_x: f64,
+    tray_y: f64,
+) -> Option<DockedLayout> {
     let displays = displays_in_points(window);
     let (index, tray_left, tray_top) = resolve_tray_point(&displays, tray_x, tray_y)?;
     let display = displays[index];
 
     // Same `tray-icon` conversion as the position (see `DisplayPoints`), so
     // the same display's scale factor undoes it.
-    let item_size = app.tray_by_id("main-tray").and_then(|t| t.rect().ok().flatten()).map(|r| match r.size {
-        tauri::Size::Physical(s) => (s.width as f64 / display.scale, s.height as f64 / display.scale),
-        tauri::Size::Logical(s) => (s.width, s.height),
-    });
-    let icon_width_px = *app.state::<AppState>().last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned") as f64;
+    let item_size = app
+        .tray_by_id("main-tray")
+        .and_then(|t| t.rect().ok().flatten())
+        .map(|r| match r.size {
+            tauri::Size::Physical(s) => (
+                s.width as f64 / display.scale,
+                s.height as f64 / display.scale,
+            ),
+            tauri::Size::Logical(s) => (s.width, s.height),
+        });
+    let icon_width_px = *app
+        .state::<AppState>()
+        .last_icon_width_px
+        .lock()
+        .expect("last_icon_width_px mutex poisoned") as f64;
 
     let tray_bottom = tray_top + item_size.map(|(_, h)| h).unwrap_or(0.0);
-    Some(docked_layout_in_points(display, tray_left, tray_top, tray_bottom, item_size.map(|(w, _)| w), icon_width_px))
+    Some(docked_layout_in_points(
+        display,
+        tray_left,
+        tray_top,
+        tray_bottom,
+        item_size.map(|(w, _)| w),
+        icon_width_px,
+    ))
 }
 
 /// R3-7: moves the window's top-left to a global-point coordinate, and does
@@ -364,8 +438,12 @@ fn place_window_top_left_sync(window: &tauri::WebviewWindow, x: f64, y: f64) -> 
     use objc2_app_kit::{NSScreen, NSWindow};
     use objc2_foundation::{MainThreadMarker, NSPoint};
 
-    let Some(mtm) = MainThreadMarker::new() else { return false };
-    let Ok(ptr) = window.ns_window() else { return false };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let Ok(ptr) = window.ns_window() else {
+        return false;
+    };
     if ptr.is_null() {
         return false;
     }
@@ -375,7 +453,9 @@ fn place_window_top_left_sync(window: &tauri::WebviewWindow, x: f64, y: f64) -> 
     // own height is the flip constant — the same conversion `tao`'s
     // `util::window_position` makes with `CGDisplay::main().pixels_high()`.
     let screens = NSScreen::screens(mtm);
-    let Some(primary) = screens.iter().next() else { return false };
+    let Some(primary) = screens.iter().next() else {
+        return false;
+    };
     let flip = primary.frame().size.height;
 
     let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
@@ -453,10 +533,20 @@ fn place_window_top_left_sync(_window: &tauri::WebviewWindow, _x: f64, _y: f64) 
 /// synchronous `place_window_top_left_sync` the docking path already uses.
 #[tauri::command]
 pub(crate) fn drag_window_step(window: tauri::WebviewWindow, state: tauri::State<'_, AppState>) {
-    let Some((mouse, window_origin)) = current_mouse_and_window_points(&window) else { return };
-    let mut anchor = state.manual_drag_anchor.lock().expect("manual_drag_anchor mutex poisoned");
+    let Some((mouse, window_origin)) = current_mouse_and_window_points(&window) else {
+        return;
+    };
+    let mut anchor = state
+        .manual_drag_anchor
+        .lock()
+        .expect("manual_drag_anchor mutex poisoned");
     match *anchor {
-        None => *anchor = Some(DragAnchor { mouse, window_top_left: window_origin }),
+        None => {
+            *anchor = Some(DragAnchor {
+                mouse,
+                window_top_left: window_origin,
+            })
+        }
         Some(start) => {
             let (x, y) = drag_target_from_anchor(start, mouse);
             drop(anchor);
@@ -472,7 +562,10 @@ pub(crate) fn drag_window_step(window: tauri::WebviewWindow, state: tauri::State
 /// move.
 #[tauri::command]
 pub(crate) fn end_window_drag(state: tauri::State<'_, AppState>) {
-    *state.manual_drag_anchor.lock().expect("manual_drag_anchor mutex poisoned") = None;
+    *state
+        .manual_drag_anchor
+        .lock()
+        .expect("manual_drag_anchor mutex poisoned") = None;
 }
 
 /// Reads the live global mouse location and the window's own current
@@ -484,7 +577,9 @@ pub(crate) fn end_window_drag(state: tauri::State<'_, AppState>) {
 /// unlike `TrayIconEvent.rect`/`Monitor.position()` there is no per-display
 /// scale factor to resolve here at all.
 #[cfg(target_os = "macos")]
-fn current_mouse_and_window_points(window: &tauri::WebviewWindow) -> Option<((f64, f64), (f64, f64))> {
+fn current_mouse_and_window_points(
+    window: &tauri::WebviewWindow,
+) -> Option<((f64, f64), (f64, f64))> {
     use objc2_app_kit::{NSEvent, NSScreen, NSWindow};
     use objc2_foundation::MainThreadMarker;
 
@@ -502,11 +597,16 @@ fn current_mouse_and_window_points(window: &tauri::WebviewWindow) -> Option<((f6
     let frame = ns_window.frame();
     let window_top = frame.origin.y + frame.size.height;
 
-    Some(((mouse.x, flip - mouse.y), (frame.origin.x, flip - window_top)))
+    Some((
+        (mouse.x, flip - mouse.y),
+        (frame.origin.x, flip - window_top),
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn current_mouse_and_window_points(_window: &tauri::WebviewWindow) -> Option<((f64, f64), (f64, f64))> {
+fn current_mouse_and_window_points(
+    _window: &tauri::WebviewWindow,
+) -> Option<((f64, f64), (f64, f64))> {
     None
 }
 
@@ -520,8 +620,15 @@ fn current_mouse_and_window_points(_window: &tauri::WebviewWindow) -> Option<((f
 /// logical value straight through, so no scale factor is consulted — a
 /// `PhysicalPosition` here would be reinterpreted through whatever display the
 /// window currently happens to sit on, which is the original bug.
-pub(crate) fn apply_docked_position(app: &tauri::AppHandle, window: &tauri::WebviewWindow, layout: DockedLayout) {
-    *app.state::<AppState>().docked_target.lock().expect("docked_target mutex poisoned") = Some(layout);
+pub(crate) fn apply_docked_position(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    layout: DockedLayout,
+) {
+    *app.state::<AppState>()
+        .docked_target
+        .lock()
+        .expect("docked_target mutex poisoned") = Some(layout);
     if !place_window_top_left_sync(window, layout.x, layout.y) {
         let _ = window.set_position(tauri::LogicalPosition::new(layout.x, layout.y));
     }
@@ -532,7 +639,12 @@ pub(crate) fn apply_docked_position(app: &tauri::AppHandle, window: &tauri::Webv
 /// tray icon and tells the frontend where to draw the beak — the shared
 /// tail end of both `show_panel` and `set_detached`'s snap-back path (C6).
 /// Returns what it applied (or `None` if no display could be resolved).
-fn reposition_under_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) -> Option<DockedLayout> {
+fn reposition_under_tray(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    tray_x: f64,
+    tray_y: f64,
+) -> Option<DockedLayout> {
     let layout = compute_docked_layout(app, window, tray_x, tray_y)?;
     apply_docked_position(app, window, layout);
     Some(layout)
@@ -544,7 +656,10 @@ fn reposition_under_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow, 
 /// should stay exactly here": hiding, and detaching (dragging must never
 /// fight the drag).
 pub(crate) fn clear_docked_target(app: &tauri::AppHandle) {
-    *app.state::<AppState>().docked_target.lock().expect("docked_target mutex poisoned") = None;
+    *app.state::<AppState>()
+        .docked_target
+        .lock()
+        .expect("docked_target mutex poisoned") = None;
 }
 
 /// Firstmate's round-3 on-screen pass (`data/quotos-tray-t1/firstmate-findings-1.md`)
@@ -638,8 +753,14 @@ pub(crate) fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
     }
     let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
     let behavior = match std::env::var("QUOTOS_DEBUG_SPACE_BEHAVIOR").ok().as_deref() {
-        Some("join") => NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary,
-        Some("move") => NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        Some("join") => {
+            NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+        }
+        Some("move") => {
+            NSWindowCollectionBehavior::MoveToActiveSpace
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+        }
         Some("aux") => NSWindowCollectionBehavior::FullScreenAuxiliary,
         Some("joinonly") => NSWindowCollectionBehavior::CanJoinAllSpaces,
         Some("none") => NSWindowCollectionBehavior::empty(),
@@ -666,7 +787,10 @@ pub(crate) fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
 #[cfg(target_os = "macos")]
 fn set_popover_window_level(ns_window: &objc2_app_kit::NSWindow) {
     const NS_STATUS_WINDOW_LEVEL: isize = 25;
-    let level = std::env::var("QUOTOS_DEBUG_WINDOW_LEVEL").ok().and_then(|v| v.parse().ok()).unwrap_or(NS_STATUS_WINDOW_LEVEL);
+    let level = std::env::var("QUOTOS_DEBUG_WINDOW_LEVEL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(NS_STATUS_WINDOW_LEVEL);
     ns_window.setLevel(level);
 }
 
@@ -712,7 +836,10 @@ fn space_diagnostics(window: &tauri::WebviewWindow) -> Option<String> {
     // non-activating panel conversion actually took (a plain `NSWindow` would
     // ignore the style bit entirely), and `app_active` is the one the whole
     // Space fix turns on — see panel_window.rs.
-    let class = unsafe { (*(ptr as *const objc2::runtime::AnyObject)).class() }.name().to_string_lossy().into_owned();
+    let class = unsafe { (*(ptr as *const objc2::runtime::AnyObject)).class() }
+        .name()
+        .to_string_lossy()
+        .into_owned();
     let style_mask: usize = unsafe { objc2::msg_send![ns_window, styleMask] };
     Some(format!(
         "on_active_space={} visible={} key={} level={} occlusion={:?} app_active={app_active} class={class} style_mask={style_mask:#x}",
@@ -773,7 +900,9 @@ fn order_front_regardless(window: &tauri::WebviewWindow) {
     use objc2_app_kit::NSWindow;
     use objc2_foundation::MainThreadMarker;
 
-    let (Some(_mtm), Ok(ptr)) = (MainThreadMarker::new(), window.ns_window()) else { return };
+    let (Some(_mtm), Ok(ptr)) = (MainThreadMarker::new(), window.ns_window()) else {
+        return;
+    };
     if ptr.is_null() {
         return;
     }
@@ -795,7 +924,12 @@ fn order_front_regardless(_window: &tauri::WebviewWindow) {}
 /// a no-op when nothing moved the window (`setFrameTopLeftPoint:` to the
 /// frame's current origin emits no `Moved` event), and it costs one main-
 /// thread call to be immune to anything ordering-front does to the frame.
-pub(crate) fn show_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tray_x: f64, tray_y: f64) {
+pub(crate) fn show_panel(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    tray_x: f64,
+    tray_y: f64,
+) {
     set_popover_collection_behavior(window);
     let layout = compute_docked_layout(app, window, tray_x, tray_y);
     if let Some(layout) = layout {
@@ -828,8 +962,15 @@ fn log_docked_placement(
     }
     let displays = displays_in_points(window);
     let resolved = resolve_tray_point(&displays, tray_x, tray_y);
-    let item = app.tray_by_id("main-tray").and_then(|t| t.rect().ok().flatten()).map(|r| (r.position, r.size));
-    let icon_width_px = *app.state::<AppState>().last_icon_width_px.lock().expect("last_icon_width_px mutex poisoned");
+    let item = app
+        .tray_by_id("main-tray")
+        .and_then(|t| t.rect().ok().flatten())
+        .map(|r| (r.position, r.size));
+    let icon_width_px = *app
+        .state::<AppState>()
+        .last_icon_width_px
+        .lock()
+        .expect("last_icon_width_px mutex poisoned");
     eprintln!(
         "quotos-pos: tray_raw=({tray_x},{tray_y}) displays={displays:?} resolved={resolved:?} item={item:?} icon_width_px={icon_width_px} layout={layout:?} frame_after={:?} collection_behavior={:?} visible={:?}",
         window_frame_points(window),
@@ -865,7 +1006,12 @@ fn window_frame_points(window: &tauri::WebviewWindow) -> Option<(f64, f64, f64, 
     }
     let flip = NSScreen::screens(mtm).iter().next()?.frame().size.height;
     let frame = unsafe { (*(ptr as *const NSWindow)).frame() };
-    Some((frame.origin.x, flip - (frame.origin.y + frame.size.height), frame.size.width, frame.size.height))
+    Some((
+        frame.origin.x,
+        flip - (frame.origin.y + frame.size.height),
+        frame.size.width,
+        frame.size.height,
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -877,7 +1023,13 @@ fn window_frame_points(_window: &tauri::WebviewWindow) -> Option<(f64, f64, f64,
 /// instead of hiding it — closing a window the captain deliberately parked
 /// on screen must be an explicit action, not an accidental side effect of
 /// clicking the tray glyph again.
-pub(crate) fn toggle_panel(app: &tauri::AppHandle, window: &tauri::WebviewWindow, detached: bool, tray_x: f64, tray_y: f64) {
+pub(crate) fn toggle_panel(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    detached: bool,
+    tray_x: f64,
+    tray_y: f64,
+) {
     let visible = window.is_visible().unwrap_or(false);
     if visible && !detached {
         let _ = window.hide();

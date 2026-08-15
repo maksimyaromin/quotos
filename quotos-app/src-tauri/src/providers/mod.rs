@@ -34,22 +34,34 @@ pub struct RawSnapshot {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FetchError {
     /// No credential could be found/read for this account at all.
-    NotConnected { message: String },
+    NotConnected {
+        message: String,
+    },
     /// Credential exists but the provider rejected it, even after the
     /// one-shot refresh-and-retry.
-    Unauthorized { message: String },
+    Unauthorized {
+        message: String,
+    },
     /// R3-4: the stored credential is present and its *refresh* half is
     /// still valid, but its access token has expired and Quotos could not
     /// get it renewed on this machine. This is a local problem, not an
     /// expired sign-in — conflating the two is what made Quotos tell the
     /// captain his working account needed signing in. Never say "sign-in
     /// expired" for this.
-    CredentialStale { message: String },
+    CredentialStale {
+        message: String,
+    },
     /// Provider asked us to slow down. Not an error — resolves on its own.
-    RateLimited { retry_after_secs: u64 },
+    RateLimited {
+        retry_after_secs: u64,
+    },
     /// Transport-level failure (offline, DNS, timeout, non-JSON body, etc).
-    Network { message: String },
-    Other { message: String },
+    Network {
+        message: String,
+    },
+    Other {
+        message: String,
+    },
 }
 
 /// R3-4: one reservation against the account's shared request budget, per

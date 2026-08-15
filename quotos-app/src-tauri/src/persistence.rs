@@ -76,11 +76,17 @@ impl Store {
             .and_then(|raw| serde_json::from_str::<PersistedShape>(&raw).ok())
             .map(|shape| shape.tracked)
             .unwrap_or_default();
-        Self { path, tracked: Mutex::new(tracked) }
+        Self {
+            path,
+            tracked: Mutex::new(tracked),
+        }
     }
 
     pub fn list(&self) -> Vec<TrackedAccount> {
-        self.tracked.lock().expect("tracked store mutex poisoned").clone()
+        self.tracked
+            .lock()
+            .expect("tracked store mutex poisoned")
+            .clone()
     }
 
     /// Overwrites the tracked list and durably persists it: written to a
@@ -89,10 +95,16 @@ impl Store {
     /// can never leave a half-written, unparseable file behind, and nothing
     /// observes a partial write via the final path.
     pub fn save(&self, tracked: Vec<TrackedAccount>) -> Result<(), String> {
-        let shape = PersistedShape { version: 1, tracked: tracked.clone() };
+        let shape = PersistedShape {
+            version: 1,
+            tracked: tracked.clone(),
+        };
         let json = serde_json::to_string_pretty(&shape).map_err(|e| e.to_string())?;
 
-        let parent = self.path.parent().ok_or("tracked store path has no parent directory")?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or("tracked store path has no parent directory")?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
 
         let tmp_path = self.path.with_extension("json.tmp");
@@ -122,7 +134,10 @@ mod tests {
     impl TempDir {
         fn new() -> Self {
             let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!("quotos-persistence-test-{}-{n}", std::process::id()));
+            let path = std::env::temp_dir().join(format!(
+                "quotos-persistence-test-{}-{n}",
+                std::process::id()
+            ));
             fs::create_dir_all(&path).expect("create temp dir");
             Self { path }
         }
@@ -170,7 +185,9 @@ mod tests {
         let path = dir.path.join("tracked.json");
 
         let store = Store::load(path.clone());
-        store.save(vec![sample("Renamed Personal")]).expect("save should succeed");
+        store
+            .save(vec![sample("Renamed Personal")])
+            .expect("save should succeed");
 
         let reloaded = Store::load(path);
         assert_eq!(reloaded.list(), vec![sample("Renamed Personal")]);
@@ -181,7 +198,9 @@ mod tests {
         let dir = TempDir::new();
         let path = dir.path.join("nested").join("deeper").join("tracked.json");
         let store = Store::load(path.clone());
-        store.save(vec![sample("X")]).expect("save should create parent dirs");
+        store
+            .save(vec![sample("X")])
+            .expect("save should create parent dirs");
         assert!(path.exists());
     }
 
@@ -244,7 +263,10 @@ mod tests {
         store.save(vec![sample("Migrated")]).unwrap();
 
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(!raw.contains("\"pinned\""), "legacy pinned field should be gone: {raw}");
+        assert!(
+            !raw.contains("\"pinned\""),
+            "legacy pinned field should be gone: {raw}"
+        );
         assert!(raw.contains("pinnedWindowIds"));
     }
 }

@@ -32,7 +32,9 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new() -> Self {
-        Self { next_due: Mutex::new(HashMap::new()) }
+        Self {
+            next_due: Mutex::new(HashMap::new()),
+        }
     }
 
     /// Whether `account_id` is due for an automatic read right now. An
@@ -58,7 +60,9 @@ impl Scheduler {
     /// retrying right at 60s into a still-active rate limit would just
     /// spend another slot on a guaranteed second failure.
     pub fn mark_attempted(&self, account_id: &str, retry_after: Option<Duration>) {
-        let wait = retry_after.unwrap_or(AUTO_REFRESH_INTERVAL).max(AUTO_REFRESH_INTERVAL);
+        let wait = retry_after
+            .unwrap_or(AUTO_REFRESH_INTERVAL)
+            .max(AUTO_REFRESH_INTERVAL);
         let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");
         next_due.insert(account_id.to_string(), Instant::now() + wait);
     }

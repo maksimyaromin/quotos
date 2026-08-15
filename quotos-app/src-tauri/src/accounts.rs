@@ -119,7 +119,9 @@ async fn perform_fetch(
 
 fn retry_after_of(result: &Result<RawSnapshot, FetchError>) -> Option<Duration> {
     match result {
-        Err(FetchError::RateLimited { retry_after_secs }) => Some(Duration::from_secs(*retry_after_secs)),
+        Err(FetchError::RateLimited { retry_after_secs }) => {
+            Some(Duration::from_secs(*retry_after_secs))
+        }
         _ => None,
     }
 }
@@ -134,7 +136,9 @@ pub(crate) async fn fetch_snapshot(
     let result = perform_fetch(&state, &account_id, &provider, &config_dir).await;
     // R2-4: every attempt — manual or scheduled — resets this account's
     // one-minute clock; see scheduler.rs.
-    state.scheduler.mark_attempted(&account_id, retry_after_of(&result));
+    state
+        .scheduler
+        .mark_attempted(&account_id, retry_after_of(&result));
     result
 }
 
@@ -151,7 +155,10 @@ pub(crate) fn load_tracked(state: tauri::State<'_, AppState>) -> Vec<TrackedAcco
 /// change, which used to include every automatic read's state patch until the
 /// caller learned to compare first (`persistence.ts`).
 #[tauri::command(async)]
-pub(crate) fn save_tracked(state: tauri::State<'_, AppState>, tracked: Vec<TrackedAccount>) -> Result<(), String> {
+pub(crate) fn save_tracked(
+    state: tauri::State<'_, AppState>,
+    tracked: Vec<TrackedAccount>,
+) -> Result<(), String> {
     state.tracked_store.save(tracked)
 }
 
@@ -196,8 +203,13 @@ pub(crate) fn statusline_remove(
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ScheduledRefreshEvent {
-    Ok { snapshot: RawSnapshot },
-    Err { account_id: String, error: FetchError },
+    Ok {
+        snapshot: RawSnapshot,
+    },
+    Err {
+        account_id: String,
+        error: FetchError,
+    },
 }
 
 /// One pass over every tracked account: fetch whichever are currently due,
@@ -209,18 +221,25 @@ async fn run_due_pass(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
     let tracked = state.tracked_store.list();
 
-    let live_ids: std::collections::HashSet<String> = tracked.iter().map(|t| t.id.clone()).collect();
+    let live_ids: std::collections::HashSet<String> =
+        tracked.iter().map(|t| t.id.clone()).collect();
     state.scheduler.retain(&live_ids);
 
     for account in tracked {
         if !state.scheduler.is_due(&account.id) {
             continue;
         }
-        let result = perform_fetch(&state, &account.id, &account.provider, &account.config_dir).await;
-        state.scheduler.mark_attempted(&account.id, retry_after_of(&result));
+        let result =
+            perform_fetch(&state, &account.id, &account.provider, &account.config_dir).await;
+        state
+            .scheduler
+            .mark_attempted(&account.id, retry_after_of(&result));
         let event = match result {
             Ok(snapshot) => ScheduledRefreshEvent::Ok { snapshot },
-            Err(error) => ScheduledRefreshEvent::Err { account_id: account.id.clone(), error },
+            Err(error) => ScheduledRefreshEvent::Err {
+                account_id: account.id.clone(),
+                error,
+            },
         };
         let _ = app.emit("quota-refresh", event);
     }
@@ -245,8 +264,10 @@ async fn run_due_pass(app: &tauri::AppHandle) {
 /// somehow skipped.
 pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let mut interval =
-            tokio::time::interval_at(tokio::time::Instant::now() + Duration::from_secs(5), Duration::from_secs(5));
+        let mut interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + Duration::from_secs(5),
+            Duration::from_secs(5),
+        );
         loop {
             interval.tick().await;
             run_due_pass(&app).await;
@@ -272,7 +293,9 @@ pub(crate) async fn kick_scheduler(app: tauri::AppHandle) {
 /// so this never ships in a production build's UI — the command itself is
 /// harmless either way, since it's read-only and touches no credentials).
 #[tauri::command]
-pub(crate) fn debug_rate_limit_snapshot(state: tauri::State<'_, AppState>) -> HashMap<String, RateLimitStatus> {
+pub(crate) fn debug_rate_limit_snapshot(
+    state: tauri::State<'_, AppState>,
+) -> HashMap<String, RateLimitStatus> {
     state.rate_limiter.snapshot()
 }
 
@@ -295,7 +318,11 @@ pub(crate) fn start_sign_in(
 /// `claude setup-token` process, exactly as if it had been typed into a
 /// real terminal.
 #[tauri::command]
-pub(crate) fn submit_sign_in_code(state: tauri::State<'_, AppState>, account_id: String, code: String) -> Result<(), String> {
+pub(crate) fn submit_sign_in_code(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    code: String,
+) -> Result<(), String> {
     state.sign_in.submit_code(&account_id, &code)
 }
 

@@ -163,8 +163,14 @@ fn panel_class() -> Option<&'static AnyClass> {
         // spelling the lifetime out produces a non-higher-ranked fn pointer,
         // which `MethodImplementation` doesn't accept. (Same shape `tao`'s own
         // class declaration uses.)
-        builder.add_method(sel!(canBecomeKeyWindow), can_become_key_window as extern "C" fn(_, _) -> _);
-        builder.add_method(sel!(canBecomeMainWindow), can_become_main_window as extern "C" fn(_, _) -> _);
+        builder.add_method(
+            sel!(canBecomeKeyWindow),
+            can_become_key_window as extern "C" fn(_, _) -> _,
+        );
+        builder.add_method(
+            sel!(canBecomeMainWindow),
+            can_become_main_window as extern "C" fn(_, _) -> _,
+        );
     }
     Some(builder.register())
 }
@@ -189,15 +195,22 @@ pub fn make_nonactivating_panel(window: &tauri::WebviewWindow) -> bool {
     if MainThreadMarker::new().is_none() {
         return false;
     }
-    let Ok(ptr) = window.ns_window() else { return false };
+    let Ok(ptr) = window.ns_window() else {
+        return false;
+    };
     if ptr.is_null() {
         return false;
     }
-    let Some(class) = panel_class() else { return false };
+    let Some(class) = panel_class() else {
+        return false;
+    };
 
     let object: &AnyObject = unsafe { &*(ptr as *const AnyObject) };
     if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
-        eprintln!("quotos-pos: window class before conversion = {}", object.class().name().to_string_lossy());
+        eprintln!(
+            "quotos-pos: window class before conversion = {}",
+            object.class().name().to_string_lossy()
+        );
     }
     if !std::ptr::eq(object.class(), class) {
         // Guards the one real memory-safety precondition rather than trusting
@@ -224,7 +237,8 @@ pub fn make_nonactivating_panel(window: &tauri::WebviewWindow) -> bool {
     let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
     unsafe {
         let mask: usize = msg_send![ns_window, styleMask];
-        let _: () = msg_send![ns_window, setStyleMask: mask | NS_WINDOW_STYLE_MASK_NONACTIVATING_PANEL];
+        let _: () =
+            msg_send![ns_window, setStyleMask: mask | NS_WINDOW_STYLE_MASK_NONACTIVATING_PANEL];
         // `NSPanel`'s documented default is to vanish when its application is
         // deactivated. This panel's whole point is to stay put while another
         // application keeps working, and detached mode (I7) depends on it
@@ -257,7 +271,9 @@ pub fn order_front_without_activating(window: &tauri::WebviewWindow) {
     use objc2_app_kit::NSWindow;
     use objc2_foundation::MainThreadMarker;
 
-    let (Some(_mtm), Ok(ptr)) = (MainThreadMarker::new(), window.ns_window()) else { return };
+    let (Some(_mtm), Ok(ptr)) = (MainThreadMarker::new(), window.ns_window()) else {
+        return;
+    };
     if ptr.is_null() {
         return;
     }

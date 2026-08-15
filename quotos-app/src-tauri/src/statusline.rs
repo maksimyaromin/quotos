@@ -62,22 +62,36 @@ const MAX_STDIN_BYTES: u64 = 4 * 1024 * 1024;
 pub enum StatuslineError {
     /// The account's settings.json exists but didn't parse as a JSON object
     /// — contract point 2: refuse, change nothing.
-    ParseFailed { message: String },
-    ReadFailed { message: String },
-    WriteFailed { message: String },
-    HelperInstallFailed { message: String },
+    ParseFailed {
+        message: String,
+    },
+    ReadFailed {
+        message: String,
+    },
+    WriteFailed {
+        message: String,
+    },
+    HelperInstallFailed {
+        message: String,
+    },
     /// Contract point 3: a `statusLine` is already configured and differs
     /// from ours. Carries what's there so the UI can show it before asking
     /// for an explicit "replace".
-    Conflict { existing_command: String },
+    Conflict {
+        existing_command: String,
+    },
 }
 
 impl StatuslineError {
     fn write(message: impl Into<String>) -> Self {
-        Self::WriteFailed { message: message.into() }
+        Self::WriteFailed {
+            message: message.into(),
+        }
     }
     fn read(message: impl Into<String>) -> Self {
-        Self::ReadFailed { message: message.into() }
+        Self::ReadFailed {
+            message: message.into(),
+        }
     }
 }
 
@@ -231,7 +245,9 @@ fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, Statusline
     };
     if needs_copy {
         let dir = helper_dir(app_support_dir);
-        fs::create_dir_all(&dir).map_err(|e| StatuslineError::HelperInstallFailed { message: e.to_string() })?;
+        fs::create_dir_all(&dir).map_err(|e| StatuslineError::HelperInstallFailed {
+            message: e.to_string(),
+        })?;
         let tmp = dir.join("quotos-statusline-helper.tmp");
         fs::copy(&current_exe, &tmp).map_err(|e| StatuslineError::HelperInstallFailed {
             message: format!("Quotos couldn't copy its own helper binary ({e})."),
@@ -240,12 +256,18 @@ fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, Statusline
         {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = fs::metadata(&tmp)
-                .map_err(|e| StatuslineError::HelperInstallFailed { message: e.to_string() })?
+                .map_err(|e| StatuslineError::HelperInstallFailed {
+                    message: e.to_string(),
+                })?
                 .permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(&tmp, perms).map_err(|e| StatuslineError::HelperInstallFailed { message: e.to_string() })?;
+            fs::set_permissions(&tmp, perms).map_err(|e| StatuslineError::HelperInstallFailed {
+                message: e.to_string(),
+            })?;
         }
-        fs::rename(&tmp, &target).map_err(|e| StatuslineError::HelperInstallFailed { message: e.to_string() })?;
+        fs::rename(&tmp, &target).map_err(|e| StatuslineError::HelperInstallFailed {
+            message: e.to_string(),
+        })?;
     }
     Ok(target)
 }
@@ -257,14 +279,19 @@ fn read_settings(path: &Path) -> Result<serde_json::Value, StatuslineError> {
     match fs::read_to_string(path) {
         Ok(raw) => parse_settings(&raw),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
-        Err(e) => Err(StatuslineError::read(format!("Quotos couldn't read this account's settings.json ({e}).")))
+        Err(e) => Err(StatuslineError::read(format!(
+            "Quotos couldn't read this account's settings.json ({e})."
+        ))),
     }
 }
 
 fn parse_settings(raw: &str) -> Result<serde_json::Value, StatuslineError> {
-    let parsed: serde_json::Value = serde_json::from_str(raw).map_err(|e| StatuslineError::ParseFailed {
-        message: format!("Quotos couldn't parse this account's settings.json ({e}). Nothing was changed."),
-    })?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| StatuslineError::ParseFailed {
+            message: format!(
+                "Quotos couldn't parse this account's settings.json ({e}). Nothing was changed."
+            ),
+        })?;
     if !parsed.is_object() {
         return Err(StatuslineError::ParseFailed {
             message: "This account's settings.json isn't a JSON object at the top level. Nothing was changed.".to_string(),
@@ -276,8 +303,15 @@ fn parse_settings(raw: &str) -> Result<serde_json::Value, StatuslineError> {
 /// What's currently configured for this account: nothing, exactly Quotos's
 /// own helper invocation, or something else (a conflict the UI must show
 /// before offering to replace).
-pub fn status(app_support_dir: &Path, config_dir: &Path) -> Result<IntegrationStatus, StatuslineError> {
-    let our_command = build_command(&helper_bin_path(app_support_dir), config_dir, &feed_dir(app_support_dir));
+pub fn status(
+    app_support_dir: &Path,
+    config_dir: &Path,
+) -> Result<IntegrationStatus, StatuslineError> {
+    let our_command = build_command(
+        &helper_bin_path(app_support_dir),
+        config_dir,
+        &feed_dir(app_support_dir),
+    );
     let settings = read_settings(&settings_path(config_dir))?;
     let Some(existing) = settings.get("statusLine") else {
         return Ok(IntegrationStatus::NotInstalled);
@@ -287,7 +321,9 @@ pub fn status(app_support_dir: &Path, config_dir: &Path) -> Result<IntegrationSt
         Ok(IntegrationStatus::Installed)
     } else {
         Ok(IntegrationStatus::Conflict {
-            existing_command: command.map(str::to_string).unwrap_or_else(|| existing.to_string()),
+            existing_command: command
+                .map(str::to_string)
+                .unwrap_or_else(|| existing.to_string()),
         })
     }
 }
@@ -300,7 +336,11 @@ pub fn status(app_support_dir: &Path, config_dir: &Path) -> Result<IntegrationSt
 /// right before writing (never from an earlier, possibly-stale `status()`
 /// call), so a settings.json edited between the user seeing a conflict and
 /// pressing "Replace" is still caught.
-pub fn install(app_support_dir: &Path, config_dir: &Path, force: bool) -> Result<InstallOutcome, StatuslineError> {
+pub fn install(
+    app_support_dir: &Path,
+    config_dir: &Path,
+    force: bool,
+) -> Result<InstallOutcome, StatuslineError> {
     let helper = ensure_helper_installed(app_support_dir)?;
     let feeds = feed_dir(app_support_dir);
     fs::create_dir_all(&feeds).map_err(|e| StatuslineError::write(e.to_string()))?;
@@ -310,7 +350,11 @@ pub fn install(app_support_dir: &Path, config_dir: &Path, force: bool) -> Result
     let raw_existing = match fs::read_to_string(&path) {
         Ok(s) => Some(s),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(StatuslineError::read(format!("Quotos couldn't read this account's settings.json ({e}).")))
+        Err(e) => {
+            return Err(StatuslineError::read(format!(
+                "Quotos couldn't read this account's settings.json ({e})."
+            )))
+        }
     };
     let mut settings = match &raw_existing {
         Some(raw) => parse_settings(raw)?,
@@ -325,7 +369,9 @@ pub fn install(app_support_dir: &Path, config_dir: &Path, force: bool) -> Result
         == Some(our_command.as_str());
 
     if already_ours {
-        return Ok(InstallOutcome { replaced_existing: false });
+        return Ok(InstallOutcome {
+            replaced_existing: false,
+        });
     }
     if !force {
         if let Some(existing) = &existing_status_line {
@@ -338,12 +384,19 @@ pub fn install(app_support_dir: &Path, config_dir: &Path, force: bool) -> Result
         }
     }
 
-    backup(app_support_dir, config_dir, raw_existing.as_deref(), existing_status_line.clone())?;
+    backup(
+        app_support_dir,
+        config_dir,
+        raw_existing.as_deref(),
+        existing_status_line.clone(),
+    )?;
 
     settings["statusLine"] = serde_json::json!({ "type": "command", "command": our_command });
     atomic_write_json(&path, &settings).map_err(StatuslineError::write)?;
 
-    Ok(InstallOutcome { replaced_existing: existing_status_line.is_some() })
+    Ok(InstallOutcome {
+        replaced_existing: existing_status_line.is_some(),
+    })
 }
 
 /// Contract point 4: a timestamped backup of the whole previous file (when
@@ -377,7 +430,8 @@ fn backup(
         previous_status_line,
     };
     let value = serde_json::to_value(&record).map_err(|e| StatuslineError::write(e.to_string()))?;
-    atomic_write_json(&meta_path(app_support_dir, &slug), &value).map_err(StatuslineError::write)?;
+    atomic_write_json(&meta_path(app_support_dir, &slug), &value)
+        .map_err(StatuslineError::write)?;
     Ok(())
 }
 
@@ -428,7 +482,10 @@ pub fn read_feed(app_support_dir: &Path, config_dir: &Path) -> Option<Statusline
 fn extract_window(v: &serde_json::Value) -> Option<StatuslineWindowDto> {
     let used_percentage = v.get("used_percentage")?.as_f64()?;
     let resets_at = v.get("resets_at").and_then(|r| r.as_i64());
-    Some(StatuslineWindowDto { used_percentage, resets_at })
+    Some(StatuslineWindowDto {
+        used_percentage,
+        resets_at,
+    })
 }
 
 fn extract_rate_limits(v: &serde_json::Value) -> Option<StatuslineRateLimitsDto> {
@@ -437,7 +494,10 @@ fn extract_rate_limits(v: &serde_json::Value) -> Option<StatuslineRateLimitsDto>
     if five_hour.is_none() && seven_day.is_none() {
         return None;
     }
-    Some(StatuslineRateLimitsDto { five_hour, seven_day })
+    Some(StatuslineRateLimitsDto {
+        five_hour,
+        seven_day,
+    })
 }
 
 /// The helper's entire job, run from `main.rs` before any Tauri/GUI code —
@@ -451,18 +511,31 @@ fn extract_rate_limits(v: &serde_json::Value) -> Option<StatuslineRateLimitsDto>
 /// broken to the captain.
 pub fn run_ingest_from_stdin(config_dir_tag: &str, feed_dir_arg: &str) -> i32 {
     let mut buf = String::new();
-    if std::io::stdin().take(MAX_STDIN_BYTES).read_to_string(&mut buf).is_err() {
+    if std::io::stdin()
+        .take(MAX_STDIN_BYTES)
+        .read_to_string(&mut buf)
+        .is_err()
+    {
         return 0;
     }
-    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&buf) else { return 0 };
+    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&buf) else {
+        return 0;
+    };
     // Absent entirely on the session's first invocation, or for a non-
     // subscriber account — nothing to write yet, not an error.
-    let Some(rate_limits_raw) = payload.get("rate_limits") else { return 0 };
-    let Some(rate_limits) = extract_rate_limits(rate_limits_raw) else { return 0 };
+    let Some(rate_limits_raw) = payload.get("rate_limits") else {
+        return 0;
+    };
+    let Some(rate_limits) = extract_rate_limits(rate_limits_raw) else {
+        return 0;
+    };
 
     let slug = slug_for(config_dir_tag);
     let out_path = Path::new(feed_dir_arg).join(format!("{slug}.json"));
-    let record = StatuslineFeedDto { written_at: chrono::Utc::now().to_rfc3339(), rate_limits };
+    let record = StatuslineFeedDto {
+        written_at: chrono::Utc::now().to_rfc3339(),
+        rate_limits,
+    };
     if let Ok(value) = serde_json::to_value(&record) {
         let _ = atomic_write_json(&out_path, &value);
     }
@@ -487,12 +560,16 @@ mod tests {
     impl TempDirs {
         fn new() -> Self {
             let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let root = std::env::temp_dir().join(format!("quotos-statusline-test-{}-{n}", std::process::id()));
+            let root = std::env::temp_dir()
+                .join(format!("quotos-statusline-test-{}-{n}", std::process::id()));
             let config_dir = root.join("config");
             let app_support_dir = root.join("app-support");
             fs::create_dir_all(&config_dir).unwrap();
             fs::create_dir_all(&app_support_dir).unwrap();
-            Self { config_dir, app_support_dir }
+            Self {
+                config_dir,
+                app_support_dir,
+            }
         }
 
         fn settings_path(&self) -> PathBuf {
@@ -519,7 +596,8 @@ mod tests {
     #[test]
     fn install_creates_settings_json_when_none_exists() {
         let t = TempDirs::new();
-        let outcome = install(&t.app_support_dir, &t.config_dir, false).expect("install should succeed");
+        let outcome =
+            install(&t.app_support_dir, &t.config_dir, false).expect("install should succeed");
         assert!(!outcome.replaced_existing);
 
         let settings: serde_json::Value = serde_json::from_str(&t.read_settings_raw()).unwrap();
@@ -559,7 +637,11 @@ mod tests {
 
         let result = install(&t.app_support_dir, &t.config_dir, false);
         assert!(matches!(result, Err(StatuslineError::ParseFailed { .. })));
-        assert_eq!(t.read_settings_raw(), original, "a refused install must not touch the file");
+        assert_eq!(
+            t.read_settings_raw(),
+            original,
+            "a refused install must not touch the file"
+        );
     }
 
     #[test]
@@ -575,7 +657,9 @@ mod tests {
     #[test]
     fn install_reports_conflict_for_a_different_existing_statusline_without_force() {
         let t = TempDirs::new();
-        t.write_settings(r#"{"statusLine": {"type": "command", "command": "~/.claude/my-own-script.sh"}}"#);
+        t.write_settings(
+            r#"{"statusLine": {"type": "command", "command": "~/.claude/my-own-script.sh"}}"#,
+        );
 
         let result = install(&t.app_support_dir, &t.config_dir, false);
         match result {
@@ -586,7 +670,10 @@ mod tests {
         }
         // Nothing was changed by a refused install.
         let settings: serde_json::Value = serde_json::from_str(&t.read_settings_raw()).unwrap();
-        assert_eq!(settings["statusLine"]["command"], "~/.claude/my-own-script.sh");
+        assert_eq!(
+            settings["statusLine"]["command"],
+            "~/.claude/my-own-script.sh"
+        );
     }
 
     #[test]
@@ -594,12 +681,19 @@ mod tests {
         let t = TempDirs::new();
         t.write_settings(r#"{"statusLine": {"type": "command", "command": "~/.claude/my-own-script.sh"}, "keepMe": 1}"#);
 
-        let outcome = install(&t.app_support_dir, &t.config_dir, true).expect("forced install should succeed");
+        let outcome = install(&t.app_support_dir, &t.config_dir, true)
+            .expect("forced install should succeed");
         assert!(outcome.replaced_existing);
 
         let settings: serde_json::Value = serde_json::from_str(&t.read_settings_raw()).unwrap();
-        assert!(settings["statusLine"]["command"].as_str().unwrap().contains(INGEST_FLAG));
-        assert_eq!(settings["keepMe"], 1, "unrelated keys must survive a forced replace too");
+        assert!(settings["statusLine"]["command"]
+            .as_str()
+            .unwrap()
+            .contains(INGEST_FLAG));
+        assert_eq!(
+            settings["keepMe"], 1,
+            "unrelated keys must survive a forced replace too"
+        );
     }
 
     #[test]
@@ -608,9 +702,14 @@ mod tests {
         install(&t.app_support_dir, &t.config_dir, false).expect("first install");
         let after_first = t.read_settings_raw();
 
-        let outcome = install(&t.app_support_dir, &t.config_dir, false).expect("second install should be a no-op success");
+        let outcome = install(&t.app_support_dir, &t.config_dir, false)
+            .expect("second install should be a no-op success");
         assert!(!outcome.replaced_existing);
-        assert_eq!(t.read_settings_raw(), after_first, "re-installing our own entry must not rewrite the file");
+        assert_eq!(
+            t.read_settings_raw(),
+            after_first,
+            "re-installing our own entry must not rewrite the file"
+        );
     }
 
     // ---- concurrent edit: the conflict check is always fresh ----------
@@ -620,11 +719,16 @@ mod tests {
         let t = TempDirs::new();
         // No statusLine yet — an earlier `status()` call would have said
         // NotInstalled.
-        assert_eq!(status(&t.app_support_dir, &t.config_dir).unwrap(), IntegrationStatus::NotInstalled);
+        assert_eq!(
+            status(&t.app_support_dir, &t.config_dir).unwrap(),
+            IntegrationStatus::NotInstalled
+        );
 
         // Something else (Claude Code's own `/statusline` command, another
         // tool) writes a statusLine in between.
-        t.write_settings(r#"{"statusLine": {"type": "command", "command": "~/.claude/someone-elses.sh"}}"#);
+        t.write_settings(
+            r#"{"statusLine": {"type": "command", "command": "~/.claude/someone-elses.sh"}}"#,
+        );
 
         // install() must re-derive the conflict from the file as it is now,
         // not from the stale NotInstalled the caller saw earlier.
@@ -638,7 +742,9 @@ mod tests {
         install(&t.app_support_dir, &t.config_dir, false).expect("first install");
 
         // Something else overwrites our entry after we installed it.
-        t.write_settings(r#"{"statusLine": {"type": "command", "command": "~/.claude/someone-elses.sh"}}"#);
+        t.write_settings(
+            r#"{"statusLine": {"type": "command", "command": "~/.claude/someone-elses.sh"}}"#,
+        );
 
         let result = install(&t.app_support_dir, &t.config_dir, false);
         match result {
@@ -660,7 +766,10 @@ mod tests {
         remove(&t.app_support_dir, &t.config_dir).expect("remove should succeed");
 
         let settings: serde_json::Value = serde_json::from_str(&t.read_settings_raw()).unwrap();
-        assert_eq!(settings["statusLine"]["command"], "~/.claude/my-own-script.sh");
+        assert_eq!(
+            settings["statusLine"]["command"],
+            "~/.claude/my-own-script.sh"
+        );
         assert_eq!(settings["statusLine"]["padding"], 2);
         assert_eq!(settings["keepMe"], "yes");
     }
@@ -681,7 +790,9 @@ mod tests {
     #[test]
     fn remove_with_no_install_history_just_clears_the_key() {
         let t = TempDirs::new();
-        t.write_settings(r#"{"statusLine": {"type": "command", "command": "whatever"}, "keepMe": 1}"#);
+        t.write_settings(
+            r#"{"statusLine": {"type": "command", "command": "whatever"}, "keepMe": 1}"#,
+        );
 
         // remove() called without ever calling install() first: no backup
         // metadata exists, so the honest thing to do is clear the key.
@@ -695,11 +806,20 @@ mod tests {
     #[test]
     fn remove_leaves_a_timestamped_backup_file_of_the_previous_settings() {
         let t = TempDirs::new();
-        t.write_settings(r#"{"statusLine": {"type": "command", "command": "~/.claude/my-own-script.sh"}}"#);
+        t.write_settings(
+            r#"{"statusLine": {"type": "command", "command": "~/.claude/my-own-script.sh"}}"#,
+        );
         install(&t.app_support_dir, &t.config_dir, true).expect("forced install should succeed");
 
-        let backups = fs::read_dir(backup_dir(&t.app_support_dir)).unwrap().flatten().collect::<Vec<_>>();
-        let bak = backups.iter().find(|e| e.file_name().to_string_lossy().ends_with(".settings.json.bak"));
+        let backups = fs::read_dir(backup_dir(&t.app_support_dir))
+            .unwrap()
+            .flatten()
+            .collect::<Vec<_>>();
+        let bak = backups.iter().find(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .ends_with(".settings.json.bak")
+        });
         assert!(bak.is_some(), "expected a timestamped raw backup file");
         let content = fs::read_to_string(bak.unwrap().path()).unwrap();
         assert!(content.contains("my-own-script.sh"));
@@ -719,14 +839,20 @@ mod tests {
     #[test]
     fn status_reports_not_installed_for_a_missing_settings_file() {
         let t = TempDirs::new();
-        assert_eq!(status(&t.app_support_dir, &t.config_dir).unwrap(), IntegrationStatus::NotInstalled);
+        assert_eq!(
+            status(&t.app_support_dir, &t.config_dir).unwrap(),
+            IntegrationStatus::NotInstalled
+        );
     }
 
     #[test]
     fn status_reports_installed_after_a_successful_install() {
         let t = TempDirs::new();
         install(&t.app_support_dir, &t.config_dir, false).unwrap();
-        assert_eq!(status(&t.app_support_dir, &t.config_dir).unwrap(), IntegrationStatus::Installed);
+        assert_eq!(
+            status(&t.app_support_dir, &t.config_dir).unwrap(),
+            IntegrationStatus::Installed
+        );
     }
 
     #[test]
@@ -734,7 +860,9 @@ mod tests {
         let t = TempDirs::new();
         t.write_settings(r#"{"statusLine": {"type": "command", "command": "not ours"}}"#);
         match status(&t.app_support_dir, &t.config_dir).unwrap() {
-            IntegrationStatus::Conflict { existing_command } => assert_eq!(existing_command, "not ours"),
+            IntegrationStatus::Conflict { existing_command } => {
+                assert_eq!(existing_command, "not ours")
+            }
             other => panic!("expected Conflict, got {other:?}"),
         }
     }
@@ -743,7 +871,10 @@ mod tests {
     fn status_refuses_malformed_json_rather_than_guessing() {
         let t = TempDirs::new();
         t.write_settings("{ broken");
-        assert!(matches!(status(&t.app_support_dir, &t.config_dir), Err(StatuslineError::ParseFailed { .. })));
+        assert!(matches!(
+            status(&t.app_support_dir, &t.config_dir),
+            Err(StatuslineError::ParseFailed { .. })
+        ));
     }
 
     // ---- two accounts never collide ------------------------------------
@@ -759,7 +890,8 @@ mod tests {
 
         let a: serde_json::Value = serde_json::from_str(&t.read_settings_raw()).unwrap();
         let b: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(settings_path(&other_config_dir)).unwrap()).unwrap();
+            serde_json::from_str(&fs::read_to_string(settings_path(&other_config_dir)).unwrap())
+                .unwrap();
         assert_ne!(a["statusLine"]["command"], b["statusLine"]["command"]);
     }
 
@@ -792,7 +924,11 @@ mod tests {
         let t = TempDirs::new();
         let slug = slug_for(&t.config_dir.to_string_lossy());
         fs::create_dir_all(feed_dir(&t.app_support_dir)).unwrap();
-        fs::write(feed_dir(&t.app_support_dir).join(format!("{slug}.json")), "not json").unwrap();
+        fs::write(
+            feed_dir(&t.app_support_dir).join(format!("{slug}.json")),
+            "not json",
+        )
+        .unwrap();
         assert!(read_feed(&t.app_support_dir, &t.config_dir).is_none());
     }
 
@@ -803,10 +939,20 @@ mod tests {
         fs::create_dir_all(&feeds).unwrap();
 
         let stdin_payload = r#"{"rate_limits": {"five_hour": {"used_percentage": 23.5, "resets_at": 1738425600}, "seven_day": {"used_percentage": 41.2, "resets_at": 1738857600}}}"#;
-        let record = extract_rate_limits(&serde_json::from_str::<serde_json::Value>(stdin_payload).unwrap()["rate_limits"]).unwrap();
-        let feed = StatuslineFeedDto { written_at: "2026-08-15T12:00:00Z".to_string(), rate_limits: record };
+        let record = extract_rate_limits(
+            &serde_json::from_str::<serde_json::Value>(stdin_payload).unwrap()["rate_limits"],
+        )
+        .unwrap();
+        let feed = StatuslineFeedDto {
+            written_at: "2026-08-15T12:00:00Z".to_string(),
+            rate_limits: record,
+        };
         let slug = slug_for(&t.config_dir.to_string_lossy());
-        atomic_write_json(&feeds.join(format!("{slug}.json")), &serde_json::to_value(&feed).unwrap()).unwrap();
+        atomic_write_json(
+            &feeds.join(format!("{slug}.json")),
+            &serde_json::to_value(&feed).unwrap(),
+        )
+        .unwrap();
 
         let read_back = read_feed(&t.app_support_dir, &t.config_dir).unwrap();
         assert_eq!(read_back, feed);
@@ -827,7 +973,8 @@ mod tests {
 
     #[test]
     fn extracts_a_single_present_window_leaving_the_other_none() {
-        let raw = serde_json::json!({ "five_hour": { "used_percentage": 5.0, "resets_at": 1738425600 } });
+        let raw =
+            serde_json::json!({ "five_hour": { "used_percentage": 5.0, "resets_at": 1738425600 } });
         let feed = extract_rate_limits(&raw).unwrap();
         assert!(feed.five_hour.is_some());
         assert!(feed.seven_day.is_none());
@@ -878,7 +1025,11 @@ mod tests {
 
     #[test]
     fn built_command_contains_the_ingest_flag_and_both_paths_quoted() {
-        let cmd = build_command(Path::new("/a b/helper"), Path::new("/c d/.claude"), Path::new("/e f/feed"));
+        let cmd = build_command(
+            Path::new("/a b/helper"),
+            Path::new("/c d/.claude"),
+            Path::new("/e f/feed"),
+        );
         assert!(cmd.contains(INGEST_FLAG));
         assert!(cmd.contains("'/a b/helper'"));
         assert!(cmd.contains("'/c d/.claude'"));

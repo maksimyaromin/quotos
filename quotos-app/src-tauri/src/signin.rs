@@ -56,14 +56,21 @@ struct SignInFinished {
 
 impl SignInRegistry {
     pub fn new() -> Self {
-        Self { sessions: Mutex::new(HashMap::new()) }
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+        }
     }
 
     /// Starts `claude setup-token` for one account. Fails fast if a session
     /// for that account is already running rather than starting a second
     /// one — the row's action should be disabled while in progress, but
     /// this is the actual guard.
-    pub fn start(&self, app: AppHandle, account_id: String, config_dir: String) -> Result<(), String> {
+    pub fn start(
+        &self,
+        app: AppHandle,
+        account_id: String,
+        config_dir: String,
+    ) -> Result<(), String> {
         {
             let sessions = self.sessions.lock().expect("sign-in registry poisoned");
             if sessions.contains_key(&account_id) {
@@ -73,7 +80,12 @@ impl SignInRegistry {
 
         let pty_system = native_pty_system();
         let pair = pty_system
-            .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| e.to_string())?;
 
         // R3-4: resolve the CLI and its environment through the provider,
@@ -134,12 +146,24 @@ impl SignInRegistry {
         std::thread::spawn(move || {
             let status = child.wait();
             let success = matches!(status, Ok(s) if s.success());
-            let _ = wait_app.emit("sign-in-finished", SignInFinished { account_id: wait_account_id, success });
+            let _ = wait_app.emit(
+                "sign-in-finished",
+                SignInFinished {
+                    account_id: wait_account_id,
+                    success,
+                },
+            );
             drop(master);
         });
 
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
-        sessions.insert(account_id, Session { killer: Mutex::new(killer), writer: Mutex::new(writer) });
+        sessions.insert(
+            account_id,
+            Session {
+                killer: Mutex::new(killer),
+                writer: Mutex::new(writer),
+            },
+        );
         Ok(())
     }
 
@@ -147,9 +171,16 @@ impl SignInRegistry {
     /// exactly as if it had been typed into a real terminal.
     pub fn submit_code(&self, account_id: &str, code: &str) -> Result<(), String> {
         let sessions = self.sessions.lock().expect("sign-in registry poisoned");
-        let session = sessions.get(account_id).ok_or_else(|| "no sign-in in progress for this account".to_string())?;
-        let mut writer = session.writer.lock().expect("sign-in writer mutex poisoned");
-        writer.write_all(code.trim().as_bytes()).map_err(|e| e.to_string())?;
+        let session = sessions
+            .get(account_id)
+            .ok_or_else(|| "no sign-in in progress for this account".to_string())?;
+        let mut writer = session
+            .writer
+            .lock()
+            .expect("sign-in writer mutex poisoned");
+        writer
+            .write_all(code.trim().as_bytes())
+            .map_err(|e| e.to_string())?;
         writer.write_all(b"\n").map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())
     }
@@ -159,7 +190,11 @@ impl SignInRegistry {
     pub fn cancel(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         if let Some(session) = sessions.remove(account_id) {
-            let _ = session.killer.lock().expect("sign-in killer mutex poisoned").kill();
+            let _ = session
+                .killer
+                .lock()
+                .expect("sign-in killer mutex poisoned")
+                .kill();
         }
     }
 

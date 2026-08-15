@@ -160,7 +160,11 @@ pub fn run() {
             // `tray_render.rs`'s `text` submodule for the lookup/fallback).
             eprintln!(
                 "quotos: tray digit font = {}",
-                if tray_render::used_fallback_font() { "system fallback (MonoLisa not found)" } else { "MonoLisa" }
+                if tray_render::used_fallback_font() {
+                    "system fallback (MonoLisa not found)"
+                } else {
+                    "MonoLisa"
+                }
             );
 
             // Built here rather than via the builder's own `.manage()`
@@ -217,7 +221,10 @@ pub fn run() {
                     match event {
                         tauri::WindowEvent::Focused(focused) => {
                             if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
-                                eprintln!("quotos-pos: Focused({focused}) visible={:?}", blur_window.is_visible());
+                                eprintln!(
+                                    "quotos-pos: Focused({focused}) visible={:?}",
+                                    blur_window.is_visible()
+                                );
                             }
                             if *focused {
                                 return;
@@ -274,9 +281,13 @@ pub fn run() {
                             // mixed-DPI setup.
                             let scale = blur_window.scale_factor().unwrap_or(1.0);
                             let (w, h) = (size.width as f64 / scale, size.height as f64 / scale);
-                            if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5 || (h - PANEL_WINDOW_HEIGHT_LOGICAL).abs() > 0.5 {
-                                let _ = blur_window
-                                    .set_size(tauri::LogicalSize::new(PANEL_WINDOW_WIDTH_LOGICAL, PANEL_WINDOW_HEIGHT_LOGICAL));
+                            if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5
+                                || (h - PANEL_WINDOW_HEIGHT_LOGICAL).abs() > 0.5
+                            {
+                                let _ = blur_window.set_size(tauri::LogicalSize::new(
+                                    PANEL_WINDOW_WIDTH_LOGICAL,
+                                    PANEL_WINDOW_HEIGHT_LOGICAL,
+                                ));
                             }
                         }
                         // R3-6: the self-correcting half of `AppState.docked_target`
@@ -305,29 +316,52 @@ pub fn run() {
                             // coordinate space that exists (see `DisplayPoints`).
                             let scale = blur_window.scale_factor().unwrap_or(1.0);
                             let observed = (pos.x as f64 / scale, pos.y as f64 / scale);
-                            *state.last_known_position.lock().expect("last_known_position mutex poisoned") = observed;
+                            *state
+                                .last_known_position
+                                .lock()
+                                .expect("last_known_position mutex poisoned") = observed;
                             let this_generation = {
-                                let mut generation = state.move_generation.lock().expect("move_generation mutex poisoned");
+                                let mut generation = state
+                                    .move_generation
+                                    .lock()
+                                    .expect("move_generation mutex poisoned");
                                 *generation += 1;
                                 *generation
                             };
-                            let has_target = state.docked_target.lock().expect("docked_target mutex poisoned").is_some();
+                            let has_target = state
+                                .docked_target
+                                .lock()
+                                .expect("docked_target mutex poisoned")
+                                .is_some();
                             if has_target {
                                 let app2 = blur_app.clone();
                                 let window2 = blur_window.clone();
                                 tauri::async_runtime::spawn(async move {
                                     const MOVE_SETTLE_MS: u64 = 180;
-                                    tokio::time::sleep(std::time::Duration::from_millis(MOVE_SETTLE_MS)).await;
+                                    tokio::time::sleep(std::time::Duration::from_millis(
+                                        MOVE_SETTLE_MS,
+                                    ))
+                                    .await;
                                     let state2 = app2.state::<AppState>();
-                                    let is_still_latest =
-                                        *state2.move_generation.lock().expect("move_generation mutex poisoned") == this_generation;
+                                    let is_still_latest = *state2
+                                        .move_generation
+                                        .lock()
+                                        .expect("move_generation mutex poisoned")
+                                        == this_generation;
                                     if !is_still_latest {
                                         return; // a newer Moved event superseded this one — let it debounce instead
                                     }
-                                    let Some(target) = *state2.docked_target.lock().expect("docked_target mutex poisoned") else {
+                                    let Some(target) = *state2
+                                        .docked_target
+                                        .lock()
+                                        .expect("docked_target mutex poisoned")
+                                    else {
                                         return; // hidden or detached by the time this fired
                                     };
-                                    let current = *state2.last_known_position.lock().expect("last_known_position mutex poisoned");
+                                    let current = *state2
+                                        .last_known_position
+                                        .lock()
+                                        .expect("last_known_position mutex poisoned");
                                     // A tolerance, not exact equality: AppKit was logged settling
                                     // the window a point or so off whatever was requested and
                                     // never reporting that final nudge distinguishably from our
@@ -399,7 +433,10 @@ pub fn run() {
                     if let Some(xy) = tray_xy {
                         // C6: cached so `set_detached`'s snap-back path (not
                         // itself a tray event) still knows where to re-dock.
-                        *app.state::<AppState>().last_tray_rect.lock().expect("last_tray_rect mutex poisoned") = Some(xy);
+                        *app.state::<AppState>()
+                            .last_tray_rect
+                            .lock()
+                            .expect("last_tray_rect mutex poisoned") = Some(xy);
                     }
 
                     if let (
@@ -438,16 +475,19 @@ pub fn run() {
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     let _ = auto_app.clone().run_on_main_thread(move || {
                         let app = &auto_app;
-                        let (Some(window), Some(tray)) = (app.get_webview_window("main"), app.tray_by_id("main-tray")) else {
+                        let (Some(window), Some(tray)) =
+                            (app.get_webview_window("main"), app.tray_by_id("main-tray"))
+                        else {
                             return;
                         };
-                        let Some(rect) = tray.rect().ok().flatten() else { return };
+                        let Some(rect) = tray.rect().ok().flatten() else {
+                            return;
+                        };
                         let (x, y) = match rect.position {
                             tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
                             tauri::Position::Logical(p) => (p.x, p.y),
                         };
                         shell::show_panel(app, &window, x, y);
-
                     });
                 });
             }

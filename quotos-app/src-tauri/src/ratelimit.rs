@@ -125,9 +125,14 @@ mod tests {
     fn admits_a_sixth_request_once_the_oldest_is_exactly_one_window_old() {
         let limiter = RateLimiter::new(5, Duration::from_secs(300));
         for _ in 0..5 {
-            limiter.try_acquire("acct").expect("first five requests must be admitted");
+            limiter
+                .try_acquire("acct")
+                .expect("first five requests must be admitted");
         }
-        assert!(limiter.try_acquire("acct").is_err(), "sixth request with a full, fresh window must be refused");
+        assert!(
+            limiter.try_acquire("acct").is_err(),
+            "sixth request with a full, fresh window must be refused"
+        );
 
         limiter.age_entries_by("acct", Duration::from_secs(300));
         assert!(
@@ -143,7 +148,10 @@ mod tests {
             limiter.try_acquire("acct").unwrap();
         }
         limiter.age_entries_by("acct", Duration::from_secs(299));
-        assert!(limiter.try_acquire("acct").is_err(), "an entry not yet a full window old must still count against the budget");
+        assert!(
+            limiter.try_acquire("acct").is_err(),
+            "an entry not yet a full window old must still count against the budget"
+        );
     }
 
     #[test]
@@ -153,7 +161,10 @@ mod tests {
             limiter.try_acquire("personal").unwrap();
         }
         assert!(limiter.try_acquire("personal").is_err());
-        assert!(limiter.try_acquire("team").is_ok(), "a different account's budget must be untouched");
+        assert!(
+            limiter.try_acquire("team").is_ok(),
+            "a different account's budget must be untouched"
+        );
     }
 
     #[test]
@@ -164,7 +175,10 @@ mod tests {
         }
         limiter.age_entries_by("acct", Duration::from_secs(300));
         let snap = limiter.snapshot();
-        assert_eq!(snap["acct"].used, 0, "snapshot must prune the same way try_acquire does");
+        assert_eq!(
+            snap["acct"].used, 0,
+            "snapshot must prune the same way try_acquire does"
+        );
         assert!(snap["acct"].retry_after_secs.is_none());
     }
 }

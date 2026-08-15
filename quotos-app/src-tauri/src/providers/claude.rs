@@ -83,7 +83,9 @@ macro_rules! read_trace {
 /// `Claude Code-credentials-67d45c83`), so correct discovery yields exactly
 /// two subscriptions, not three.
 pub fn discover_accounts() -> Vec<AccountDescriptor> {
-    let Some(home) = home_dir() else { return vec![] };
+    let Some(home) = home_dir() else {
+        return vec![];
+    };
     discover_accounts_in(&home, credential_exists_in_keychain)
 }
 
@@ -231,7 +233,8 @@ impl StoredCredential {
     /// Past its own stated expiry (with `margin_ms` of look-ahead). A
     /// credential that records no expiry is never assumed expired.
     fn access_expired(&self, now_ms: i64, margin_ms: i64) -> bool {
-        self.expires_at_ms.is_some_and(|at| at <= now_ms + margin_ms)
+        self.expires_at_ms
+            .is_some_and(|at| at <= now_ms + margin_ms)
     }
 
     /// Whether the *refresh* half could still renew this credential without
@@ -272,7 +275,11 @@ fn epoch_ms(value: Option<&serde_json::Value>) -> Option<i64> {
             let raw = n.as_f64()?;
             // Anything smaller than this is seconds, not milliseconds:
             // 1e12 ms is 2001, 1e12 s is the year 33658.
-            Some(if raw.abs() >= 1e12 { raw as i64 } else { (raw * 1000.0) as i64 })
+            Some(if raw.abs() >= 1e12 {
+                raw as i64
+            } else {
+                (raw * 1000.0) as i64
+            })
         }
         serde_json::Value::String(s) => chrono::DateTime::parse_from_rfc3339(s)
             .ok()
@@ -319,7 +326,9 @@ fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
 
     let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
     parse_credential(&raw).ok_or_else(|| FetchError::Other {
-        message: "Claude Code's stored credential for this account wasn't in a shape Quotos understands.".to_string(),
+        message:
+            "Claude Code's stored credential for this account wasn't in a shape Quotos understands."
+                .to_string(),
     })
 }
 
@@ -373,7 +382,9 @@ fn locate_claude_cli() -> Option<PathBuf> {
         return Some(found);
     }
     let home = home_dir()?;
-    well_known_cli_locations(&home).into_iter().find(|p| is_executable_file(p))
+    well_known_cli_locations(&home)
+        .into_iter()
+        .find(|p| is_executable_file(p))
 }
 
 /// Claude Code's documented install locations, rebuilt from the running
@@ -444,7 +455,11 @@ fn is_executable_file(path: &Path) -> bool {
 fn run_bounded(mut cmd: Command, timeout: Duration, capture: bool) -> Option<Output> {
     cmd.stdin(Stdio::null());
     cmd.stderr(Stdio::null());
-    cmd.stdout(if capture { Stdio::piped() } else { Stdio::null() });
+    cmd.stdout(if capture {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
 
     let mut child = cmd.spawn().ok()?;
     let deadline = Instant::now() + timeout;
@@ -554,7 +569,10 @@ fn renew_credential(config_dir: &Path, previous: &StoredCredential) -> Option<St
 
 /// Same, off the async runtime's worker threads — the CLI call is real work
 /// with a real (bounded) wall-clock cost.
-async fn renew_credential_async(config_dir: &Path, previous: &StoredCredential) -> Option<StoredCredential> {
+async fn renew_credential_async(
+    config_dir: &Path,
+    previous: &StoredCredential,
+) -> Option<StoredCredential> {
     let dir = config_dir.to_path_buf();
     let previous = previous.clone();
     tauri::async_runtime::spawn_blocking(move || renew_credential(&dir, &previous))
@@ -618,7 +636,10 @@ async fn get_json(
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
-    let body = resp.json::<serde_json::Value>().await.unwrap_or(serde_json::Value::Null);
+    let body = resp
+        .json::<serde_json::Value>()
+        .await
+        .unwrap_or(serde_json::Value::Null);
     Ok(HttpResult {
         status,
         body,
@@ -672,13 +693,20 @@ pub async fn fetch_usage(
             Some(at) => format!("expires in {}s", (at - now_ms()) / 1000),
             None => "has no recorded expiry".to_string(),
         },
-        if credential.refresh_usable(now_ms()) { "usable" } else { "unusable" },
+        if credential.refresh_usable(now_ms()) {
+            "usable"
+        } else {
+            "unusable"
+        },
     );
 
     if credential.access_expired(now_ms(), EXPIRY_MARGIN_MS) {
         match renew_credential_async(config_dir, &credential).await {
             Some(renewed) => {
-                read_trace!("{}: renewed the credential before spending a request", config_dir.display());
+                read_trace!(
+                    "{}: renewed the credential before spending a request",
+                    config_dir.display()
+                );
                 credential = renewed;
                 renewed_this_read = true;
             }
@@ -688,7 +716,11 @@ pub async fn fetch_usage(
 
     budget.reserve().map_err(|secs| rate_limited(Some(secs)))?;
     let first = get_json(client, USAGE_URL, &credential.access_token).await?;
-    read_trace!("{}: /usage answered HTTP {}", config_dir.display(), first.status);
+    read_trace!(
+        "{}: /usage answered HTTP {}",
+        config_dir.display(),
+        first.status
+    );
     match first.status {
         200 => return Ok(first.body),
         429 => return Err(rate_limited(first.retry_after_secs)),
@@ -707,13 +739,21 @@ pub async fn fetch_usage(
 
     let Some(renewed) = renew_credential_async(config_dir, &credential).await else {
         let verdict = classify_unrenewable(&credential, now_ms());
-        read_trace!("{}: 401 and nothing renewed it — {:?}", config_dir.display(), verdict);
+        read_trace!(
+            "{}: 401 and nothing renewed it — {:?}",
+            config_dir.display(),
+            verdict
+        );
         return Err(verdict);
     };
 
     budget.reserve().map_err(|secs| rate_limited(Some(secs)))?;
     let second = get_json(client, USAGE_URL, &renewed.access_token).await?;
-    read_trace!("{}: /usage retry answered HTTP {}", config_dir.display(), second.status);
+    read_trace!(
+        "{}: /usage retry answered HTTP {}",
+        config_dir.display(),
+        second.status
+    );
     match second.status {
         200 => Ok(second.body),
         429 => Err(rate_limited(second.retry_after_secs)),
@@ -740,7 +780,9 @@ pub async fn fetch_profile(
     config_dir: &Path,
 ) -> Option<serde_json::Value> {
     let credential = read_credential(config_dir).ok()?;
-    let result = get_json(client, PROFILE_URL, &credential.access_token).await.ok()?;
+    let result = get_json(client, PROFILE_URL, &credential.access_token)
+        .await
+        .ok()?;
     if result.status == 200 {
         Some(result.body)
     } else {
@@ -765,10 +807,8 @@ mod tests {
     impl TempHome {
         fn new() -> Self {
             let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "quotos-discover-test-{}-{n}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("quotos-discover-test-{}-{n}", std::process::id()));
             std::fs::create_dir_all(&path).expect("create temp home");
             Self { path }
         }
@@ -803,7 +843,13 @@ mod tests {
 
         let mut ids: Vec<String> = found.iter().map(|a| a.id.clone()).collect();
         ids.sort();
-        assert_eq!(ids, vec!["claude:claude".to_string(), "claude:claude-team".to_string()]);
+        assert_eq!(
+            ids,
+            vec![
+                "claude:claude".to_string(),
+                "claude:claude-team".to_string()
+            ]
+        );
     }
 
     /// The exact regression from B4: a directory in the right place with no
@@ -815,7 +861,10 @@ mod tests {
 
         let found = discover_accounts_in(&home.path, |_| false);
 
-        assert!(found.is_empty(), "a folder in a certain place is not a subscription");
+        assert!(
+            found.is_empty(),
+            "a folder in a certain place is not a subscription"
+        );
     }
 
     /// A credentialed default `~/.claude` alone is still discovered.
@@ -870,13 +919,23 @@ mod tests {
     #[test]
     fn keychain_service_matches_the_default_config_dir_split() {
         let home = PathBuf::from("/Users/someone");
-        assert_eq!(keychain_service_in(&home, &home.join(".claude")), "Claude Code-credentials");
+        assert_eq!(
+            keychain_service_in(&home, &home.join(".claude")),
+            "Claude Code-credentials"
+        );
         let sibling = keychain_service_in(&home, &home.join(".claude-team"));
-        assert!(sibling.starts_with("Claude Code-credentials-"), "got {sibling}");
+        assert!(
+            sibling.starts_with("Claude Code-credentials-"),
+            "got {sibling}"
+        );
         assert_ne!(sibling, "Claude Code-credentials");
     }
 
-    fn credential(expires_at_ms: Option<i64>, refresh_expires_at_ms: Option<i64>, has_refresh_token: bool) -> StoredCredential {
+    fn credential(
+        expires_at_ms: Option<i64>,
+        refresh_expires_at_ms: Option<i64>,
+        has_refresh_token: bool,
+    ) -> StoredCredential {
         StoredCredential {
             access_token: "token".to_string(),
             expires_at_ms,
@@ -896,7 +955,10 @@ mod tests {
         let stale = credential(Some(now - 60_000), Some(now + 30 * 86_400_000), true);
         match classify_unrenewable(&stale, now) {
             FetchError::CredentialStale { message } => {
-                assert!(!message.to_lowercase().contains("sign in again"), "got {message}");
+                assert!(
+                    !message.to_lowercase().contains("sign in again"),
+                    "got {message}"
+                );
             }
             other => panic!("expected CredentialStale, got {other:?}"),
         }
@@ -908,10 +970,16 @@ mod tests {
     fn an_expired_token_with_no_usable_refresh_is_an_expired_sign_in() {
         let now = 1_000_000_000_000;
         let dead = credential(Some(now - 60_000), Some(now - 10_000), true);
-        assert!(matches!(classify_unrenewable(&dead, now), FetchError::Unauthorized { .. }));
+        assert!(matches!(
+            classify_unrenewable(&dead, now),
+            FetchError::Unauthorized { .. }
+        ));
 
         let no_refresh = credential(Some(now - 60_000), None, false);
-        assert!(matches!(classify_unrenewable(&no_refresh, now), FetchError::Unauthorized { .. }));
+        assert!(matches!(
+            classify_unrenewable(&no_refresh, now),
+            FetchError::Unauthorized { .. }
+        ));
     }
 
     /// A token the provider refuses while it is still current by its own
@@ -920,7 +988,10 @@ mod tests {
     fn a_current_token_the_provider_refuses_is_an_expired_sign_in() {
         let now = 1_000_000_000_000;
         let current = credential(Some(now + 3_600_000), Some(now + 86_400_000), true);
-        assert!(matches!(classify_unrenewable(&current, now), FetchError::Unauthorized { .. }));
+        assert!(matches!(
+            classify_unrenewable(&current, now),
+            FetchError::Unauthorized { .. }
+        ));
     }
 
     /// A credential with no recorded expiry must never be *assumed* expired
@@ -958,7 +1029,10 @@ mod tests {
     /// wrong instant, which would misclassify every read.
     #[test]
     fn tolerates_other_timestamp_encodings() {
-        assert_eq!(epoch_ms(Some(&serde_json::json!(1786831321u64))), Some(1786831321000));
+        assert_eq!(
+            epoch_ms(Some(&serde_json::json!(1786831321u64))),
+            Some(1786831321000)
+        );
         assert_eq!(
             epoch_ms(Some(&serde_json::json!("2026-08-15T22:02:01Z"))),
             Some(1786831321000)
@@ -978,9 +1052,18 @@ mod tests {
     /// travel down the sign-in path.
     #[test]
     fn a_403_is_not_an_authentication_problem() {
-        assert!(matches!(map_unexpected_status(403), FetchError::Other { .. }));
-        assert!(matches!(map_unexpected_status(500), FetchError::Network { .. }));
-        assert!(matches!(map_unexpected_status(418), FetchError::Network { .. }));
+        assert!(matches!(
+            map_unexpected_status(403),
+            FetchError::Other { .. }
+        ));
+        assert!(matches!(
+            map_unexpected_status(500),
+            FetchError::Network { .. }
+        ));
+        assert!(matches!(
+            map_unexpected_status(418),
+            FetchError::Network { .. }
+        ));
     }
 
     /// The CLI is looked up, never assumed to be on `PATH`: a Finder- or
@@ -990,9 +1073,15 @@ mod tests {
     fn child_path_always_contains_the_system_directories() {
         let path = child_path_including(Some(Path::new("/somewhere/bin")));
         let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
-        assert_eq!(dirs.first().map(PathBuf::as_path), Some(Path::new("/somewhere/bin")));
+        assert_eq!(
+            dirs.first().map(PathBuf::as_path),
+            Some(Path::new("/somewhere/bin"))
+        );
         for required in ["/usr/bin", "/bin"] {
-            assert!(dirs.iter().any(|d| d == Path::new(required)), "missing {required} in {dirs:?}");
+            assert!(
+                dirs.iter().any(|d| d == Path::new(required)),
+                "missing {required} in {dirs:?}"
+            );
         }
     }
 
