@@ -70,9 +70,80 @@ rewritten each round, not appended to.
   `"!"` or `"…"` (handoff: digits or nothing) — a pin with no number yet
   contributes no segment at all, and if *any* pinned value is stale every
   digit turns amber, not just that one.
+- **R3-4: `CLAUDE_CONFIG_DIR=~/.claude` is NOT the same as leaving it
+  unset, and that difference caused a false "sign-in expired" on the
+  captain's live account.** With the variable set, Claude Code reads
+  `<dir>/.claude.json` (the default account's real config is `~/.claude.json`,
+  one level up) and derives the *hashed* Keychain service for that path —
+  which for the default dir does not exist (`Claude Code-credentials-a83c75ce`:
+  `errSecItemNotFound`; the real item is the bare `Claude Code-credentials`).
+  Verified live, same account, same second: `CLAUDE_CONFIG_DIR=$HOME/.claude
+  claude auth status --json` → `"loggedIn": false`; unset → `"loggedIn":
+  true`. So every "renew the token via the CLI" call for the default account
+  operated on an account the CLI thought was signed out. `providers/claude.rs`'s
+  `claude_config_dir_env` is the one place that decides this (`None` = must
+  not be set); `cli_invocation` carries it to both the renewal and
+  `signin.rs`. Access tokens live ~8h, so this turned an ordinary expiry into
+  "The sign-in expired" on an account that was signed in the whole time.
+- **A menu bar app cannot reach `claude` through `$PATH`.** An app launched
+  from Finder/the Dock inherits no `PATH` (the launchd GUI domain sets only
+  `SSH_AUTH_SOCK`), so `Command::new("claude")` falls back to
+  `/usr/bin:/bin:/usr/sbin:/sbin` and never finds a per-user install — which
+  is why the renewal *and* `claude setup-token` silently did nothing in the
+  shipped build while working under `npm run tauri dev` from a terminal.
+  `providers/claude.rs`'s `claude_cli_path` layers `$PATH` → the user's own
+  shell → Claude Code's documented install locations rebuilt from `$HOME`.
+  Both shell forms are needed: measured here, `zsh -lc 'command -v claude'`
+  finds nothing (this machine's `PATH` is set in `.zshrc`, which only an
+  interactive shell reads) while `zsh -ilc` finds it in 0.6s. Verified with
+  the shipped resolver under `env -i` (no `PATH`, no `SHELL`).
+  Note when measuring this yourself: `open -a` and `NSWorkspace.openApplication`
+  both *forward the calling process's environment*, so neither reproduces a
+  Finder launch — confirmed with a marker `PATH`. `ps eww` cannot read
+  Finder's own environment either (it prints nothing), so `launchctl print
+  gui/$(id -u)` is the ground truth for what launchd hands an app.
+- **Never say "sign-in expired" without proving the sign-in is what failed.**
+  `FetchError` distinguishes `Unauthorized` (the sign-in itself is finished)
+  from `CredentialStale` (the token merely aged out and is still renewable —
+  a *local* problem), and the 401 path only retries after re-reading the
+  credential and seeing it actually change; a renewal that did nothing must
+  never cost a second request nor be reported as an expired sign-in
+  (`classify_unrenewable`). An expired token is renewed *before* a request is
+  spent on it (`EXPIRY_MARGIN_MS`), so an ordinary ~8-hourly expiry never
+  reaches the user as a 401 at all. On the frontend the same distinction is
+  `OutcomeResult.needsSignIn` / `Subscription.needsSignIn` — the badge used
+  to be inferred from `state === "broken"`, so an offline launch or an HTTP
+  403 also accused the account of being signed out.
+- **The request budget is per real HTTP request, not per read attempt**
+  (`providers::RequestBudget`, `lib.rs`'s `AccountBudget`). One reservation
+  for a read that could quietly make two requests is how Quotos spent the
+  shared 5-per-300s allowance twice as fast as its own limiter believed,
+  until the provider answered 429 with an hour-long `retry-after`. The
+  one-time profile fetch is deliberately *outside* the budget — the captain's
+  fixed one-read-per-minute cadence already consumes the whole allowance, so
+  charging it would make the limiter refuse a scheduled read every launch.
+- **A self-imposed wait must never disable the way out.** `useSubscriptions.ts`
+  no longer filters rate-limited subscriptions out of `refreshAll` /
+  `refreshAccountById`, and the panel's refresh button is no longer disabled
+  by it: skipping them client-side meant a wrong diagnosis could never be
+  re-tested, and the wait was itself a consequence of the wrong diagnosis.
+  The Rust limiter refuses without spending anything, so always attempting is
+  free. `lib/rowPresentation.ts` owns what a row says, because the two rules
+  that keep it truthful are rules *between* the pieces: a row that needs
+  signing in never also shows the budget wait, and the wait states its time
+  once (it used to appear in the footer note *and* the action label).
+- **Reading Claude Code's Keychain item cannot raise a prompt, and its ACL
+  says so.** Both items' decrypt/export ACL trusts exactly `/usr/bin/security`
+  with `promptSelector=0` and the `apple-tool:` partition — so `security
+  find-generic-password -w` (what Quotos shells out to) is authorized, while
+  any other binary gets `errSecAuthFailed`. To check this kind of thing
+  without ever risking a dialog, call `SecKeychainSetUserInteractionAllowed(false)`
+  first from a small `xcrun swift` snippet: securityd then returns an error
+  instead of prompting. `QUOTOS_DEBUG_READS=1` traces the credential/read
+  decisions (never a token) to stderr.
 - **Sign-in recovery drives Claude Code's own login, never Quotos's own.**
-  `quotos-app/src-tauri/src/signin.rs` spawns `claude setup-token` (pointed
-  at the broken account's `CLAUDE_CONFIG_DIR`) attached to a real pty via
+  `quotos-app/src-tauri/src/signin.rs` spawns `claude setup-token` (via
+  `providers::claude::cli_invocation`, see R3-4 above) attached to a real pty via
   `portable-pty` — plain pipes risk the CLI detecting a non-tty stdin and
   changing behavior, confirmed by one careful, throwaway-config-dir
   observation showing it renders an interactive, cursor-positioning prompt.
@@ -82,7 +153,13 @@ rewritten each round, not appended to.
   code (from the panel's own field) into the process's stdin. Completion is
   detected by the process exiting, at which point Quotos re-reads the
   account normally; the exit status is informational only; the re-read is
-  the real proof either way.
+  the real proof either way. **Unverified, and worth checking before relying
+  on it:** where `claude setup-token` writes for the *default* account now
+  that Quotos no longer forces `CLAUDE_CONFIG_DIR` there. Before R3-4 it
+  wrote to a Keychain service nothing reads, so the flow was inert; it now
+  points at the real account, and whether `setup-token`'s long-lived token
+  lands in (or replaces) the same `claudeAiOauth` blob Quotos reads was
+  never tested — completing a real login is the captain's own check.
 - **Refresh cadence lives natively, not in JS.** `quotos-app/src-tauri/src/scheduler.rs`
   is the single scheduler: one automatic read per account per minute,
   anchored to the last attempt (manual or scheduled — both funnel through

@@ -69,6 +69,11 @@ export function SubscriptionRow({
   lastRead = null,
   windows = [],
   reason = null,
+  /** R3-4: classified by the caller (see lib/rowPresentation.ts), not
+   *  inferred from `state` here. "Needs sign-in" used to be shown for every
+   *  `broken` row, so an offline launch or an HTTP 403 told the captain his
+   *  working account was signed out. */
+  badge = null,
   pinned = false,
   expanded = false,
   menuOpen = false,
@@ -123,7 +128,6 @@ export function SubscriptionRow({
   const stale = state === "behind";
   const reading = state === "reading" || state === "connecting";
   const hasData = typeof used === "number";
-  const badge = stale ? "Not current" : state === "broken" ? "Needs sign-in" : null;
 
   // R2-2/followup-3: the headline number and bar take their color from the
   // provider-computed severity (the worst of *every* window), not from the

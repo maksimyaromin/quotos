@@ -32,6 +32,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::Mutex;
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
@@ -75,9 +76,28 @@ impl SignInRegistry {
             .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())?;
 
-        let mut cmd = CommandBuilder::new("claude");
+        // R3-4: resolve the CLI and its environment through the provider,
+        // never by name. Two things were wrong here, both silent: a
+        // Finder-launched .app inherits no `PATH`, so `CommandBuilder::new
+        // ("claude")` could not spawn anything at all (which is why the
+        // paste-code field appeared and vanished in the same instant — the
+        // spawn failed, the row dropped straight back out of the flow), and
+        // forcing `CLAUDE_CONFIG_DIR` for the *default* account pointed
+        // Claude Code at a config it treats as signed out, so any sign-in
+        // that did run would have written a credential Quotos never reads.
+        // See `providers::claude::cli_invocation`.
+        let invocation = crate::providers::claude::cli_invocation(Path::new(&config_dir)).ok_or_else(|| {
+            "Quotos couldn't find the Claude Code command on this Mac. Open Claude Code once, then try again."
+                .to_string()
+        })?;
+
+        let mut cmd = CommandBuilder::new(invocation.program.as_os_str());
         cmd.arg("setup-token");
-        cmd.env("CLAUDE_CONFIG_DIR", &config_dir);
+        match &invocation.config_dir_env {
+            Some(dir) => cmd.env("CLAUDE_CONFIG_DIR", dir),
+            None => cmd.env_remove("CLAUDE_CONFIG_DIR"),
+        }
+        cmd.env("PATH", &invocation.path_env);
 
         let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
         // Our copy of the slave must close so the pty can signal EOF once

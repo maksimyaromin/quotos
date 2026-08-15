@@ -55,6 +55,15 @@ export interface Subscription {
   lastReadAt: string | null;
   windows: LimitWindowEntity[];
   reason: string | null;
+  /** R3-4: whether *signing in* is genuinely what this subscription needs.
+   * Provider-classified (see `providers/claude/index.ts`'s `mapOutcome`) and
+   * deliberately separate from `state`: `broken` alone used to drive the
+   * "Needs sign-in" badge, so an offline launch or an HTTP 403 accused the
+   * captain's working account of being signed out. It is also what silences
+   * the rate-budget wait — a retry timer is meaningless on a row whose
+   * answer is "sign in", and showing both at once is the contradiction the
+   * captain photographed. */
+  needsSignIn: boolean;
   pinned: boolean;
   configDir: string;
   /** Set while our own rate budget (not the subscription's health) is the
@@ -89,6 +98,10 @@ export interface RawSnapshot {
 export type FetchError =
   | { kind: "not_connected"; message: string }
   | { kind: "unauthorized"; message: string }
+  /** R3-4: the credential is present and renewable, its access token has
+   * just aged out and Quotos couldn't renew it here. A local problem — see
+   * the Rust `FetchError::CredentialStale`. Never a sign-in warning. */
+  | { kind: "credential_stale"; message: string }
   | { kind: "rate_limited"; retry_after_secs: number }
   | { kind: "network"; message: string }
   | { kind: "other"; message: string };

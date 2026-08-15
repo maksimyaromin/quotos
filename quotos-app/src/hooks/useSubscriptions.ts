@@ -38,6 +38,7 @@ function initialSubscription(account: AccountDescriptor, labelOverride: string |
     lastReadAt: null,
     windows: [],
     reason: null,
+    needsSignIn: false,
     pinned,
     configDir: account.config_dir,
     rateLimitedUntil: null,
@@ -45,8 +46,24 @@ function initialSubscription(account: AccountDescriptor, labelOverride: string |
   };
 }
 
-function isBlocked(s: Subscription, now: number): boolean {
-  return !!s.rateLimitedUntil && new Date(s.rateLimitedUntil).getTime() > now;
+/** Everything a read outcome needs to know about what came *before* it —
+ * captured before the optimistic patch that starts a manual refresh, so a
+ * rate-limited answer restores the real prior diagnosis rather than that
+ * patch (the B6 regression). */
+interface PriorRead {
+  hadGoodRead: boolean;
+  state: SubscriptionState;
+  reason: string | null;
+  needsSignIn: boolean;
+}
+
+function priorReadOf(sub: Subscription | undefined): PriorRead {
+  return {
+    hadGoodRead: !!sub?.lastReadAt,
+    state: sub?.state ?? "connecting",
+    reason: sub?.reason ?? null,
+    needsSignIn: sub?.needsSignIn ?? false,
+  };
 }
 
 /** The single owner of tracked-subscription membership and per-subscription
@@ -93,15 +110,13 @@ export function useSubscriptions() {
       accountId: string,
       provider: string,
       fallbackLabel: string,
-      hadGoodRead: boolean,
-      priorState: SubscriptionState,
-      priorReason: string | null,
+      prior: PriorRead,
       outcome: { ok: true; raw: RawSnapshot } | { ok: false; error: FetchError | null },
     ) => {
       if (outcome.ok) {
         const raw = outcome.raw;
         const normalized = normalizeFor(provider, raw.usage, raw.profile, fallbackLabel);
-        const mapped = mapOutcomeFor(provider, { kind: "ok", normalized }, hadGoodRead);
+        const mapped = mapOutcomeFor(provider, { kind: "ok", normalized }, prior.hadGoodRead);
         patch(accountId, {
           state: mapped.state,
           label: normalized.label,
@@ -112,6 +127,7 @@ export function useSubscriptions() {
           severity: normalized.severity,
           lastReadAt: raw.fetched_at,
           reason: mapped.reason,
+          needsSignIn: mapped.needsSignIn,
           rateLimitedUntil: null,
         });
         return;
@@ -125,35 +141,39 @@ export function useSubscriptions() {
         // this attempt started; a real diagnosis (e.g. Broken/expired
         // login) must never decay into a generic wait.
         const until = new Date(Date.now() + err.retry_after_secs * 1000).toISOString();
-        patch(accountId, { state: priorState, reason: priorReason, rateLimitedUntil: until });
+        patch(accountId, {
+          state: prior.state,
+          reason: prior.reason,
+          needsSignIn: prior.needsSignIn,
+          rateLimitedUntil: until,
+        });
         return;
       }
-      const mapped = mapOutcomeFor(provider, { kind: "error", error: err }, hadGoodRead);
-      patch(accountId, { state: mapped.state, reason: mapped.reason, rateLimitedUntil: null });
+      const mapped = mapOutcomeFor(provider, { kind: "error", error: err }, prior.hadGoodRead);
+      patch(accountId, {
+        state: mapped.state,
+        reason: mapped.reason,
+        needsSignIn: mapped.needsSignIn,
+        rateLimitedUntil: null,
+      });
     },
     [patch],
   );
 
   const refreshOne = useCallback(
     async (account: AccountDescriptor) => {
-      const prior = subscriptionsRef.current.find((s) => s.id === account.id);
-      const hadGoodRead = !!prior?.lastReadAt;
       // Captured *before* the optimistic patch below — otherwise a
       // rate-limited outcome restoring "prior" state would read back its
       // own optimistic "reading"/"connecting" patch instead of the real
       // diagnosis that came before it (the exact B6 regression).
-      const priorState = prior?.state ?? "connecting";
-      const priorReason = prior?.reason ?? null;
-      patch(account.id, { state: hadGoodRead ? "reading" : "connecting" });
+      const prior = priorReadOf(subscriptionsRef.current.find((s) => s.id === account.id));
+      patch(account.id, { state: prior.hadGoodRead ? "reading" : "connecting" });
 
       try {
         const raw = await fetchSnapshot(account);
-        applyRefreshResult(account.id, account.provider, accountLabel(account), hadGoodRead, priorState, priorReason, {
-          ok: true,
-          raw,
-        });
+        applyRefreshResult(account.id, account.provider, accountLabel(account), prior, { ok: true, raw });
       } catch (err) {
-        applyRefreshResult(account.id, account.provider, accountLabel(account), hadGoodRead, priorState, priorReason, {
+        applyRefreshResult(account.id, account.provider, accountLabel(account), prior, {
           ok: false,
           error: isFetchError(err) ? err : null,
         });
@@ -171,11 +191,18 @@ export function useSubscriptions() {
   const refreshAllInFlight = useRef<Promise<void> | null>(null);
   const refreshOneInFlight = useRef<Map<string, Promise<void>>>(new Map());
 
+  // R3-4: no local "is it blocked?" filter here any more. Skipping
+  // rate-limited subscriptions client-side is what left the captain with no
+  // way out at all: once a long provider-issued wait was pending, the panel
+  // refresh control and "Read now" both returned without doing anything,
+  // silently, so a wrong diagnosis could never be re-tested. The Rust
+  // limiter is the single authority and refuses without spending anything,
+  // so always attempting costs nothing and keeps every revival path live —
+  // the moment the budget frees up, the very next press reads for real.
   const refreshAll = useCallback(async () => {
     if (refreshAllInFlight.current) return refreshAllInFlight.current;
     const run = (async () => {
-      const now = Date.now();
-      const targets = subscriptionsRef.current.filter((s) => !isBlocked(s, now));
+      const targets = subscriptionsRef.current;
       await Promise.allSettled(targets.map((s) => refreshOne({ id: s.id, provider: s.provider, config_dir: s.configDir })));
     })();
     refreshAllInFlight.current = run;
@@ -191,7 +218,7 @@ export function useSubscriptions() {
       const inFlight = refreshOneInFlight.current.get(id);
       if (inFlight) return inFlight;
       const sub = subscriptionsRef.current.find((s) => s.id === id);
-      if (!sub || isBlocked(sub, Date.now())) return;
+      if (!sub) return;
       const run = refreshOne({ id: sub.id, provider: sub.provider, config_dir: sub.configDir });
       refreshOneInFlight.current.set(id, run);
       try {
@@ -239,8 +266,14 @@ export function useSubscriptions() {
       patch(id, { signInInProgress: true });
       try {
         await startSignInIpc(id, sub.configDir);
-      } catch {
-        patch(id, { signInInProgress: false });
+      } catch (err) {
+        // R3-4: a failed start used to just drop the row back out of the
+        // flow, which is what the captain saw as the paste-code field
+        // flashing up and vanishing — with no PATH in a Finder-launched
+        // app, the spawn failed instantly and nothing said so. Say what
+        // went wrong in the row's own reason line instead.
+        const message = typeof err === "string" ? err : err instanceof Error ? err.message : null;
+        patch(id, { signInInProgress: false, reason: message ?? "Quotos couldn't start the Claude Code sign-in." });
       }
     },
     [patch],
@@ -314,20 +347,14 @@ export function useSubscriptions() {
 
       unlisten = await onQuotaRefresh((event) => {
         const accountId = event.kind === "ok" ? event.snapshot.account_id : event.account_id;
-        const prior = subscriptionsRef.current.find((s) => s.id === accountId);
-        if (!prior) return; // no longer tracked — a race with removal, ignore it
-        const hadGoodRead = !!prior.lastReadAt;
-        const fallbackLabel = accountLabel({ id: accountId, provider: prior.provider, config_dir: prior.configDir });
+        const existing = subscriptionsRef.current.find((s) => s.id === accountId);
+        if (!existing) return; // no longer tracked — a race with removal, ignore it
+        const prior = priorReadOf(existing);
+        const fallbackLabel = accountLabel({ id: accountId, provider: existing.provider, config_dir: existing.configDir });
         if (event.kind === "ok") {
-          applyRefreshResult(accountId, prior.provider, fallbackLabel, hadGoodRead, prior.state, prior.reason, {
-            ok: true,
-            raw: event.snapshot,
-          });
+          applyRefreshResult(accountId, existing.provider, fallbackLabel, prior, { ok: true, raw: event.snapshot });
         } else {
-          applyRefreshResult(accountId, prior.provider, fallbackLabel, hadGoodRead, prior.state, prior.reason, {
-            ok: false,
-            error: event.error,
-          });
+          applyRefreshResult(accountId, existing.provider, fallbackLabel, prior, { ok: false, error: event.error });
         }
       });
       if (cancelled) {

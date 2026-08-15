@@ -72,6 +72,7 @@ const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:demo-critical", provider: "claude", config_dir: "~/.claude-demo-critical" },
   { id: "claude:demo-idle", provider: "claude", config_dir: "~/.claude-demo-idle" },
   { id: "claude:demo-broken", provider: "claude", config_dir: "~/.claude-demo-broken" },
+  { id: "claude:demo-stale-credential", provider: "claude", config_dir: "~/.claude-demo-stale-credential" },
   { id: "claude:demo-waiting", provider: "claude", config_dir: "~/.claude-demo-waiting" },
   { id: "claude:demo-behind", provider: "claude", config_dir: "~/.claude-demo-behind" },
   { id: "claude:demo-nolimits", provider: "claude", config_dir: "~/.claude-demo-nolimits" },
@@ -148,6 +149,28 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         return fail({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" });
       }
       return fail({ kind: "rate_limited", retry_after_secs: 214 });
+    case "claude:demo-stale-credential":
+      // R3-4: signed in, renewable, but the access token aged out and
+      // Quotos couldn't renew it on this machine. Reads as a red row with
+      // its own reason and a "Try again" action — and specifically *not*
+      // the "Needs sign-in" badge, which is the false claim this round
+      // removed. The second read succeeds, standing in for the captain
+      // simply using Claude Code once.
+      if (n === 1) {
+        return fail({
+          kind: "credential_stale",
+          message:
+            "This account's access token has expired and Quotos couldn't renew it here. Use Claude Code for this account once and Quotos will pick it up.",
+        });
+      }
+      return delay({
+        account_id: account.id,
+        provider: "claude",
+        config_dir: account.config_dir,
+        fetched_at: new Date().toISOString(),
+        usage: usagePayload(11, 19, 6),
+        profile: profilePayload("Renewed demo", "claude_max"),
+      });
     case "claude:demo-waiting":
       // Never successfully read even once, and rate-limited from the very
       // first attempt — the "no health data yet, only a budget wait"

@@ -108,6 +108,20 @@ fn list_accounts() -> Vec<AccountDescriptor> {
     providers::claude::discover_accounts()
 }
 
+/// R3-4: binds the shared per-account limiter to one account so a provider
+/// can reserve a slot per real request without knowing anything about how
+/// the budget is stored. See `providers::RequestBudget`.
+struct AccountBudget<'a> {
+    limiter: &'a RateLimiter,
+    account_id: &'a str,
+}
+
+impl providers::RequestBudget for AccountBudget<'_> {
+    fn reserve(&self) -> Result<(), u64> {
+        self.limiter.try_acquire(self.account_id)
+    }
+}
+
 /// The one real place a network attempt happens. Shared by the
 /// `fetch_snapshot` command (manual refresh) and the scheduler loop
 /// (automatic refresh) so both go through the same rate-limit reservation
@@ -127,14 +141,21 @@ async fn perform_fetch(
     }
 
     // The 5-per-300s budget is shared with Claude Code itself; reserving a
-    // slot before the network call keeps Quotos from ever being the reason
+    // slot before each network call keeps Quotos from ever being the reason
     // the captain's own /usage view starts 429ing.
-    if let Err(retry_after_secs) = state.rate_limiter.try_acquire(account_id) {
-        return Err(FetchError::RateLimited { retry_after_secs });
-    }
+    //
+    // R3-4: the reservation moved *into* the provider, one per real request.
+    // Taking a single slot here for a read that could quietly make two
+    // requests (the 401 refresh-and-retry) is what let Quotos spend the
+    // shared allowance twice as fast as its own limiter believed, until the
+    // provider itself answered 429 with an hour-long retry-after.
+    let budget = AccountBudget {
+        limiter: &state.rate_limiter,
+        account_id,
+    };
 
     let path = PathBuf::from(config_dir);
-    let usage = providers::claude::fetch_usage(&state.http, &path).await?;
+    let usage = providers::claude::fetch_usage(&state.http, &path, &budget).await?;
 
     let profile = {
         let cached = {

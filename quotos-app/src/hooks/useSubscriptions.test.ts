@@ -246,6 +246,126 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
   });
 });
 
+// R3-4: revival. A wrong diagnosis is survivable if the user can re-test
+// it; the captain's build made that impossible, because both manual paths
+// silently returned without doing anything while a provider-issued wait was
+// pending — and that wait was itself a consequence of the wrong diagnosis.
+describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setTrayStatus.mockReset();
+    fetchSnapshot.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const goodRead = {
+    account_id: "claude:claude",
+    provider: "claude",
+    config_dir: "~/.claude",
+    fetched_at: new Date().toISOString(),
+    usage: { limits: [{ kind: "weekly_all", percent: 7, is_active: true, resets_at: null, scope: null }] },
+    profile: null,
+  };
+
+  it("'Read now' still attempts a read while a wait is pending, and revives the row when it succeeds", async () => {
+    fetchSnapshot
+      // Launch: an expired-looking credential reads as broken…
+      .mockRejectedValueOnce({ kind: "unauthorized", message: "the stored sign-in is no longer accepted" })
+      // …then the account is throttled for an hour.
+      .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
+      // The next explicit press must still reach the provider.
+      .mockResolvedValueOnce(goodRead);
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(result.current.subscriptions[0].state).toBe("broken");
+
+    await act(async () => {
+      await result.current.refreshAccountById("claude:claude");
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
+
+    await act(async () => {
+      await result.current.refreshAccountById("claude:claude");
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(3);
+    expect(result.current.subscriptions[0].state).toBe("working");
+    expect(result.current.subscriptions[0].used).toBe(7);
+    expect(result.current.subscriptions[0].needsSignIn).toBe(false);
+    expect(result.current.subscriptions[0].rateLimitedUntil).toBeNull();
+  });
+
+  it("the panel's refresh-all also still attempts while a wait is pending", async () => {
+    fetchSnapshot
+      .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
+      .mockResolvedValueOnce(goodRead);
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
+
+    await act(async () => {
+      await result.current.refreshAll();
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+    expect(result.current.subscriptions[0].state).toBe("working");
+  });
+
+  it("adding a subscription reads it once immediately, as the Subscriptions view promises", async () => {
+    fetchSnapshot.mockResolvedValue(goodRead);
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    fetchSnapshot.mockClear();
+
+    await act(async () => {
+      result.current.removeSubscription("claude:claude");
+    });
+    await act(async () => {
+      result.current.addSubscription({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" });
+    });
+    await flush();
+
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+    expect(result.current.subscriptions[0].state).toBe("working");
+    expect(result.current.subscriptions[0].lastReadAt).not.toBeNull();
+  });
+
+  it("a sign-in warning is dropped the moment a read succeeds — no relaunch, no remove-and-re-add", async () => {
+    // The captain signs in externally while Quotos is running: the very next
+    // read must clear the warning by itself.
+    fetchSnapshot
+      .mockRejectedValueOnce({ kind: "unauthorized", message: "the stored sign-in is no longer accepted" })
+      .mockResolvedValueOnce(goodRead);
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(result.current.subscriptions[0].needsSignIn).toBe(true);
+
+    await act(async () => {
+      await result.current.refreshAccountById("claude:claude");
+    });
+    expect(result.current.subscriptions[0].needsSignIn).toBe(false);
+    expect(result.current.subscriptions[0].state).toBe("working");
+  });
+
+  it("a credential Quotos couldn't renew is reported as such, never as a sign-in problem", async () => {
+    fetchSnapshot.mockRejectedValueOnce({
+      kind: "credential_stale",
+      message: "This account's access token has expired and Quotos couldn't renew it here.",
+    });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    expect(result.current.subscriptions[0].needsSignIn).toBe(false);
+    expect(result.current.subscriptions[0].reason).not.toMatch(/sign-in expired/i);
+  });
+});
+
 // Followup-2: the handoff forbids any tray glyph but a digit ("Никаких
 // знаков и многоточий... Либо цифра, либо ничего") — a broken pin must
 // never show "!" and a numberless pin must never show "…", only be absent.

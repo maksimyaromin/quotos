@@ -17,8 +17,9 @@ const OK_READ: NormalizedRead = {
 // is provider-specific.
 describe("claude mapOutcome", () => {
   it("a successful read is always 'working'", () => {
-    expect(mapOutcome({ kind: "ok", normalized: OK_READ }, false)).toEqual({ state: "working", reason: null });
-    expect(mapOutcome({ kind: "ok", normalized: OK_READ }, true)).toEqual({ state: "working", reason: null });
+    const expected = { state: "working", reason: null, needsSignIn: false };
+    expect(mapOutcome({ kind: "ok", normalized: OK_READ }, false)).toEqual(expected);
+    expect(mapOutcome({ kind: "ok", normalized: OK_READ }, true)).toEqual(expected);
   });
 
   it("a successful read with no windows at all reports the no-limits reason, still 'working'", () => {
@@ -72,5 +73,56 @@ describe("claude mapOutcome", () => {
     const result = mapOutcome({ kind: "error", error: null }, false);
     expect(result.state).toBe("broken");
     expect(result.reason).toBeTruthy();
+    expect(result.needsSignIn).toBe(false);
+  });
+});
+
+// R3-4: which outcomes are *actually* about signing in. The captain's bug
+// was Quotos claiming a signed-in account needed signing in; the mirror-image
+// failure would be losing the warning where it is deserved, so both
+// directions are pinned here.
+describe("claude mapOutcome — what really needs a sign-in", () => {
+  it("credential_stale is never a sign-in warning: the account is signed in, its token just aged out", () => {
+    const err = {
+      kind: "credential_stale" as const,
+      message: "This account's access token has expired and Quotos couldn't renew it here. Use Claude Code for this account once and Quotos will pick it up.",
+    };
+    const result = mapOutcome({ kind: "error", error: err }, false);
+    expect(result.needsSignIn).toBe(false);
+    expect(result.reason).toBe(err.message);
+    // The sentence that made the false claim must not appear for this kind.
+    expect(result.reason).not.toMatch(/sign-in expired/i);
+  });
+
+  it("unauthorized still asks for a sign-in — the genuinely signed-out account keeps its warning", () => {
+    const err = { kind: "unauthorized" as const, message: "the stored sign-in is no longer accepted" };
+    expect(mapOutcome({ kind: "error", error: err }, false).needsSignIn).toBe(true);
+  });
+
+  it("not_connected — no credential at all — asks for a sign-in", () => {
+    const err = { kind: "not_connected" as const, message: "Claude Code isn't signed in for this account." };
+    const result = mapOutcome({ kind: "error", error: err }, false);
+    expect(result.state).toBe("idle");
+    expect(result.needsSignIn).toBe(true);
+  });
+
+  it("a transport failure or a 403 never asks for a sign-in", () => {
+    const network = { kind: "network" as const, message: "The provider answered with HTTP 503." };
+    const refused = { kind: "other" as const, message: "The provider refused this request (HTTP 403)." };
+    expect(mapOutcome({ kind: "error", error: network }, false).needsSignIn).toBe(false);
+    expect(mapOutcome({ kind: "error", error: refused }, false).needsSignIn).toBe(false);
+  });
+
+  it("once real data exists, no error kind asks for a sign-in — the row is merely behind", () => {
+    const cases = [
+      { kind: "unauthorized" as const, message: "x" },
+      { kind: "not_connected" as const, message: "x" },
+      { kind: "credential_stale" as const, message: "x" },
+    ];
+    for (const err of cases) {
+      const result = mapOutcome({ kind: "error", error: err }, true);
+      expect(result.state).toBe("behind");
+      expect(result.needsSignIn).toBe(false);
+    }
   });
 });

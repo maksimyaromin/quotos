@@ -8,6 +8,7 @@ import { SubscriptionsScreen } from "./components/SubscriptionsScreen";
 import { UndoRow } from "./components/UndoRow";
 import { useSubscriptions } from "./hooks/useSubscriptions";
 import { formatExactReset, formatRelativePast, formatClockTime } from "./lib/time";
+import { rowPresentation } from "./lib/rowPresentation";
 import { RefreshIcon, PlusIcon, SnapBackIcon, BackIcon, DebugIcon } from "./components/icons";
 import { hidePanel, setDetached as setDetachedIpc, debugRateLimitSnapshot, onPanelBeakOffset } from "./lib/tauriClient";
 import "./app.css";
@@ -259,17 +260,26 @@ export default function App() {
   };
 
   const nowDate = new Date(now);
-  const blockedSubs = subscriptions.filter((s) => isBlocked(s.rateLimitedUntil, now));
+  // Same exclusion the rows use (lib/rowPresentation.ts): a subscription
+  // whose answer is "sign in" is not waiting on the rate budget, so it must
+  // not make the header claim everything is.
+  const blockedSubs = subscriptions.filter((s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now));
   const allBlocked = subscriptions.length > 0 && blockedSubs.length === subscriptions.length;
   const earliestAvailable = blockedSubs.length
     ? blockedSubs.reduce((min, s) =>
         new Date(s.rateLimitedUntil as string).getTime() < new Date(min.rateLimitedUntil as string).getTime() ? s : min,
       ).rateLimitedUntil
     : null;
+  // R3-4: the wait is a tooltip, never a disabled control. Disabling this
+  // button while a wait was pending removed the last way to re-test a wrong
+  // diagnosis — and the wait itself was a consequence of the wrong
+  // diagnosis, so the captain had no way out of the loop at all. Pressing it
+  // during a wait is harmless: the Rust limiter refuses without spending
+  // anything, and the first press after the budget frees up reads for real.
   const refreshLabel = refreshing
     ? "Reading…"
     : allBlocked
-    ? `Waiting for the rate budget — available ${formatClockTime(earliestAvailable)}`
+    ? `Waiting for the rate budget — retry at ${formatClockTime(earliestAvailable)}`
     : "Read all now";
   const mostRecentRead = subscriptions.reduce<string | null>((latest, s) => {
     if (!s.lastReadAt) return latest;
@@ -305,7 +315,7 @@ export default function App() {
             </IconButton>
           ) : null}
           {screen === "list" ? (
-            <IconButton label={refreshLabel} onClick={handleManualRefresh} disabled={refreshing || allBlocked}>
+            <IconButton label={refreshLabel} onClick={handleManualRefresh} disabled={refreshing}>
               <RefreshIcon spinning={refreshing} />
             </IconButton>
           ) : null}
@@ -341,17 +351,14 @@ export default function App() {
           if (pendingRemovals[sub.id]) {
             return <UndoRow key={sub.id} label={pendingRemovals[sub.id].label} onUndo={() => handleUndo(sub.id)} />;
           }
-          const blocked = isBlocked(sub.rateLimitedUntil, now);
-          // R2-6: the broken row's action starts Claude Code's own sign-in
-          // (signin.rs) instead of just retrying the same failed read —
+          // R2-6: a row that needs signing in offers Claude Code's own
+          // sign-in (signin.rs) instead of retrying the same failed read —
           // once a session is running, the row shows the paste-code field
           // instead of this button (see SubscriptionRow's signInInProgress).
-          const baseAction =
-            sub.state === "broken" && !sub.signInInProgress
-              ? "Open Claude Code"
-              : sub.state === "behind"
-              ? "Try again"
-              : null;
+          // R3-4: badge, action and footer note are decided together — see
+          // lib/rowPresentation.ts for the two rules that keep them from
+          // contradicting each other.
+          const presentation = rowPresentation(sub, now);
           const label = sub.labelOverride ?? sub.label;
           return (
             <SubscriptionRow
@@ -371,13 +378,13 @@ export default function App() {
                 scope: w.scope,
               }))}
               reason={sub.reason ?? undefined}
+              badge={presentation.badge}
               pinned={sub.pinned}
               expanded={expanded.has(sub.id)}
               menuOpen={openMenuId === sub.id}
-              actionLabel={baseAction ? (blocked ? `Retry at ${formatClockTime(sub.rateLimitedUntil)}` : baseAction) : null}
-              actionDisabled={blocked}
-              footerNote={blocked && !sub.lastReadAt ? `Waiting for the rate budget — available ${formatClockTime(sub.rateLimitedUntil)}` : null}
-              onAction={() => (sub.state === "broken" ? startSignIn(sub.id) : refreshAccountById(sub.id))}
+              actionLabel={presentation.actionLabel}
+              footerNote={presentation.footerNote}
+              onAction={() => (sub.needsSignIn ? startSignIn(sub.id) : refreshAccountById(sub.id))}
               onReadNow={() => refreshAccountById(sub.id)}
               onTogglePin={() => togglePin(sub.id)}
               onToggleExpand={() => toggleExpand(sub.id)}

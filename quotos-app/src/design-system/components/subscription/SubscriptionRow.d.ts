@@ -29,6 +29,9 @@ export interface SubscriptionRowProps {
   windows?: LimitWindowProps[];
   /** Human reason for a no-data state (broken/idle/no-limits-yet). */
   reason?: string | null;
+  /** State badge, classified by the caller — "Not current" for held-over
+   * numbers, "Needs sign-in" only when signing in is genuinely the answer. */
+  badge?: "Not current" | "Needs sign-in" | null;
   pinned?: boolean;
   expanded?: boolean;
   /** Whether this row's "…" menu is open — one row's menu open at a time, owned by the caller. */

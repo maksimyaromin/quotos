@@ -14,6 +14,10 @@ export type ReadOutcome =
 export interface OutcomeResult {
   state: SubscriptionState;
   reason: string | null;
+  /** R3-4: whether signing in is what this outcome actually calls for. See
+   * `Subscription.needsSignIn` for why this is classified here rather than
+   * inferred from `state === "broken"` at render time. */
+  needsSignIn: boolean;
 }
 
 /** R2-3: maps a (non-rate-limited) read outcome to a health state + reason.
@@ -53,7 +57,7 @@ export function normalizeFor(provider: string, usage: unknown, profile: unknown,
 export function mapOutcomeFor(provider: string, outcome: ReadOutcome, hadGoodRead: boolean): OutcomeResult {
   const mapper = PROVIDER_OUTCOME_MAPPERS[provider];
   if (!mapper) {
-    return { state: hadGoodRead ? "behind" : "broken", reason: `No adapter for provider '${provider}'.` };
+    return { state: hadGoodRead ? "behind" : "broken", reason: `No adapter for provider '${provider}'.`, needsSignIn: false };
   }
   return mapper(outcome, hadGoodRead);
 }

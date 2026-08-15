@@ -31,12 +31,16 @@ export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel:
 export function mapOutcome(outcome: ReadOutcome, hadGoodRead: boolean): OutcomeResult {
   if (outcome.kind === "ok") {
     const noLimits = outcome.normalized.used === null && outcome.normalized.windows.length === 0;
-    return { state: "working", reason: noLimits ? "No limits reported yet." : null };
+    return { state: "working", reason: noLimits ? "No limits reported yet." : null, needsSignIn: false };
   }
 
   const err = outcome.error;
   if (!err) {
-    return { state: hadGoodRead ? "behind" : "broken", reason: "Something went wrong reading this subscription." };
+    return {
+      state: hadGoodRead ? "behind" : "broken",
+      reason: "Something went wrong reading this subscription.",
+      needsSignIn: false,
+    };
   }
   return mapFetchError(err, hadGoodRead);
 }
@@ -48,22 +52,41 @@ function mapFetchError(err: FetchError, hadGoodRead: boolean): OutcomeResult {
   // contradict "these numbers are from the last successful read" by
   // describing a brand-new failure instead.
   if (hadGoodRead) {
-    return { state: "behind", reason: "The provider didn't answer. These numbers are from the last successful read." };
+    return {
+      state: "behind",
+      reason: "The provider didn't answer. These numbers are from the last successful read.",
+      needsSignIn: false,
+    };
   }
 
   switch (err.kind) {
     case "not_connected":
-      return { state: "idle", reason: err.message };
+      // No credential at all for this config dir — Claude Code is not
+      // signed in here. `idle` (the hollow ring) is the honest health
+      // state; the sign-in flag is what makes it actionable.
+      return { state: "idle", reason: err.message, needsSignIn: true };
     case "unauthorized":
-      // F17 (handoff's exact wording).
-      return { state: "broken", reason: "The sign-in expired. Log in again in Claude Code and Quotos will pick it up." };
+      // F17 (handoff's exact wording). R3-4: the Rust side now only sends
+      // this when the sign-in itself is what failed — a token that merely
+      // aged out arrives as `credential_stale` below, because telling the
+      // captain to sign in to an account he is signed into is the exact
+      // bug this round fixes.
+      return {
+        state: "broken",
+        reason: "The sign-in expired. Log in again in Claude Code and Quotos will pick it up.",
+        needsSignIn: true,
+      };
+    case "credential_stale":
+      // Signed in, renewable, just not renewable *from here*. Carries the
+      // Rust side's own sentence, which says what is actually wrong.
+      return { state: "broken", reason: err.message, needsSignIn: false };
     case "network":
-      return { state: "broken", reason: err.message };
+      return { state: "broken", reason: err.message, needsSignIn: false };
     case "rate_limited":
       // Unreachable in practice — see the doc comment above. Handled here
       // only so this switch stays exhaustive over `FetchError["kind"]`.
-      return { state: "broken", reason: "Unexpected rate-limit outcome reached the provider mapper." };
+      return { state: "broken", reason: "Unexpected rate-limit outcome reached the provider mapper.", needsSignIn: false };
     default:
-      return { state: "broken", reason: err.message };
+      return { state: "broken", reason: err.message, needsSignIn: false };
   }
 }
