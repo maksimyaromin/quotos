@@ -14,7 +14,14 @@ import type { AccountDescriptor } from "../types/entities";
 export interface TrackedAccount extends AccountDescriptor {
   /** User's own name for it, or null to use the provider-derived label. */
   label: string | null;
-  pinned: boolean;
+  /** v4: the persisted set of pinned window ids — see
+   * `Subscription.pinnedWindowIds`. A pre-v4 record on disk carries the old
+   * `pinned: boolean` field instead of this one; `useSubscriptions.ts`'s
+   * mount effect is what migrates it (to "that subscription's headline
+   * window is pinned", once the first read after load reveals what the
+   * headline window's id actually is) — this type only describes the
+   * current, post-migration shape that gets written back out. */
+  pinnedWindowIds: string[];
 }
 
 interface PersistedShape {

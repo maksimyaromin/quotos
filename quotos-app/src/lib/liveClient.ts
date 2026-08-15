@@ -56,9 +56,12 @@ export async function kickScheduler(): Promise<void> {
 /** R2-2: replaces the old plain-string `set_tray_title` — `tray-icon`
  * v0.24.2's macOS `set_title` has no color channel, so the Rust side
  * composites a bitmap from these segments instead (see
- * `src-tauri/src/tray_render.rs`). */
-export async function setTrayStatus(segments: TraySegment[]): Promise<void> {
-  return invoke("set_tray_status", { segments });
+ * `src-tauri/src/tray_render.rs`). v4: `worstUsedPercent` (0-100) is the
+ * bare glyph's own arc fill — the worst active limit across everything
+ * tracked (design/NOTES.md §1), sent alongside the segments so the Rust side
+ * can draw it whether or not anything is pinned. */
+export async function setTrayStatus(segments: TraySegment[], worstUsedPercent: number): Promise<void> {
+  return invoke("set_tray_status", { segments, worstUsedPercent });
 }
 
 export async function setDetached(detached: boolean): Promise<void> {

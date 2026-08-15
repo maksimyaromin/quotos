@@ -1,6 +1,8 @@
 import * as React from "react";
 
 export interface LimitWindowProps {
+  /** Stable id for this window (see `LimitWindowEntity.id`) — passed back to `onTogglePin`. */
+  id?: string;
   /** The provider's own wording for this window — rendered verbatim, truncated if long. */
   name: string;
   /** Percent consumed 0–100, or null when the provider reports no percentage. */
@@ -11,6 +13,11 @@ export interface LimitWindowProps {
   scope?: string | null;
   /** Dim when the parent subscription is behind. */
   stale?: boolean;
+  /** v4: whether this window's own figure is in the menu bar. Always
+   * renders its pin button (leading the row) regardless of this value. */
+  pinned?: boolean;
+  /** Called with this window's `id` when its pin button is clicked. */
+  onTogglePin?: (id: string) => void;
   style?: React.CSSProperties;
 }
 

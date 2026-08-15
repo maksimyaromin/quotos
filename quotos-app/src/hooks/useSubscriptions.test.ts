@@ -410,7 +410,7 @@ describe("useSubscriptions tray segments (followup-2)", () => {
 
     const calls = setTrayStatus.mock.calls;
     const lastCall = calls[calls.length - 1]?.[0];
-    expect(lastCall).toEqual([{ text: "40%", color: "neutral" }]);
+    expect(lastCall).toEqual([{ text: "40%", color: "neutral", groupStart: false }]);
     for (const call of setTrayStatus.mock.calls) {
       for (const segment of call[0]) {
         expect(segment.text).not.toBe("!");
@@ -438,8 +438,8 @@ describe("useSubscriptions tray segments (followup-2)", () => {
     await flush();
     expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual(
       expect.arrayContaining([
-        { text: "10%", color: "neutral" },
-        { text: "20%", color: "neutral" },
+        { text: "10%", color: "neutral", groupStart: false },
+        { text: "20%", color: "neutral", groupStart: true },
       ]),
     );
 
@@ -455,10 +455,95 @@ describe("useSubscriptions tray segments (followup-2)", () => {
     const segments = trayCalls[trayCalls.length - 1]?.[0];
     expect(segments).toEqual(
       expect.arrayContaining([
-        { text: "10%", color: "amber" },
-        { text: "20%", color: "amber" },
+        { text: "10%", color: "amber", groupStart: false },
+        { text: "20%", color: "amber", groupStart: true },
       ]),
     );
+  });
+});
+
+// v4 migration (firstmate-recorded decision, design/NOTES.md §2): a pre-v4
+// tracked record's `pinned: true` becomes "that subscription's headline
+// window is pinned" — known only once a read reveals `headlineWindowId`.
+describe("useSubscriptions v4 pin migration", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    saveTracked.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    loadTracked.mockResolvedValue(TRACKED);
+  });
+
+  it("migrates a legacy pinned:true record to pinning its headline window, once a read reveals it", async () => {
+    loadTracked.mockResolvedValue([
+      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    ]);
+    fetchSnapshot.mockResolvedValue({
+      account_id: "claude:claude",
+      provider: "claude",
+      config_dir: "~/.claude",
+      fetched_at: new Date().toISOString(),
+      usage: { limits: [{ kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null }] },
+      profile: null,
+    });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    expect(result.current.subscriptions[0].headlineWindowId).toBe("weekly_all");
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(["weekly_all"]);
+    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual([
+      { text: "33%", color: "neutral", groupStart: false },
+    ]);
+  });
+
+  it("a legacy pinned:false record migrates to nothing pinned, contributing no segment", async () => {
+    loadTracked.mockResolvedValue([
+      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: false },
+    ]);
+    fetchSnapshot.mockResolvedValue({
+      account_id: "claude:claude",
+      provider: "claude",
+      config_dir: "~/.claude",
+      fetched_at: new Date().toISOString(),
+      usage: { limits: [{ kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null }] },
+      profile: null,
+    });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([]);
+    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual([]);
+  });
+
+  it("a pending migration survives a failed first read and completes on the next successful one", async () => {
+    loadTracked.mockResolvedValue([
+      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    ]);
+    fetchSnapshot
+      .mockRejectedValueOnce({ kind: "network", message: "timed out" })
+      .mockResolvedValueOnce({
+        account_id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+        fetched_at: new Date().toISOString(),
+        usage: { limits: [{ kind: "weekly_all", percent: 8, is_active: true, resets_at: null, scope: null }] },
+        profile: null,
+      });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([]);
+
+    await act(async () => {
+      await result.current.refreshAccountById("claude:claude");
+    });
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(["weekly_all"]);
   });
 });
 

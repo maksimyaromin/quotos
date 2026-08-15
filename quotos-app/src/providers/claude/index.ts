@@ -21,6 +21,7 @@ export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel:
     used: usage.used,
     resetsAt: usage.resetsAt,
     severity: usage.severity,
+    headlineWindowId: usage.headlineWindowId,
   };
 }
 

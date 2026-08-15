@@ -354,6 +354,14 @@ export default function App() {
           // contradicting each other.
           const presentation = rowPresentation(sub, now);
           const label = sub.labelOverride ?? sub.label;
+          const windows = sub.windows.map((w) => ({
+            id: w.id,
+            name: w.name,
+            used: w.used,
+            resetLabel: formatExactReset(w.resetsAt, nowDate),
+            scope: w.scope,
+            pinned: sub.pinnedWindowIds.includes(w.id),
+          }));
           return (
             <SubscriptionRow
               key={sub.id}
@@ -365,22 +373,19 @@ export default function App() {
               severity={sub.severity}
               resetLabel={formatExactReset(sub.resetsAt, nowDate) ?? undefined}
               lastRead={formatRelativePast(sub.lastReadAt, nowDate) ?? undefined}
-              windows={sub.windows.map((w) => ({
-                name: w.name,
-                used: w.used,
-                resetLabel: formatExactReset(w.resetsAt, nowDate),
-                scope: w.scope,
-              }))}
+              windows={windows}
               reason={sub.reason ?? undefined}
               badge={presentation.badge}
-              pinned={sub.pinned}
+              pinnedCount={windows.filter((w) => w.pinned).length}
+              headlinePinned={sub.headlineWindowId !== null && sub.pinnedWindowIds.includes(sub.headlineWindowId)}
               expanded={expanded.has(sub.id)}
               menuOpen={openMenuId === sub.id}
               actionLabel={presentation.actionLabel}
               footerNote={presentation.footerNote}
               onAction={() => (sub.needsSignIn ? startSignIn(sub.id) : refreshAccountById(sub.id))}
               onReadNow={() => refreshAccountById(sub.id)}
-              onTogglePin={() => togglePin(sub.id)}
+              onTogglePin={() => togglePin(sub.id, sub.headlineWindowId)}
+              onToggleWindowPin={(windowId: string) => togglePin(sub.id, windowId)}
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}

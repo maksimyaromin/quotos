@@ -34,7 +34,24 @@ pub struct TrackedAccount {
     pub config_dir: String,
     /// User's own name for it, or `None` to use the provider-derived label.
     pub label: Option<String>,
-    pub pinned: bool,
+    /// v4: pinning moved from the subscription to the limit window — the
+    /// persisted set of pinned window ids (see `LimitWindowEntity.id` on the
+    /// TS side), replacing the old `pinned: bool`. Wire-renamed to match the
+    /// TS `Subscription`/`TrackedAccount` field's own camelCase spelling
+    /// (unlike `config_dir` above, this field has no pre-existing snake_case
+    /// wire contract to preserve).
+    #[serde(rename = "pinnedWindowIds", default)]
+    pub pinned_window_ids: Vec<String>,
+    /// v4 migration-only: present when loading a pre-v4 file (which wrote
+    /// `pinned: true/false` instead of `pinnedWindowIds`) — carried through
+    /// as-is so the frontend can detect and migrate it (see
+    /// `useSubscriptions.ts`'s `pendingPinMigrationRef`). The frontend never
+    /// sends this back on `save_tracked` (only `pinnedWindowIds`), so
+    /// `skip_serializing_if` means a record sheds it from disk the moment
+    /// it's next saved — the migration signal is present exactly once, on
+    /// the one load that still has the old shape to read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -123,7 +140,8 @@ mod tests {
             provider: "claude".to_string(),
             config_dir: "~/.claude".to_string(),
             label: Some(label.to_string()),
-            pinned: true,
+            pinned_window_ids: vec!["weekly_all".to_string()],
+            pinned: None,
         }
     }
 
@@ -186,5 +204,47 @@ mod tests {
         let store = Store::load(path.clone());
         store.save(vec![sample("X")]).unwrap();
         assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    // v4 migration: a pre-v4 file on disk carries `pinned: true/false`
+    // instead of `pinnedWindowIds` — the Rust side must carry that flag
+    // through to the frontend rather than silently dropping it (which would
+    // make `useSubscriptions.ts`'s one-shot migration undetectable).
+    #[test]
+    fn a_legacy_pinned_file_loads_with_the_flag_intact_and_no_pinned_window_ids() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"tracked":[{"id":"claude:claude","provider":"claude","config_dir":"~/.claude","label":null,"pinned":true}]}"#,
+        )
+        .unwrap();
+
+        let store = Store::load(path);
+        let loaded = store.list();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].pinned, Some(true));
+        assert!(loaded[0].pinned_window_ids.is_empty());
+    }
+
+    // The legacy flag must not persist forever — once the frontend saves
+    // this record back (in the new shape, never sending `pinned`), it drops
+    // out of the file on disk.
+    #[test]
+    fn saving_a_migrated_record_drops_the_legacy_pinned_field_from_disk() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"tracked":[{"id":"claude:claude","provider":"claude","config_dir":"~/.claude","label":null,"pinned":true}]}"#,
+        )
+        .unwrap();
+
+        let store = Store::load(path.clone());
+        store.save(vec![sample("Migrated")]).unwrap();
+
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("\"pinned\""), "legacy pinned field should be gone: {raw}");
+        assert!(raw.contains("pinnedWindowIds"));
     }
 }

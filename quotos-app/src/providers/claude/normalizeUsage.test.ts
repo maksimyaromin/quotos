@@ -100,12 +100,30 @@ describe("normalizeUsage", () => {
   });
 
   it("returns an empty, non-throwing result for a completely empty response", () => {
-    expect(normalizeUsage({})).toEqual({ windows: [], used: null, resetsAt: null, severity: "healthy" });
+    expect(normalizeUsage({})).toEqual({
+      windows: [],
+      used: null,
+      resetsAt: null,
+      severity: "healthy",
+      headlineWindowId: null,
+    });
   });
 
   it("returns an empty, non-throwing result for null/undefined", () => {
-    expect(normalizeUsage(null)).toEqual({ windows: [], used: null, resetsAt: null, severity: "healthy" });
-    expect(normalizeUsage(undefined)).toEqual({ windows: [], used: null, resetsAt: null, severity: "healthy" });
+    expect(normalizeUsage(null)).toEqual({
+      windows: [],
+      used: null,
+      resetsAt: null,
+      severity: "healthy",
+      headlineWindowId: null,
+    });
+    expect(normalizeUsage(undefined)).toEqual({
+      windows: [],
+      used: null,
+      resetsAt: null,
+      severity: "healthy",
+      headlineWindowId: null,
+    });
   });
 
   it("handles a subscription with no windows at all (all fixed fields null, no limits)", () => {
@@ -234,5 +252,66 @@ describe("normalizeUsage", () => {
       limits: [{ kind: "session", percent: 150, is_active: true }],
     });
     expect(result.windows[0].used).toBe(100);
+  });
+
+  // v4: pinning keys off `LimitWindowEntity.id`, which must stay stable
+  // across re-reads and unique within one subscription's own window list.
+  describe("v4: window ids and headlineWindowId", () => {
+    it("gives two same-kind windows distinct ids via their scope", () => {
+      const result = normalizeUsage({
+        limits: [
+          {
+            kind: "weekly_scoped",
+            percent: 38,
+            scope: { model: { display_name: "Opus" }, surface: null },
+            is_active: true,
+          },
+          {
+            kind: "weekly_scoped",
+            percent: 17,
+            scope: { model: { display_name: "Fable" }, surface: null },
+            is_active: true,
+          },
+        ],
+      });
+      const ids = result.windows.map((w) => w.id);
+      expect(new Set(ids).size).toBe(2);
+    });
+
+    it("headlineWindowId points at the weekly_all window's own id", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 2, is_active: true },
+          { kind: "weekly_all", percent: 15, is_active: true },
+        ],
+      });
+      const weeklyAll = result.windows.find((w) => w.name === "Weekly" && w.scope === null);
+      expect(result.headlineWindowId).toBe(weeklyAll?.id);
+    });
+
+    it("headlineWindowId points at the fixed-shape seven_day window's own id", () => {
+      const result = normalizeUsage({
+        five_hour: { utilization: 2, resets_at: null },
+        seven_day: { utilization: 8, resets_at: null },
+      });
+      const weekly = result.windows.find((w) => w.name === "Weekly");
+      expect(result.headlineWindowId).toBe(weekly?.id);
+    });
+
+    it("headlineWindowId falls back to the most-consumed window's own id", () => {
+      const result = normalizeUsage({
+        limits: [
+          { kind: "session", percent: 70, is_active: true },
+          { kind: "weekly_scoped", percent: 95, is_active: false },
+        ],
+      });
+      const session = result.windows.find((w) => w.name === "Session");
+      expect(result.headlineWindowId).toBe(session?.id);
+    });
+
+    it("headlineWindowId is null when there are no windows at all", () => {
+      const result = normalizeUsage({});
+      expect(result.headlineWindowId).toBeNull();
+    });
   });
 });

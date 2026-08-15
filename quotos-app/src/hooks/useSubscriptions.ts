@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AccountDescriptor, FetchError, RawSnapshot, Subscription, SubscriptionState, TraySegment } from "../types/entities";
+import type { AccountDescriptor, FetchError, RawSnapshot, Subscription, SubscriptionState } from "../types/entities";
 import { isFetchError } from "../types/entities";
 import {
   fetchSnapshot,
@@ -14,6 +14,7 @@ import {
 } from "../lib/tauriClient";
 import { normalizeFor, providerDisplayName, mapOutcomeFor } from "../providers/registry";
 import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
+import { buildTraySegments, worstActiveLimitPercent } from "../lib/traySegments";
 
 /** The id-derived default label for an account before any read has come back
  * (or before a custom rename) — shared with the add-subscription flow so a
@@ -36,7 +37,7 @@ export function accountLabel(account: AccountDescriptor): string {
 function initialSubscription(
   account: AccountDescriptor,
   labelOverride: string | null,
-  pinned: boolean,
+  pinnedWindowIds: string[],
   label = accountLabel(account),
 ): Subscription {
   return {
@@ -54,7 +55,8 @@ function initialSubscription(
     windows: [],
     reason: null,
     needsSignIn: false,
-    pinned,
+    pinnedWindowIds,
+    headlineWindowId: null,
     configDir: account.config_dir,
     rateLimitedUntil: null,
     signInInProgress: false,
@@ -75,7 +77,7 @@ function toTrackedAccounts(subscriptions: Subscription[]): TrackedAccount[] {
     provider: s.provider,
     config_dir: s.configDir,
     label: s.labelOverride,
-    pinned: s.pinned,
+    pinnedWindowIds: s.pinnedWindowIds,
   }));
 }
 
@@ -139,6 +141,17 @@ export function useSubscriptions() {
   /** The exact JSON last handed to `saveTracked` — see the save effect. */
   const lastSavedRef = useRef<string | null>(null);
 
+  // v4 migration (firstmate-recorded decision, design/NOTES.md §2): a
+  // pre-v4 tracked record's `pinned: true` becomes "that subscription's
+  // headline window is pinned" — the same window the "…" menu's toggle now
+  // targets. Which window is the headline is only known once a read comes
+  // back (`NormalizedRead.headlineWindowId`), so this just remembers *which*
+  // accounts still need the one-shot migration; `applyRefreshResult`'s ok
+  // branch is the only place that consumes an id from here, on the first
+  // *successful* read after load (a failed attempt leaves the flag pending,
+  // so the migration simply waits for a read that actually has an answer).
+  const pendingPinMigrationRef = useRef<Set<string>>(new Set());
+
   // R2-5: the async-load equivalent of the old "lazy useState initializer"
   // trick — loading the tracked list is now inherently async (a real IPC
   // round-trip to the Rust-owned file, see persistence.ts), so it can no
@@ -177,6 +190,14 @@ export function useSubscriptions() {
         // only the config directory's name to show once this account stops
         // being tracked.
         setKnownLabels((prev) => (prev[accountId] === normalized.label ? prev : { ...prev, [accountId]: normalized.label }));
+        // v4 pin migration: consumed at most once per account, on whichever
+        // read (successful or not — see below) lands first after load.
+        const pinnedWindowIds = pendingPinMigrationRef.current.has(accountId)
+          ? normalized.headlineWindowId
+            ? [normalized.headlineWindowId]
+            : []
+          : undefined;
+        pendingPinMigrationRef.current.delete(accountId);
         patch(accountId, {
           state: mapped.state,
           label: normalized.label,
@@ -185,10 +206,12 @@ export function useSubscriptions() {
           used: normalized.used,
           resetsAt: normalized.resetsAt,
           severity: normalized.severity,
+          headlineWindowId: normalized.headlineWindowId,
           lastReadAt: raw.fetched_at,
           reason: mapped.reason,
           needsSignIn: mapped.needsSignIn,
           rateLimitedUntil: null,
+          ...(pinnedWindowIds !== undefined ? { pinnedWindowIds } : {}),
         });
         return;
       }
@@ -292,8 +315,20 @@ export function useSubscriptions() {
     [refreshOne],
   );
 
-  const togglePin = useCallback((id: string) => {
-    setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s)));
+  // v4: pinning is per-window (design/NOTES.md §2) — `windowId` is either a
+  // specific window's own id (the per-window pin buttons) or the
+  // subscription's current headline window (the "…" menu's toggle, wired by
+  // the caller). A `null` windowId (no headline yet — nothing read) is a
+  // no-op, since there's nothing to pin.
+  const togglePin = useCallback((id: string, windowId: string | null) => {
+    if (windowId === null) return;
+    setSubscriptions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const has = s.pinnedWindowIds.includes(windowId);
+        return { ...s, pinnedWindowIds: has ? s.pinnedWindowIds.filter((w) => w !== windowId) : [...s.pinnedWindowIds, windowId] };
+      }),
+    );
   }, []);
 
   const renameSubscription = useCallback((id: string, label: string | null) => {
@@ -318,7 +353,7 @@ export function useSubscriptions() {
         if (existing) {
           return existing.pendingRemoval ? prev.map((s) => (s.id === account.id ? { ...s, pendingRemoval: false } : s)) : prev;
         }
-        return [...prev, initialSubscription(account, null, false, knownLabelsRef.current[account.id])];
+        return [...prev, initialSubscription(account, null, [], knownLabelsRef.current[account.id])];
       });
       // Brief §5.3 step 4: verify by reading once immediately, so the
       // person sees what came back rather than a cold placeholder.
@@ -455,9 +490,20 @@ export function useSubscriptions() {
     void (async () => {
       const tracked = await loadTracked();
       if (cancelled) return;
-      const loaded = tracked.map((t) =>
-        initialSubscription({ id: t.id, provider: t.provider, config_dir: t.config_dir }, t.label, t.pinned),
-      );
+      // v4 migration: a record still in the pre-v4 shape carries `pinned:
+      // boolean` instead of `pinnedWindowIds` — flag it for the one-shot
+      // migration in `applyRefreshResult` rather than guessing a window id
+      // here (see `pendingPinMigrationRef`'s own doc comment).
+      const migrating = new Set<string>();
+      const loaded = tracked.map((t) => {
+        const legacy = t as unknown as { pinnedWindowIds?: unknown; pinned?: unknown };
+        const pinnedWindowIds = Array.isArray(legacy.pinnedWindowIds) ? (legacy.pinnedWindowIds as string[]) : [];
+        if (!Array.isArray(legacy.pinnedWindowIds) && legacy.pinned === true) {
+          migrating.add(t.id);
+        }
+        return initialSubscription({ id: t.id, provider: t.provider, config_dir: t.config_dir }, t.label, pinnedWindowIds);
+      });
+      pendingPinMigrationRef.current = migrating;
       setSubscriptions(loaded);
       // What is already on disk *is* the last saved state — recording it here
       // keeps the save effect's first run from writing it straight back
@@ -549,17 +595,9 @@ export function useSubscriptions() {
   // account's digits from the menu bar the instant it is pressed rather than
   // when its undo window expires.
   useEffect(() => {
-    const pinned = trackedSubscriptions.filter(
-      (s): s is Subscription & { used: number } => s.pinned && typeof s.used === "number",
-    );
-    const anyStale = pinned.some((s) => s.state === "behind");
-    const segments: TraySegment[] = pinned.map((s): TraySegment => {
-      if (anyStale) return { text: `${s.used}%`, color: "amber" };
-      if (s.severity === "critical") return { text: `${s.used}%`, color: "red" };
-      if (s.severity === "warn") return { text: `${s.used}%`, color: "amber" };
-      return { text: `${s.used}%`, color: "neutral" };
-    });
-    setTrayStatus(segments);
+    const segments = buildTraySegments(trackedSubscriptions);
+    const worstUsedPercent = worstActiveLimitPercent(trackedSubscriptions);
+    setTrayStatus(segments, worstUsedPercent);
   }, [trackedSubscriptions]);
 
   /** R4-4: the name to show for an account the panel isn't currently

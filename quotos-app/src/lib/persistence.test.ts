@@ -16,7 +16,7 @@ const SAMPLE: TrackedAccount = {
   provider: "claude",
   config_dir: "~/.claude",
   label: "Renamed Personal",
-  pinned: true,
+  pinnedWindowIds: ["weekly_all"],
 };
 
 function setNative(): void {

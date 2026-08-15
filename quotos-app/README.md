@@ -68,3 +68,16 @@ v2's identity is what lets that migration run against the captain's real
 in-use data (his actual tracked accounts and custom names, already sitting in
 `Quotos 2`'s WKWebView storage) instead of booting empty. See the
 corresponding `AGENTS.md` sharp-edges entry before changing this.
+
+## Round-4 build ("v4")
+
+`tauri.v4.conf.json` follows the same pattern (`npx tauri build --config
+src-tauri/tauri.v4.conf.json`, `productName` "Quotos v4") but, unlike v3,
+**mints a fresh identifier** (`com.quotos.desktop.v4`) rather than reusing
+v2/v3's — this round's own changes (per-window pinning) don't need the
+captain's real in-use data to verify against, and a fresh identity keeps a
+throwaway verification build's own tracked-account list from ever touching
+his real one. `productName`'s "v4" only ever reaches the bundle's own
+filename/`CFBundleName` — the panel title, tray tooltip, and every in-app
+string are hardcoded `"Quotos"` regardless of which config built the app; no
+version text is meant to reach the UI itself.

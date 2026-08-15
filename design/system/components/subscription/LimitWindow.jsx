@@ -21,11 +21,55 @@ function numberColor(used) {
   return "var(--text-primary)";
 }
 
-export function LimitWindow({ name, used = null, resetLabel = null, scope = null, stale = false, style }) {
+// v4 design/NOTES.md §2/§4: each window gets its own leading pin button —
+// same 12x12-in-20x20 glyph/button the row header used to show only when
+// pinned, now always present so nothing appears or shifts on hover (the
+// existing SubscriptionRow rule). Filled (teal) = in the menu bar; ghost
+// (quaternary) = not. Matches the row header's own PinGlyph exactly — kept
+// local here (not imported) since these two files have no shared module of
+// their own and each is a design-system leaf.
+const PinGlyph = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
+  </svg>
+);
+
+export function LimitWindow({
+  id,
+  name,
+  used = null,
+  resetLabel = null,
+  scope = null,
+  stale = false,
+  pinned = false,
+  onTogglePin,
+  style,
+}) {
   const hasPct = typeof used === "number";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", padding: "var(--space-1-5) 0", ...style }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1-5)" }}>
+        <button
+          type="button"
+          title={pinned ? "Remove from menu bar" : "Show in menu bar"}
+          aria-label={pinned ? "Remove from menu bar" : "Show in menu bar"}
+          aria-pressed={pinned}
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin?.(id);
+          }}
+          style={{
+            flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 20, height: 20, padding: 0, border: 0,
+            borderRadius: "var(--radius-xs)",
+            background: pinned ? "var(--bg-selected)" : "transparent",
+            color: pinned ? "var(--text-accent)" : "var(--text-quaternary)",
+            cursor: "pointer",
+          }}
+        >
+          <PinGlyph />
+        </button>
         <span style={{
           flex: 1,
           minWidth: 0,
@@ -53,7 +97,7 @@ export function LimitWindow({ name, used = null, resetLabel = null, scope = null
       </div>
       {hasPct ? <CapacityBar used={used} stale={stale} height="3px" /> : null}
       {resetLabel ? (
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)" }}>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)", paddingLeft: 26 }}>
           {resetLabel}
         </span>
       ) : null}

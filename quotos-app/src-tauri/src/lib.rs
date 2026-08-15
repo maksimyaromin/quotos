@@ -74,6 +74,14 @@ struct AppState {
     /// rather than needing the frontend to resend them on every visibility
     /// change.
     last_tray_segments: Mutex<Vec<TraySegmentDto>>,
+    /// v4: the glyph's own arc fill last set by `set_tray_status` (0-100) —
+    /// the worst active limit across everything tracked, design/NOTES.md
+    /// §1. Cached the same way `last_tray_segments` is, for the same reason:
+    /// `repaint_tray_icon` is the one place that actually redraws, and it's
+    /// called from both `set_tray_status` (frontend data) and
+    /// `set_tray_highlighted` (native visibility), neither of which knows
+    /// the other's current value.
+    last_tray_worst_used_percent: Mutex<u8>,
     /// The layout the window is *supposed* to be at right now, while docked
     /// and visible (global points — see `DisplayPoints`) — `None` whenever
     /// it's hidden or detached (dragging must never fight this). A safety
@@ -385,14 +393,19 @@ fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {
 struct TraySegmentDto {
     text: String,
     color: String, // "neutral" | "amber" | "red"
+    /// v4: see `tray_render::TraySegment::group_start`.
+    group_start: bool,
 }
 
 /// Sets what's shown beside the tray glyph — the pinned-subscriptions
 /// feature (R2-2). Empty `segments` clears it back to just the plain,
 /// theme-tinted glyph (unless the panel is currently open — see
-/// `repaint_tray_icon`, A11).
+/// `repaint_tray_icon`, A11). v4: `worst_used_percent` (0-100) is the bare
+/// glyph's own arc fill — design/NOTES.md §1's "worst active limit across
+/// everything tracked", sent on every call regardless of `segments` so the
+/// arc stays current whether or not anything is pinned.
 #[tauri::command]
-fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Result<(), String> {
+fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>, worst_used_percent: u8) -> Result<(), String> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
     };
@@ -407,10 +420,12 @@ fn set_tray_status(app: tauri::AppHandle, segments: Vec<TraySegmentDto>) -> Resu
         // `schedule_resync_after_icon_change`, which moves the open panel.
         let state = app.state::<AppState>();
         let mut last = state.last_tray_segments.lock().expect("last_tray_segments mutex poisoned");
-        if *last == segments {
+        let mut last_worst = state.last_tray_worst_used_percent.lock().expect("last_tray_worst_used_percent mutex poisoned");
+        if *last == segments && *last_worst == worst_used_percent {
             return Ok(());
         }
         *last = segments;
+        *last_worst = worst_used_percent;
     }
     repaint_tray_icon(&app, &tray)
 }
@@ -451,6 +466,7 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
     let state = app.state::<AppState>();
     let segments = state.last_tray_segments.lock().expect("last_tray_segments mutex poisoned").clone();
     let highlighted = *state.tray_highlighted.lock().expect("tray_highlighted mutex poisoned");
+    let worst_used_percent = *state.last_tray_worst_used_percent.lock().expect("last_tray_worst_used_percent mutex poisoned");
 
     tray.set_title(Some("")).map_err(|e| e.to_string())?;
 
@@ -466,7 +482,7 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
     tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
 
     let icon_width_px = if segments.is_empty() && !highlighted {
-        let (rgba, w, h) = tray_render::plain_glyph_rgba();
+        let (rgba, w, h) = tray_render::plain_glyph_rgba(worst_used_percent);
         tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
         tray.set_icon_as_template(true).map_err(|e| e.to_string())?;
         w
@@ -480,9 +496,10 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
                     "red" => tray_render::TrayColor::Red,
                     _ => tray_render::TrayColor::Neutral,
                 },
+                group_start: s.group_start,
             })
             .collect();
-        let (rgba, w, h) = tray_render::render(&segs, highlighted);
+        let (rgba, w, h) = tray_render::render(&segs, highlighted, worst_used_percent);
         tray.set_icon(Some(Image::new_owned(rgba, w, h))).map_err(|e| e.to_string())?;
         tray.set_icon_as_template(false).map_err(|e| e.to_string())?;
         w
@@ -1715,7 +1732,7 @@ pub fn run() {
             // exact same width as the icon the builder below actually sets —
             // both reuse this one `(rgba, w, h)` rather than each calling
             // `plain_glyph_rgba()` separately and risking the two drifting.
-            let (initial_rgba, initial_w, initial_h) = tray_render::plain_glyph_rgba();
+            let (initial_rgba, initial_w, initial_h) = tray_render::plain_glyph_rgba(0);
             app.manage(AppState {
                 http: reqwest::Client::builder()
                     .timeout(Duration::from_secs(10))
@@ -1732,6 +1749,7 @@ pub fn run() {
                 last_icon_width_px: Mutex::new(initial_w),
                 tray_highlighted: Mutex::new(false),
                 last_tray_segments: Mutex::new(Vec::new()),
+                last_tray_worst_used_percent: Mutex::new(0),
                 docked_target: Mutex::new(None),
                 move_generation: Mutex::new(0),
                 last_known_position: Mutex::new((0.0, 0.0)),
@@ -2010,12 +2028,13 @@ mod glyph_offset_tests {
     // 18pt in from its own left edge, not the old hardcoded 15pt.
     #[test]
     fn bare_glyph_offset_matches_the_measured_item_center() {
-        // R3-11: the composited image is the 18pt glyph plus 6pt of padding
-        // per side (see tray_render's SIDE_PAD_PX) = 30pt, inside an item
-        // NSStatusItem makes 8pt wider still on each side. The glyph stays
-        // centred in that image, so its centre remains the item's own centre.
+        // R3-11/v4: the composited image is the 18pt glyph plus padding per
+        // side (see tray_render's SIDE_PAD_PX — 5pt as of v4, was 6pt),
+        // inside an item NSStatusItem makes 8pt wider still on each side.
+        // The glyph stays centred in that image, so its centre remains the
+        // item's own centre.
         let offset = glyph_center_offset_from_item_left_points(Some(46.0), 60.0);
-        assert!((offset - 23.0).abs() < 0.01, "expected ~23pt offset, got {offset}pt");
+        assert!((offset - 22.0).abs() < 0.01, "expected ~22pt offset, got {offset}pt");
     }
 
     // A wider (pinned-digits) image still centers correctly as long as the
@@ -2033,7 +2052,7 @@ mod glyph_offset_tests {
         // measurements — right edge held fixed), so the glyph's offset from
         // the item's own *current* left edge is unchanged even though the
         // item itself is much wider now.
-        assert!((offset - 23.0).abs() < 0.01, "expected ~23pt offset, got {offset}pt");
+        assert!((offset - 22.0).abs() < 0.01, "expected ~22pt offset, got {offset}pt");
     }
 
     // R3-7: the offset is a property of the tray item and its own composited
@@ -2053,7 +2072,7 @@ mod glyph_offset_tests {
         // No margin data available: the image's own known padding plus half
         // the glyph's width is the best available answer, not a crash or a
         // wildly wrong guess.
-        assert!((offset - 15.0).abs() < 0.01, "got {offset}");
+        assert!((offset - 14.0).abs() < 0.01, "got {offset}");
     }
 }
 

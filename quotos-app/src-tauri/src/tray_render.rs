@@ -35,26 +35,57 @@ use std::process::Command;
 /// keeps the composited bitmap crisp on Retina (matches the design system's
 /// own "18x18 CSS-px, 36x36 @2x" spec for the glyph).
 const GLYPH_PX: u32 = 36;
-const GAP_PX: u32 = 10; // 5pt gap between glyph and digits, at 2x
+/// v4 design/NOTES.md §1's measurement table (ink-to-ink, at 12px MonoLisa —
+/// see `verification.md` for how this Rust renderer's own output was
+/// measured against it). All of the constants below are CSS-px values
+/// doubled for this buffer's fixed 2x-of-18pt convention (matches `GLYPH_PX`
+/// itself). R3-11's rationale for *some* side air is unchanged (below); v4
+/// changed the number from 6 to 5 CSS-px, matching the handoff's "5px of air
+/// inside the pill at each end".
+const SIDE_PAD_PX: u32 = 10; // 5 CSS-px air each end
 /// R3-11: horizontal air on each side of the glyph+digits, inside the
 /// composited image. Two things need it, and one of them is not optional:
 ///
 /// * A11's "panel open" highlight is painted across this whole buffer, so
 ///   without padding it hugs the ink and reads as a box drawn round the glyph
-///   rather than as a pressed menu bar button. The handoff gives the button
-///   6px of padding; macOS fills the status item's own width for its own open
-///   items. Firstmate's on-screen pass: *"no horizontal air"*.
+///   rather than as a pressed menu bar button. macOS fills the status item's
+///   own width for its own open items. Firstmate's on-screen pass: *"no
+///   horizontal air"*.
 /// * It is applied **unconditionally**, highlighted or not, so the glyph's
 ///   position inside the item cannot shift when the highlight toggles — a
 ///   shift there would move the beak, which is exactly the drift the captain
 ///   spent a whole round reporting.
 ///
-/// 6 CSS-px per side, at this buffer's 2x convention. `lib.rs`'s
-/// `glyph_center_offset_from_item_left_points` reads `GLYPH_LEFT_INSET_POINTS`
-/// rather than assuming the glyph is the image's leftmost 18pt.
-const SIDE_PAD_PX: u32 = 12;
+/// `lib.rs`'s `glyph_center_offset_from_item_left_points` reads
+/// `GLYPH_LEFT_INSET_POINTS` rather than assuming the glyph is the image's
+/// leftmost 18pt.
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
-const SEGMENT_GAP_PX: u32 = 8; // 4pt gap between separately-pinned segments, at 2x
+/// Structural gap from the glyph's own bbox to the first figure cell's own
+/// bbox — tuned against a real on-device capture (see `verification.md`) so
+/// the *ink-to-ink* distance (the glyph's own ink margin plus this gap plus
+/// the first digit's own centring margin) lands near the table's 6px; an
+/// initial guess of 6 physical px measured 8 CSS-px ink-to-ink live, so this
+/// is 2 less.
+const GLYPH_TO_CELL_GAP_PX: u32 = 2;
+/// **The cell reserve — never resize this per digit count.** Fixed 30 CSS-px
+/// width per pinned figure, text centred inside it, regardless of whether
+/// the figure reads one digit or three: this is what keeps the status item's
+/// own width (and therefore the beak's position, and every other digit's
+/// position) from moving on a value change (§5 "things not to undo";
+/// `every_bare_glyph_path_produces_the_same_image_width` guards the
+/// zero-segment case this reserve is the general form of). Consecutive
+/// figures inside one group sit in adjacent cells with no additional gap —
+/// the visible ~8px ink-to-ink gap between them falls out of each cell's own
+/// centring margin, not a separate constant.
+const CELL_WIDTH_PX: u32 = 60; // 30 CSS-px
+/// Between two adjacent-cell groups: gutter, hairline, gutter — 5 + 1 + 5
+/// CSS-px, matching the table's "19px across an 11px hairline" once each
+/// side's own cell-centring margin is added on top of this 11px gutter.
+const GROUP_GUTTER_PRE_PX: u32 = 10; // 5 CSS-px
+const HAIRLINE_WIDTH_PX: u32 = 2; // 1 CSS-px thick
+const GROUP_GUTTER_POST_PX: u32 = 10; // 5 CSS-px
+/// The hairline's own drawn length — 11 CSS-px tall, centred in the row.
+const HAIRLINE_HEIGHT_PX: u32 = 22;
 
 /// The design system specifies 12 CSS-px digits; this buffer is rendered at
 /// 2x for Retina throughout (see `GLYPH_PX`), so the actual CoreText point
@@ -86,6 +117,11 @@ impl TrayColor {
 pub struct TraySegment {
     pub text: String,
     pub color: TrayColor,
+    /// v4 design/NOTES.md §1/§4: true for the first segment of a new
+    /// subscription's group — `render` draws the hairline immediately before
+    /// any segment with this set (never before the very first segment
+    /// overall, even if the frontend happened to set it there).
+    pub group_start: bool,
 }
 
 /// Per-pixel alpha coverage (0-255, row-major, `canvas_px` square) for the
@@ -112,14 +148,45 @@ pub struct TraySegment {
 /// module's plain math (y-down, 0 = +x axis) convention, which already
 /// matches the SVG's own y-down convention with no flip needed since this
 /// buffer is top-left-origin throughout (`blend_pixel`, the text module, etc).
-fn glyph_coverage(canvas_px: u32) -> Vec<u8> {
+///
+/// v4 design/NOTES.md §3 corrected the mark: what shipped read as an O (a
+/// ring with a gap, but no stroke through it) because a Q is "a counter with
+/// a stroke through it, and the stroke was missing." Three changes from the
+/// pre-v4 shape, cross-checked against `design/assets/tray-glyph-*.svg`
+/// (the two gap-endpoint angles reproduce that SVG's own arc-cap coordinates
+/// to 2 decimal places, and the tail's start/end points are exact):
+///  - The gap moved from 82.75° centred at 90° (bottom) to 62° centred at
+///    45° (lower-right) — where the tail (below) now sits.
+///  - A second capsule — the tail, `r` 3.2→8.0 along that same 45° diagonal,
+///    same stroke weight as the arc, round caps — is drawn unconditionally
+///    (even at 0% used: "Empty quota, empty letter", the tail is what reads
+///    as a Q rather than an O regardless of fill state). Its own reach at
+///    45° (outer radius + half-stroke, projected onto either axis) stays
+///    just inside the ring's own axis-aligned reach, so it needed no change
+///    to `natural_outer_diameter`/`scale` below.
+///  - The arc's own end angle is now data (`used_fraction`, 0.0-1.0 —
+///    clamped) instead of an implicit constant 100%: it starts right where
+///    the gap ends (`ARC_GAP_HIGH_RAD`) and sweeps forward by
+///    `used_fraction` of the maximum possible sweep (`TAU` minus the gap's
+///    own width, "298/360" in the handoff's degrees) — landing exactly on
+///    the gap's other edge at 100%, same as the old always-full arc did.
+fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     const TRACK_RADIUS_SVG: f64 = 5.4;
     const TRACK_STROKE_SVG: f64 = 1.4;
-    const TRACK_OPACITY: f64 = 0.28;
+    const TRACK_OPACITY: f64 = 0.26;
     const ARC_RADIUS_SVG: f64 = 5.4;
     const ARC_STROKE_SVG: f64 = 1.9;
-    const ARC_GAP_LOW_RAD: f64 = 0.8488; // ~48.6°
-    const ARC_GAP_HIGH_RAD: f64 = 2.2928; // ~131.4°
+    // Gap: 62° centred on 45° (design/NOTES.md §3) — 45° ± 31°.
+    const GAP_CENTER_RAD: f64 = std::f64::consts::FRAC_PI_4;
+    const GAP_HALF_WIDTH_RAD: f64 = 31.0 * std::f64::consts::PI / 180.0;
+    const ARC_GAP_LOW_RAD: f64 = GAP_CENTER_RAD - GAP_HALF_WIDTH_RAD; // ~14°
+    const ARC_GAP_HIGH_RAD: f64 = GAP_CENTER_RAD + GAP_HALF_WIDTH_RAD; // ~76°
+    // The tail: same diagonal as the gap's own centre, r 3.2 → 8.0, same
+    // stroke weight as the arc.
+    const TAIL_ANGLE_RAD: f64 = GAP_CENTER_RAD;
+    const TAIL_R_INNER_SVG: f64 = 3.2;
+    const TAIL_R_OUTER_SVG: f64 = 8.0;
+    const TAIL_STROKE_SVG: f64 = ARC_STROKE_SVG;
     // Middle of the 14-16pt ink band firstmate's neighbour comparison calls
     // for, measured as the bold arc's own outer edge (its dominant visible
     // silhouette) on the 18 CSS-px canvas.
@@ -135,9 +202,19 @@ fn glyph_coverage(canvas_px: u32) -> Vec<u8> {
     let scale = (TARGET_INK_DIAMETER_CSS_PX * px_per_css_px) / natural_outer_diameter;
     let center = canvas_px as f64 / 2.0;
 
+    let gap_width = ARC_GAP_HIGH_RAD - ARC_GAP_LOW_RAD;
+    let max_sweep = std::f64::consts::TAU - gap_width; // "full sweep 298/360"
+    let sweep = used_fraction.clamp(0.0, 1.0) * max_sweep;
+    let arc_start = ARC_GAP_HIGH_RAD;
+
     let cap_point = |a: f64| (ARC_RADIUS_SVG * a.cos(), ARC_RADIUS_SVG * a.sin());
-    let (cap_lo_x, cap_lo_y) = cap_point(ARC_GAP_LOW_RAD);
-    let (cap_hi_x, cap_hi_y) = cap_point(ARC_GAP_HIGH_RAD);
+    let (cap_start_x, cap_start_y) = cap_point(arc_start);
+    let (cap_end_x, cap_end_y) = cap_point(arc_start + sweep);
+
+    let (tail_x1, tail_y1) = (TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.cos(), TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.sin());
+    let (tail_x2, tail_y2) = (TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.cos(), TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.sin());
+    let (tail_dx, tail_dy) = (tail_x2 - tail_x1, tail_y2 - tail_y1);
+    let tail_len_sq = tail_dx * tail_dx + tail_dy * tail_dy;
 
     let mut cov = vec![0u8; (canvas_px * canvas_px) as usize];
     for y in 0..canvas_px {
@@ -154,21 +231,39 @@ fn glyph_coverage(canvas_px: u32) -> Vec<u8> {
             let track_edge = (dist - TRACK_RADIUS_SVG).abs() - TRACK_STROKE_SVG / 2.0;
             let track_cov = (1.0 - (track_edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0) * TRACK_OPACITY;
 
-            let in_gap = angle > ARC_GAP_LOW_RAD && angle < ARC_GAP_HIGH_RAD;
-            let arc_cov = if !in_gap {
+            // Where along the swept arc this pixel's angle falls, measured
+            // forward from `arc_start` (0..TAU). The un-swept remainder of
+            // the fixed 62° gap band falls out of this automatically: it's
+            // exactly the tail end of this range, from `sweep` to `max_sweep`.
+            let mut angle_rel = angle - arc_start;
+            if angle_rel < 0.0 {
+                angle_rel += std::f64::consts::TAU;
+            }
+            let arc_cov = if sweep <= 0.0 {
+                0.0
+            } else if angle_rel <= sweep {
                 let edge = (dist - ARC_RADIUS_SVG).abs() - ARC_STROKE_SVG / 2.0;
                 (1.0 - (edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
             } else {
-                // Round caps: whichever gap endpoint is angularly nearer,
-                // tested as a plain 2D distance so the cap is a true
-                // half-circle, not just an angular cutoff.
-                let d_lo = ((ux - cap_lo_x).powi(2) + (uy - cap_lo_y).powi(2)).sqrt();
-                let d_hi = ((ux - cap_hi_x).powi(2) + (uy - cap_hi_y).powi(2)).sqrt();
-                let d = d_lo.min(d_hi);
+                // Round caps at the two ends of the *current* sweep (not the
+                // gap's own fixed edges, since the sweep is data now):
+                // whichever endpoint is nearer, tested as a plain 2D
+                // distance so the cap is a true half-circle.
+                let d_start = ((ux - cap_start_x).powi(2) + (uy - cap_start_y).powi(2)).sqrt();
+                let d_end = ((ux - cap_end_x).powi(2) + (uy - cap_end_y).powi(2)).sqrt();
+                let d = d_start.min(d_end);
                 (1.0 - ((d - ARC_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
             };
 
-            let coverage = track_cov.max(arc_cov);
+            // The tail: a straight capsule (point-to-segment distance),
+            // always drawn regardless of `used_fraction` — "empty quota,
+            // empty letter".
+            let t = (((ux - tail_x1) * tail_dx + (uy - tail_y1) * tail_dy) / tail_len_sq).clamp(0.0, 1.0);
+            let (cx, cy) = (tail_x1 + t * tail_dx, tail_y1 + t * tail_dy);
+            let tail_dist = ((ux - cx).powi(2) + (uy - cy).powi(2)).sqrt();
+            let tail_cov = (1.0 - ((tail_dist - TAIL_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0);
+
+            let coverage = track_cov.max(arc_cov).max(tail_cov);
             if coverage <= 0.0 {
                 continue;
             }
@@ -264,6 +359,27 @@ fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
             }
             let alpha = ((rgba.3 as f64) * coverage).round().clamp(0.0, 255.0) as u8;
             blend_pixel(buf, w, h, x, y, (rgba.0, rgba.1, rgba.2, alpha));
+        }
+    }
+}
+
+/// v4 design/NOTES.md §1: the vertical rule that parts two pinned
+/// subscriptions' figure groups — "11px hairline at white 34%", drawn at
+/// `HAIRLINE_WIDTH_PX` wide and `HAIRLINE_HEIGHT_PX` tall, centred in the
+/// row. Only the dark-appearance value is in the handoff; the light value
+/// mirrors `draw_highlight_background`'s own light-below-dark pattern (a
+/// black line reads at a slightly lower opacity than an equally-weighted
+/// white one) rather than inventing an unrelated number.
+fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
+    let rgba = if dark {
+        (0xffu8, 0xffu8, 0xffu8, (0.34f64 * 255.0).round() as u8)
+    } else {
+        (0x00u8, 0x00u8, 0x00u8, (0.28f64 * 255.0).round() as u8)
+    };
+    let top = h.saturating_sub(HAIRLINE_HEIGHT_PX) / 2;
+    for y in top..(top + HAIRLINE_HEIGHT_PX).min(h) {
+        for x in x0..(x0 + HAIRLINE_WIDTH_PX).min(w) {
+            blend_pixel(buf, w, h, x, y, rgba);
         }
     }
 }
@@ -673,19 +789,35 @@ pub fn used_fallback_font() -> bool {
 /// glyph as a non-template colored image whenever `highlighted` is true
 /// (a plain template image can't carry a background tint of its own — see
 /// `lib.rs`'s `repaint_tray_icon` for why that case routes here rather than
-/// through `plain_glyph_rgba`'s template path at all).
-pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32) {
+/// through `plain_glyph_rgba`'s template path at all). `worst_used_percent`
+/// (0-100) is the glyph's own arc fill — v4 design/NOTES.md §1: "filled to
+/// your worst active limit across everything tracked" — drawn regardless of
+/// whether `segments` is empty; the glyph's own colour never changes with it
+/// (`glyph_coverage`'s ink is composited through `TrayColor::Neutral` alone,
+/// same as before).
+///
+/// v4 §1/§4: each segment gets a fixed `CELL_WIDTH_PX` reserve (never the
+/// raw text width — `text::measure` is only used to *centre* text inside
+/// that reserve, not to size the layout), and `TraySegment::group_start`
+/// segments get a hairline gutter drawn immediately before them.
+pub fn render(segments: &[TraySegment], highlighted: bool, worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
     let dark = is_dark_mode();
-    let coverage = glyph_coverage(GLYPH_PX);
+    let used_fraction = worst_used_percent as f64 / 100.0;
+    let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     let font = text::load_font(text_font_size_pt());
 
     let widths: Vec<u32> = segments.iter().map(|s| text::measure(&font, &s.text)).collect();
-    let text_total: u32 = if segments.is_empty() {
+    // A `group_start` flag on the very first segment means nothing — there is
+    // no prior group to part from — so it's excluded here the same way the
+    // draw loop below excludes it.
+    let boundaries = segments.iter().skip(1).filter(|s| s.group_start).count() as u32;
+    let gutter_px = GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
+    let text_area = if segments.is_empty() {
         0
     } else {
-        widths.iter().sum::<u32>() + (segments.len() as u32 - 1) * SEGMENT_GAP_PX
+        GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX * segments.len() as u32 + boundaries * gutter_px
     };
-    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + if text_total > 0 { GAP_PX + text_total } else { 0 };
+    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + text_area;
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
 
@@ -707,10 +839,16 @@ pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32
         }
     }
 
-    let mut x = SIDE_PAD_PX + GLYPH_PX + GAP_PX;
-    for (seg, w) in segments.iter().zip(widths.iter()) {
-        text::draw_text(&mut buf, total_w, total_h, x, &font, &seg.text, seg.color.rgba(dark));
-        x += w + SEGMENT_GAP_PX;
+    let mut x = SIDE_PAD_PX + GLYPH_PX + GLYPH_TO_CELL_GAP_PX;
+    for (i, (seg, w)) in segments.iter().zip(widths.iter()).enumerate() {
+        if seg.group_start && i > 0 {
+            x += GROUP_GUTTER_PRE_PX;
+            draw_hairline(&mut buf, total_w, total_h, x, dark);
+            x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
+        }
+        let text_x = x + CELL_WIDTH_PX.saturating_sub(*w) / 2;
+        text::draw_text(&mut buf, total_w, total_h, text_x, &font, &seg.text, seg.color.rgba(dark));
+        x += CELL_WIDTH_PX;
     }
 
     (buf, total_w, total_h)
@@ -724,9 +862,12 @@ pub fn render(segments: &[TraySegment], highlighted: bool) -> (Vec<u8>, u32, u32
 /// separate, equally-blurry path from `render()`'s own former upscaling;
 /// see `glyph_coverage`'s doc comment). White RGB + alpha, matching a
 /// template image's convention (macOS tints template images itself from
-/// alpha alone, per-appearance).
-pub fn plain_glyph_rgba() -> (Vec<u8>, u32, u32) {
-    let coverage = glyph_coverage(GLYPH_PX);
+/// alpha alone, per-appearance). `worst_used_percent`: see `render`'s doc
+/// comment — the empty state is still the glyph alone, its arc filled to
+/// this value (v4 design/NOTES.md §1's empty-state rule).
+pub fn plain_glyph_rgba(worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
+    let used_fraction = worst_used_percent as f64 / 100.0;
+    let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     // Padded identically to `render`'s output (see `SIDE_PAD_PX`): the two
     // paths swap places whenever the panel opens or a pin changes, and an
     // image width that changed between them would move the glyph — and with
@@ -750,10 +891,39 @@ pub fn plain_glyph_rgba() -> (Vec<u8>, u32, u32) {
 mod tests {
     use super::*;
 
+    /// `TraySegment` literal helper — `group_start` defaults to false, which
+    /// is what every pre-v4 test below wants (a single group).
+    fn seg(text: &str, color: TrayColor) -> TraySegment {
+        TraySegment { text: text.into(), color, group_start: false }
+    }
+
     #[test]
     fn glyph_has_some_ink() {
-        let cov = glyph_coverage(GLYPH_PX);
+        let cov = glyph_coverage(GLYPH_PX, 0.5);
         assert!(cov.iter().any(|&a| a > 0), "glyph must have some opaque pixels");
+    }
+
+    // v4 design/NOTES.md §3: the tail must render even at 0% used ("empty
+    // quota, empty letter") — a Q, never an O, regardless of fill state.
+    #[test]
+    fn the_tail_renders_even_at_zero_percent_used() {
+        let cov = glyph_coverage(GLYPH_PX, 0.0);
+        assert!(cov.iter().any(|&a| a > 0), "the tail (and track) must still draw at 0% used");
+    }
+
+    // v4: the arc's own end angle comes from data. 0% used draws no arc ink
+    // at all beyond the tail/track (no stray dot at the gap edge); 100%
+    // draws substantially more ink than a low percentage, since the swept
+    // arc is now most of the ring instead of nothing.
+    #[test]
+    fn arc_sweep_grows_with_used_fraction() {
+        let empty = glyph_coverage(GLYPH_PX, 0.0);
+        let full = glyph_coverage(GLYPH_PX, 1.0);
+        let count_ink = |cov: &[u8]| cov.iter().filter(|&&a| a > 32).count();
+        assert!(
+            count_ink(&full) > count_ink(&empty) + 50,
+            "a fully-used arc should paint substantially more ink than an empty one"
+        );
     }
 
     /// Round-3 regression guard for firstmate's exact finding
@@ -768,7 +938,9 @@ mod tests {
     /// principle push the real ink bounds off from what was intended.
     #[test]
     fn glyph_ink_bounding_box_is_in_the_target_band() {
-        let cov = glyph_coverage(GLYPH_PX);
+        // Full sweep (100%) exercises the arc/tail's maximum reach — the
+        // relevant case for this bound, since the track alone is smaller.
+        let cov = glyph_coverage(GLYPH_PX, 1.0);
         let mut min_x = GLYPH_PX;
         let mut max_x = 0i64;
         let mut min_y = GLYPH_PX;
@@ -794,7 +966,7 @@ mod tests {
 
     #[test]
     fn render_with_no_segments_is_the_glyph_square_plus_its_side_padding() {
-        let (buf, w, h) = render(&[], false);
+        let (buf, w, h) = render(&[], false, 0);
         assert_eq!((w, h), (SIDE_PAD_PX * 2 + GLYPH_PX, GLYPH_PX));
         assert_eq!(buf.len(), (w * h * 4) as usize);
     }
@@ -806,8 +978,16 @@ mod tests {
     // this whole round exists to stop.
     #[test]
     fn every_bare_glyph_path_produces_the_same_image_width() {
-        assert_eq!(plain_glyph_rgba().1, render(&[], false).1);
-        assert_eq!(plain_glyph_rgba().1, render(&[], true).1);
+        assert_eq!(plain_glyph_rgba(50).1, render(&[], false, 50).1);
+        assert_eq!(plain_glyph_rgba(50).1, render(&[], true, 50).1);
+    }
+
+    // v4: the glyph's own arc fill must never affect image width either —
+    // only the *segments* do. Same drift class as the test above.
+    #[test]
+    fn worst_used_percent_never_changes_the_bare_glyph_width() {
+        assert_eq!(plain_glyph_rgba(0).1, plain_glyph_rgba(100).1);
+        assert_eq!(render(&[], false, 0).1, render(&[], false, 100).1);
     }
 
     // The highlight has to reach the image's own edges — that is what gives it
@@ -815,31 +995,42 @@ mod tests {
     // rather than a box drawn tightly round the glyph.
     #[test]
     fn the_highlight_reaches_into_the_side_padding_where_the_glyph_never_draws() {
-        let (buf, w, h) = render(&[], true);
+        let (buf, w, h) = render(&[], true, 0);
         let mid_row = h / 2;
         let alpha_at = |x: u32| buf[(((mid_row * w) + x) * 4 + 3) as usize];
         assert!(alpha_at(2) > 0, "highlight must cover the left padding");
         assert!(alpha_at(w - 3) > 0, "highlight must cover the right padding");
-        let (bare, _, _) = render(&[], false);
+        let (bare, _, _) = render(&[], false, 0);
         assert_eq!(bare[(((mid_row * w) + 2) * 4 + 3) as usize], 0, "unhighlighted padding stays fully transparent");
     }
 
     #[test]
     fn render_grows_width_per_segment_and_never_touches_height() {
-        let one = render(&[TraySegment { text: "2%".into(), color: TrayColor::Neutral }], false);
-        let two = render(&[
-            TraySegment { text: "2%".into(), color: TrayColor::Neutral },
-            TraySegment { text: "78%".into(), color: TrayColor::Amber },
-        ], false);
+        let one = render(&[seg("2%", TrayColor::Neutral)], false, 0);
+        let two = render(&[seg("2%", TrayColor::Neutral), seg("78%", TrayColor::Amber)], false, 0);
         assert!(one.1 > GLYPH_PX, "adding a segment must widen the image beyond the bare glyph");
         assert!(two.1 > one.1, "a second segment must widen it further");
         assert_eq!(one.2, GLYPH_PX);
         assert_eq!(two.2, GLYPH_PX);
     }
 
+    // v4 §1/§5: "the cell reserve is the important part" — the status item
+    // must be the same width whether a figure reads one digit or three,
+    // because `compute_docked_layout` derives the beak's position from the
+    // glyph's own (unrelated) position, but *other* digits sliding around
+    // next to it is exactly the "reflow on a value change" bug §5 forbids.
+    #[test]
+    fn a_single_figures_width_never_changes_with_its_own_digit_count() {
+        let one_digit = render(&[seg("9%", TrayColor::Neutral)], false, 0);
+        let two_digit = render(&[seg("42%", TrayColor::Neutral)], false, 0);
+        let three_digit = render(&[seg("100%", TrayColor::Neutral)], false, 0);
+        assert_eq!(one_digit.1, two_digit.1, "1 vs 2 digits must reserve the same cell width");
+        assert_eq!(two_digit.1, three_digit.1, "2 vs 3 digits must reserve the same cell width");
+    }
+
     #[test]
     fn a_digit_and_percent_segment_renders_some_exact_colored_pixels() {
-        let (buf, w, h) = render(&[TraySegment { text: "78%".into(), color: TrayColor::Red }], false);
+        let (buf, w, h) = render(&[seg("78%", TrayColor::Red)], false, 0);
         let red = TrayColor::Red.rgba(true);
         let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(found, "expected at least one pixel painted in the red channel across a {w}x{h} buffer");
@@ -850,10 +1041,38 @@ mod tests {
         // '!' is very likely dead in practice (CLAUDE.md: a broken pin
         // contributes no segment at all now), but should still render
         // correctly rather than being special-cased away.
-        let (buf, w, h) = render(&[TraySegment { text: "!".into(), color: TrayColor::Red }], false);
+        let (buf, w, h) = render(&[seg("!", TrayColor::Red)], false, 0);
         let red = TrayColor::Red.rgba(true);
         let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(found, "expected at least one pixel painted in the red channel across a {w}x{h} buffer");
+    }
+
+    // v4: a `group_start` segment draws its hairline gutter, widening the
+    // image further than an equivalent same-group segment would.
+    #[test]
+    fn a_group_start_segment_widens_the_image_by_the_hairline_gutter() {
+        let same_group = render(&[seg("9%", TrayColor::Neutral), seg("9%", TrayColor::Neutral)], false, 0);
+        let mut second_group = seg("9%", TrayColor::Neutral);
+        second_group.group_start = true;
+        let two_groups = render(&[seg("9%", TrayColor::Neutral), second_group], false, 0);
+        assert_eq!(
+            two_groups.1 - same_group.1,
+            GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX,
+            "a group boundary must add exactly the gutter+hairline width"
+        );
+    }
+
+    // v4: `group_start` on the very first segment (no prior group to part
+    // from) must never draw a hairline before it — the frontend's own
+    // `buildTraySegments` never sets it there, but the Rust layer shouldn't
+    // rely on that alone.
+    #[test]
+    fn a_group_start_first_segment_draws_no_leading_hairline() {
+        let mut first = seg("9%", TrayColor::Neutral);
+        first.group_start = true;
+        let with_flag = render(&[first], false, 0);
+        let without_flag = render(&[seg("9%", TrayColor::Neutral)], false, 0);
+        assert_eq!(with_flag.1, without_flag.1, "group_start on the first segment must not add a gutter");
     }
 
     #[test]
@@ -874,8 +1093,8 @@ mod tests {
         // calls this "tabular-nums"). MonoLisa is monospace already, and the
         // system fallback font is requested via
         // `monospacedDigitSystemFontOfSize:weight:`, which guarantees this.
-        let one = render(&[TraySegment { text: "1".into(), color: TrayColor::Red }], false);
-        let eight = render(&[TraySegment { text: "8".into(), color: TrayColor::Red }], false);
+        let one = render(&[seg("1", TrayColor::Red)], false, 0);
+        let eight = render(&[seg("8", TrayColor::Red)], false, 0);
         assert_eq!(one.1, eight.1, "'1' and '8' must render at the same width (tabular figures)");
     }
 
@@ -891,7 +1110,7 @@ mod tests {
 
     #[test]
     fn highlighted_bare_glyph_paints_translucent_pixels_behind_the_ink() {
-        let (buf, w, h) = render(&[], true);
+        let (buf, w, h) = render(&[], true, 0);
         // The very corner pixel is deliberately *outside* the highlight's
         // own rounded rect (that's what "rounded" means) — sample just
         // inset from the flat middle of an edge instead, which is inside
@@ -909,7 +1128,7 @@ mod tests {
 
     #[test]
     fn unhighlighted_bare_glyph_leaves_the_corner_fully_transparent() {
-        let (buf, _, _) = render(&[], false);
+        let (buf, _, _) = render(&[], false, 0);
         assert_eq!(buf[3], 0, "no highlight requested, corner should stay fully transparent");
     }
 
@@ -918,7 +1137,7 @@ mod tests {
         // The highlight must not wash out or replace the digit color it
         // sits behind — blend_pixel's whole point is that a fully-opaque
         // foreground (the digit glyph's solid interior) still wins outright.
-        let (buf, w, h) = render(&[TraySegment { text: "78%".into(), color: TrayColor::Red }], true);
+        let (buf, w, h) = render(&[seg("78%", TrayColor::Red)], true, 0);
         let red = TrayColor::Red.rgba(true);
         let found = buf.chunks_exact(4).any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(found, "expected an unmodified red digit pixel somewhere in a {w}x{h} highlighted buffer");

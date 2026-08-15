@@ -32,7 +32,12 @@ export interface SubscriptionRowProps {
   /** State badge, classified by the caller — "Not current" for held-over
    * numbers, "Needs sign-in" only when signing in is genuinely the answer. */
   badge?: "Not current" | "Needs sign-in" | null;
-  pinned?: boolean;
+  /** v4: how many of this subscription's windows are currently pinned — an
+   * indicator, not a control; renders nothing at 0. */
+  pinnedCount?: number;
+  /** v4: whether the headline window specifically is pinned — reflected (and
+   * toggled, via `onTogglePin`) by the "…" menu's "Show/Hide in menu bar". */
+  headlinePinned?: boolean;
   expanded?: boolean;
   /** Whether this row's "…" menu is open — one row's menu open at a time, owned by the caller. */
   menuOpen?: boolean;
@@ -43,7 +48,11 @@ export interface SubscriptionRowProps {
   /** Overrides the computed "Read …" footer text, e.g. a rate-limit quiet note. */
   footerNote?: string | null;
   onAction?: () => void;
+  /** v4: toggles the headline window's pin — the "…" menu item only. */
   onTogglePin?: () => void;
+  /** v4: toggles a specific window's pin, called with that window's `id` —
+   * wired to each row in the expanded list's own pin button. */
+  onToggleWindowPin?: (id: string) => void;
   onToggleExpand?: () => void;
   onToggleMenu?: () => void;
   /** Present enables the inline rename affordance (from the "…" menu); called with the new label, or `null` to clear back to the provider default. */

@@ -37,7 +37,7 @@ export const onSignInFinished = client.onSignInFinished;
  * browser mock harness, so this branches directly here rather than adding
  * an unused stub export to mockClient.ts (owned by the surface half of this
  * round; see CLAUDE.md's file-ownership split). */
-export const setTrayStatus: (segments: TraySegment[]) => Promise<void> = isTauri
+export const setTrayStatus: (segments: TraySegment[], worstUsedPercent: number) => Promise<void> = isTauri
   ? live.setTrayStatus
   : async () => {};
 

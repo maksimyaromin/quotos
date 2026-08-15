@@ -12,8 +12,8 @@ const Chevron = ({ open }) => (
     <path d="M6 9l6 6 6-6" />
   </svg>
 );
-const PinGlyph = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+const PinGlyph = ({ size = 12 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
     strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
   </svg>
@@ -81,14 +81,23 @@ export function SubscriptionRow({
    *  `broken` row, so an offline launch or an HTTP 403 told the captain his
    *  working account was signed out. */
   badge = null,
-  pinned = false,
+  /** v4: how many of this subscription's windows are currently pinned — an
+   * indicator, not a control (design/NOTES.md §2). Renders nothing at 0. */
+  pinnedCount = 0,
+  /** v4: whether the *headline* window specifically is pinned — what the
+   * "…" menu's wording (below) reflects and toggles via `onTogglePin`. */
+  headlinePinned = false,
   expanded = false,
   menuOpen = false,
   actionLabel = null,
   actionDisabled = false,
   footerNote = null,
   onAction,
+  /** v4: toggles the *headline* window's pin — the "…" menu item only. */
   onTogglePin,
+  /** v4: toggles a specific window's pin, called with that window's `id` —
+   * wired to each row in the expanded list's own pin button. */
+  onToggleWindowPin,
   onToggleExpand,
   onToggleMenu,
   onRename,
@@ -277,17 +286,11 @@ export function SubscriptionRow({
             }}>{[account, provider].filter(Boolean).join(" · ")}</div>
           ) : null}
         </div>
-        {pinned ? (
-          <button type="button" title="Hide from the menu bar" aria-label="Hide from the menu bar"
-            onClick={(e) => { e.stopPropagation(); onTogglePin?.(); }}
-            style={{
-              flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center",
-              width: 20, height: 20, margin: "1px 0 0 0", padding: 0, border: 0,
-              borderRadius: "var(--radius-xs)", background: "transparent", color: "var(--text-accent)",
-              cursor: "pointer",
-            }}>
-            <PinGlyph />
-          </button>
+        {pinnedCount > 0 ? (
+          <Badge tone="accent" style={{ flex: "0 0 auto", marginTop: 2, gap: 3 }}>
+            <PinGlyph size={10} />
+            {pinnedCount}
+          </Badge>
         ) : null}
         {badge ? (
           <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>{badge}</Badge>
@@ -434,7 +437,7 @@ export function SubscriptionRow({
               paddingTop: "var(--space-1)", marginTop: "var(--space-0-5)",
             }}>
               {windows.map((w, i) => (
-                <LimitWindow key={i} {...w} stale={stale}
+                <LimitWindow key={w.id ?? i} {...w} stale={stale} onTogglePin={onToggleWindowPin}
                   style={i < windows.length - 1 ? { borderBottom: "0.5px solid var(--border-subtle)" } : null} />
               ))}
             </div>
@@ -464,7 +467,7 @@ export function SubscriptionRow({
           <MenuItem onClick={() => { onToggleMenu?.(); onReadNow?.(); }}>Read now</MenuItem>
           <MenuItem onClick={() => { onToggleMenu?.(); setRenaming(true); }}>Rename</MenuItem>
           <MenuItem onClick={() => { onToggleMenu?.(); onTogglePin?.(); }}>
-            {pinned ? "Hide from menu bar" : "Show in menu bar"}
+            {headlinePinned ? "Hide from menu bar" : "Show in menu bar"}
           </MenuItem>
           <div style={{ height: "0.5px", margin: "var(--space-1) var(--space-2)", background: "var(--border-default)" }} />
           <MenuItem danger onClick={() => { onToggleMenu?.(); onStopTracking?.(); }}>Stop tracking</MenuItem>

@@ -65,7 +65,15 @@ export function normalizeFor(
 ): NormalizedRead {
   const normalizer = PROVIDER_NORMALIZERS[provider];
   if (!normalizer) {
-    return { label: fallbackLabel, account: null, windows: [], used: null, resetsAt: null, severity: "healthy" };
+    return {
+      label: fallbackLabel,
+      account: null,
+      windows: [],
+      used: null,
+      resetsAt: null,
+      severity: "healthy",
+      headlineWindowId: null,
+    };
   }
   return normalizer(usage, profile, fallbackLabel, context);
 }

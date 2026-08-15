@@ -5,10 +5,11 @@ import type { NormalizedRead } from "../../types/entities";
 const OK_READ: NormalizedRead = {
   label: "Personal",
   account: "Max",
-  windows: [{ name: "Session", used: 2, resetsAt: null, scope: null, isActive: true }],
+  windows: [{ id: "session", name: "Session", used: 2, resetsAt: null, scope: null, isActive: true }],
   used: 2,
   resetsAt: null,
   severity: "healthy",
+  headlineWindowId: "session",
 };
 
 // R2-3: the outcome->state+reason table, now provider-owned. The state

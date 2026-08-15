@@ -41,6 +41,14 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** v4: a window's id needs to be stable across re-reads (pinning keys off
+ * it — see `LimitWindowEntity.id`) and unique within one subscription's own
+ * window list. `kind` alone collides when more than one window shares it
+ * (e.g. two `weekly_scoped` entries, one per model) — scope disambiguates. */
+function windowId(kind: string, scope: string | null): string {
+  return scope ? `${kind}:${scope}` : kind;
+}
+
 interface RawLimit {
   kind?: unknown;
   percent?: unknown;
@@ -54,9 +62,11 @@ function windowFromLimit(limit: RawLimit): LimitWindowEntity {
   const name = KNOWN_KIND_LABELS[kind] ?? humanizeKind(kind);
   const scopeModel = asString(limit.scope?.model?.display_name);
   const scopeSurface = asString(limit.scope?.surface);
+  const scope = scopeModel ?? scopeSurface;
   return {
+    id: windowId(kind, scope),
     name,
-    scope: scopeModel ?? scopeSurface,
+    scope,
     used: clampPercent(limit.percent),
     resetsAt: asString(limit.resets_at),
     isActive: limit.is_active === true,
@@ -68,6 +78,7 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as { utilization?: unknown; resets_at?: unknown };
   return {
+    id: windowId(key, null),
     name: FIXED_WINDOW_LABELS[key] ?? humanizeKind(key),
     scope: null,
     used: clampPercent(record.utilization),
@@ -78,14 +89,20 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
   };
 }
 
+interface Headline {
+  used: number | null;
+  resetsAt: string | null;
+  id: string | null;
+}
+
 /** Fallback headline when there's no account-wide weekly window in the
  * response at all: the most-consumed *active* window, as before R2-2. */
-function pickMostConsumed(windows: LimitWindowEntity[]): { used: number | null; resetsAt: string | null } {
+function pickMostConsumed(windows: LimitWindowEntity[]): Headline {
   const candidates = windows.filter((w) => w.isActive && w.used !== null);
   const pool = candidates.length > 0 ? candidates : windows.filter((w) => w.used !== null);
-  if (pool.length === 0) return { used: null, resetsAt: null };
+  if (pool.length === 0) return { used: null, resetsAt: null, id: null };
   const binding = pool.reduce((max, w) => ((w.used ?? 0) > (max.used ?? 0) ? w : max));
-  return { used: binding.used, resetsAt: binding.resetsAt };
+  return { used: binding.used, resetsAt: binding.resetsAt, id: binding.id };
 }
 
 /** R2-2: the headline is the account-wide weekly window — `weekly_all` from
@@ -97,7 +114,7 @@ function pickMostConsumed(windows: LimitWindowEntity[]): { used: number | null; 
  * don't retain the raw `kind`/key needed to identify "the account-wide one"
  * specifically. Returns `null` when no such window exists at all, so the
  * caller can fall back to the old most-consumed behaviour. */
-function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; resetsAt: string | null } | null {
+function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; resetsAt: string | null; id: string } | null {
   const rawLimits = usage.limits;
   // Mirrors the windows-building rule below: an empty limits[] is treated
   // the same as an absent one, falling through to the fixed top-level shape.
@@ -108,7 +125,7 @@ function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; 
       if (limit.kind !== "weekly_all") continue;
       const used = clampPercent(limit.percent);
       if (used === null) continue;
-      return { used, resetsAt: asString(limit.resets_at) };
+      return { used, resetsAt: asString(limit.resets_at), id: windowId("weekly_all", null) };
     }
     return null;
   }
@@ -116,7 +133,7 @@ function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; 
   if (fixed && typeof fixed === "object") {
     const record = fixed as { utilization?: unknown; resets_at?: unknown };
     const used = clampPercent(record.utilization);
-    if (used !== null) return { used, resetsAt: asString(record.resets_at) };
+    if (used !== null) return { used, resetsAt: asString(record.resets_at), id: windowId("seven_day", null) };
   }
   return null;
 }
@@ -141,9 +158,11 @@ export interface NormalizedUsage {
   used: number | null;
   resetsAt: string | null;
   severity: Severity;
+  /** See `Subscription.headlineWindowId`. */
+  headlineWindowId: string | null;
 }
 
-const EMPTY: NormalizedUsage = { windows: [], used: null, resetsAt: null, severity: "healthy" };
+const EMPTY: NormalizedUsage = { windows: [], used: null, resetsAt: null, severity: "healthy", headlineWindowId: null };
 
 /** Turn a raw `/api/oauth/usage` response into the generic window list plus
  * headline — everywhere in "percent consumed" terms (I2), never "remaining".
@@ -174,6 +193,7 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
         const used = clampPercent(e.utilization);
         if (used !== null) {
           windows.push({
+            id: windowId("extra_usage", null),
             name: "Extra usage",
             scope: null,
             used,
@@ -186,5 +206,11 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
   }
 
   const headline = pickAccountWideWeekly(usage) ?? pickMostConsumed(windows);
-  return { windows, used: headline.used, resetsAt: headline.resetsAt, severity: computeSeverity(windows) };
+  return {
+    windows,
+    used: headline.used,
+    resetsAt: headline.resetsAt,
+    severity: computeSeverity(windows),
+    headlineWindowId: headline.id,
+  };
 }

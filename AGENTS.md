@@ -338,6 +338,89 @@ rewritten each round, not appended to.
   `Normalizer` signature carries a `NormalizeContext` (`fetchedAt`,
   `statuslineFeed`) for this — a provider with nothing to reconcile just
   ignores it.
+- **v4: pinning is per-window, not per-subscription** — `Subscription.pinnedWindowIds:
+  string[]` (a persisted set of `LimitWindowEntity.id`s) replaced
+  `Subscription.pinned: boolean`. Every window a provider's normalizer
+  builds now carries a stable `id` (`normalizeUsage.ts`'s `windowId(kind,
+  scope)` — `kind` alone collides whenever two windows share it, e.g. two
+  `weekly_scoped` entries for different models, hence the scope
+  disambiguation). `NormalizedRead.headlineWindowId` names which window is
+  "the headline" for a given read; the "…" menu's "Show/Hide in menu bar"
+  toggles *that* window specifically (wording unchanged, target changed).
+  Tray segments are built by `lib/traySegments.ts`'s `buildTraySegments`
+  (panel order, then each subscription's own `windows` order — the same
+  order the expanded row lists them in) and `worstActiveLimitPercent` (max
+  `used` over every *active* window across every tracked subscription,
+  deliberately narrower than `severity`, which counts inactive windows too)
+  — both pure functions, called from `useSubscriptions.ts`'s tray effect.
+  **Migration** (firstmate-recorded decision, not re-litigated): a pre-v4
+  `pinned: true` record becomes "that subscription's headline window is
+  pinned," resolved on the first *successful* read after load (headline
+  isn't known until then) via `useSubscriptions.ts`'s
+  `pendingPinMigrationRef` — a failed read leaves the migration pending
+  rather than abandoning it. This needed a matching fix on the Rust side:
+  `persistence.rs`'s `TrackedAccount` struct is a plain serde mirror of
+  whatever's on disk, so simply renaming its field to `pinned_window_ids`
+  would have silently *dropped* a legacy `pinned` value on load (serde
+  ignores unknown fields by default) before the frontend ever got a chance
+  to see it and migrate — caught by reasoning through the round-trip before
+  the live check, not by a failing test. The fix carries both fields:
+  `pinned_window_ids` (wire `pinnedWindowIds`, what's actually used) and a
+  migration-only `pinned: Option<bool>` (present only when read from an old
+  file; `skip_serializing_if` means a record sheds it from disk the moment
+  it's next saved, since the frontend never sends it back). **General
+  lesson**: any time a TS entity's on-the-wire shape changes, check whether
+  a Rust struct mirrors it field-for-field (`grep` the Rust side for the old
+  field name) — a mismatched Rust struct doesn't error, it just silently
+  reshapes the JSON in transit.
+- **v4: the tray glyph is a Q now, not an O** (design/NOTES.md §3) —
+  `tray_render.rs`'s `glyph_coverage` moved the ring's gap from 82.75°
+  centred at 90° (bottom) to 62° centred at 45° (lower-right), added a
+  second capsule (the tail, r 3.2→8.0 along that same diagonal, same stroke
+  weight, always drawn even at 0% used — "empty quota, empty letter"), and
+  made the arc's own end angle a function of data (`used_fraction`) instead
+  of an implicit constant 100%. The two gap-endpoint angles and the tail's
+  exact start/end coordinates were cross-checked against
+  `design/assets/tray-glyph-*.svg` directly (vector coordinates, not
+  eyeballed) and match to 2 decimal places. The tail's own reach happens to
+  stay just inside the ring's own axis-aligned bounding box at this specific
+  geometry (checked by hand, not by construction) — `natural_outer_diameter`
+  needed no change. `render()`'s glyph fill (`worst_used_percent`, 0-100) is
+  sent on *every* `set_tray_status` call regardless of whether anything is
+  pinned — the arc reflects the worst active limit across everything
+  tracked whether the bar shows digits or not, not just in the empty state.
+- **v4: the figure layout's "ink-to-ink" numbers in design/NOTES.md §1 are
+  outcomes, not independent constants — measure them, don't derive them
+  algebraically.** `tray_render.rs`'s actual structural constants
+  (`SIDE_PAD_PX`, `GLYPH_TO_CELL_GAP_PX`, `CELL_WIDTH_PX`,
+  `GROUP_GUTTER_PRE_PX`/`HAIRLINE_WIDTH_PX`/`GROUP_GUTTER_POST_PX`) are
+  box-model gaps between fixed-width cells; the *ink*-to-ink distances the
+  handoff table gives (6px glyph→digit, 8px in-group, 19px across the
+  hairline) only fall out once each cell's own text-centring margin is
+  added back on top — and that margin depends on the actual rendered digit
+  width (MonoLisa or the system fallback, whichever this machine resolves
+  to — see `text::load_font`), which isn't known until real text is
+  measured. `CELL_WIDTH_PX` (30 CSS-px, the one hard invariant — §5) and
+  `GROUP_GUTTER_*` landed correctly on a first guess; `GLYPH_TO_CELL_GAP_PX`
+  needed one iteration (6 physical px measured 8px ink-to-ink live; 2
+  physical px measured exactly 6px) — verified by screenshotting a live
+  Retina tray capture (`screencapture -R`, `sips -s format bmp`, a small
+  pure-Python BMP column-brightness scan) rather than trusting the algebra.
+  See `data/quotos-v4-q1/verification.md` (firstmate data dir) for the full
+  transcript and numbers.
+- **v4: no SVG-to-raster CLI tool exists on this machine** (`rsvg-convert`,
+  `cairosvg`, `inkscape`, ImageMagick's `convert`/`magick` — none
+  installed; `sips` doesn't rasterize SVG). The app icon
+  (`quotos-app/src-tauri/icons/icon.icns`, from `design/assets/app-icon.svg`)
+  was exported by loading the inlined SVG into an `Image` inside an isolated
+  headless Chrome page (via the Chrome DevTools MCP) and drawing it onto a
+  same-sized `<canvas>` per target resolution (16/32/64/128/256/512/1024,
+  each drawn straight from the vector source rather than downsampled from
+  one raster, for crisp edges at every size), reading each canvas back via
+  `toDataURL('image/png')`. Packed into a standard 10-file `.iconset`
+  (`icon_16x16.png` … `icon_512x512@2x.png`) and converted with `iconutil -c
+  icns` — no third-party tool needed for that last step, `iconutil` ships
+  with Xcode command-line tools.
 
 ## Sharp edges
 

@@ -16,6 +16,12 @@ export type SubscriptionState =
   | "broken"; // cannot be read at all
 
 export interface LimitWindowEntity {
+  /** Stable within a subscription's own window list across re-reads (e.g.
+   * the provider's own `kind`, plus `scope` when more than one window can
+   * share a `kind` — see `providers/claude/normalizeUsage.ts`'s `windowId`).
+   * v4: what pinning now keys off, instead of a subscription-wide boolean —
+   * see `Subscription.pinnedWindowIds`. */
+  id: string;
   name: string;
   /** Percent of this window *consumed*, 0-100 (I2: everywhere is "used", not "left"). */
   used: number | null;
@@ -64,7 +70,20 @@ export interface Subscription {
    * answer is "sign in", and showing both at once is the contradiction the
    * captain photographed. */
   needsSignIn: boolean;
-  pinned: boolean;
+  /** v4: pinning moved from the subscription to the limit window — this is
+   * the persisted set of pinned window ids (see `LimitWindowEntity.id`), any
+   * number from any number of subscriptions. Order doesn't matter here; the
+   * bar's own figure order comes from `windows`' own order, filtered to
+   * whichever ids are in this list (see `lib/traySegments.ts`). */
+  pinnedWindowIds: string[];
+  /** Which of this subscription's *current* `windows` is "the headline" —
+   * the same window `used`/`resetsAt` are drawn from. Recomputed by the
+   * provider on every read (`NormalizedRead.headlineWindowId`); null before
+   * any read, or when a read had no windows to point at. This is what the
+   * "…" menu's "Show/Hide in menu bar" toggles (v4 §2) — wording unchanged,
+   * but it now pins/unpins this one window id rather than the whole
+   * subscription. */
+  headlineWindowId: string | null;
   configDir: string;
   /** Set while our own rate budget (not the subscription's health) is the
    * only thing blocking a read; null once it's free to poll again. B5/B6:
@@ -189,6 +208,8 @@ export interface NormalizedRead {
   used: number | null;
   resetsAt: string | null;
   severity: Severity;
+  /** See `Subscription.headlineWindowId`. Null when `windows` is empty. */
+  headlineWindowId: string | null;
 }
 
 /** R2-4: pushed by the Rust-side scheduler (`src-tauri/src/scheduler.rs`)
@@ -216,7 +237,16 @@ export interface SignInFinishedEvent {
  * bitmap on the Rust side (`src-tauri/src/tray_render.rs`) so each pinned
  * subscription's digits can carry their own color; the mock client has no
  * real tray to update, so it's a no-op there instead of a stub export. */
+/** v4: one figure per *pinned window* now, not per pinned subscription —
+ * see `lib/traySegments.ts`, which builds this list in panel order (rows top
+ * to bottom) then provider order (a subscription's own windows, left to
+ * right) — the bar's own order, matching the panel exactly (design/NOTES.md
+ * §1's "the panel is the legend"). */
 export interface TraySegment {
   text: string;
   color: "neutral" | "amber" | "red";
+  /** True for the first segment of a new subscription's group — the Rust
+   * side (`tray_render.rs`) draws its hairline immediately before any
+   * segment with this set (never before the very first segment overall). */
+  groupStart: boolean;
 }
