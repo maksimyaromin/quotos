@@ -42,6 +42,7 @@ objc2 = "0.6.4"
 # lookups don't need it.
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
+    "NSEvent",
     "NSFont",
     "NSFontDescriptor",
     "NSWindow",

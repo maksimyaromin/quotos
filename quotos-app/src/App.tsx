@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Panel } from "./design-system/components/shell/Panel";
 import { IconButton } from "./design-system/components/controls/IconButton";
 import { Button } from "./design-system/components/controls/Button";
@@ -10,7 +9,14 @@ import { useSubscriptions } from "./hooks/useSubscriptions";
 import { formatExactReset, formatRelativePast, formatClockTime } from "./lib/time";
 import { rowPresentation } from "./lib/rowPresentation";
 import { RefreshIcon, PlusIcon, SnapBackIcon, BackIcon, DebugIcon } from "./components/icons";
-import { hidePanel, setDetached as setDetachedIpc, debugRateLimitSnapshot, onPanelBeakOffset } from "./lib/tauriClient";
+import {
+  hidePanel,
+  setDetached as setDetachedIpc,
+  debugRateLimitSnapshot,
+  onPanelBeakOffset,
+  dragWindowStep,
+  endWindowDrag,
+} from "./lib/tauriClient";
 import "./app.css";
 
 const NOW_TICK_MS = 30_000;
@@ -130,33 +136,34 @@ export default function App() {
   // real movement, not the mousedown itself, so a plain click on the header
   // does nothing — that part is unchanged.
   //
-  // R3-3 fix: starting the *native* drag itself used to wait for that same
-  // first-movement signal, calling `startDragging()` from the `mousemove`
-  // handler. On macOS that is what silently broke dragging entirely — the
-  // captain's "the window doesn't drag at all." `startDragging()` calls into
-  // tao's `drag_window()`, which hands `NSWindow.performWindowDragWithEvent`
-  // whatever `NSApp.currentEvent()` happens to be *when the Rust side gets
-  // around to running it* (it only substitutes a synthesized event for one
-  // narrow stale-event case, not the general one) — and that call arrives
-  // over an async `invoke()` IPC round-trip, so by the time it lands,
-  // `currentEvent` is essentially never still the original mouseDown.
-  // Apple's own docs say to call `performWindowDragWithEvent` from
-  // `mouseDown:` itself; that only works here if `startDragging()` is fired
-  // synchronously on the real mousedown, not deferred to a later movement
-  // event — confirmed live: deferring it (the old code) left the window
-  // stationary through an entire synthetic drag even though this component's
-  // own movement tracking correctly saw it and flipped to detached; calling
-  // it immediately here is what actually moves the window (see RESULT.md).
-  // Calling it on a click that never moves is harmless — AppKit's own
-  // tracking loop treats a mouseDown immediately followed by mouseUp with no
-  // movement as a no-op, so C3 ("a plain click does not detach") still holds
-  // for the *visible* state below, which is untouched by this.
+  // R3-3 tried firing Tauri's own `startDragging()` (native
+  // `performWindowDragWithEvent:`) synchronously on mousedown, reasoning
+  // that the earlier `mousemove`-deferred version missed the live event.
+  // That reasoning was sound but the fix wasn't enough on its own — a real
+  // hand-drag still did nothing, because `startDragging()`'s IPC call was
+  // silently denied by Tauri's ACL (no `core:window:allow-start-dragging`
+  // capability was ever granted). That part is a real, closed bug fix.
+  //
+  // Dragging now moves the window by hand instead of through
+  // `startDragging()`: `dragWindowStep()` is invoked on every `mousemove`
+  // once a gesture has started, and the Rust side sets the window's frame
+  // directly from the live cursor delta (see `drag_window_step`'s doc
+  // comment in `src-tauri/src/lib.rs`). That doc comment also records an
+  // open finding, not a closed one: live-following the cursor this way
+  // reactivates the app for as long as the mouse stays down, same as
+  // `performWindowDragWithEvent:` did — measured to be a property of
+  // relocating the window's frame *at all* while a mouse-down gesture is
+  // live over it, not specific to either API. That is the same Space-losing
+  // trigger the R4-1 non-activating panel exists to prevent, so shipping
+  // this as the final answer without a decision on the tradeoff would be
+  // trading one captain bug for another — see the round's own report.
+  //
+  // Calling this only after the first real movement (not on the mousedown
+  // itself) is what keeps C3 ("a plain click does not detach") true —
+  // unchanged from before.
   const handleHeaderPointerDown = (event: React.MouseEvent) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
-    if (isTauri) {
-      void getCurrentWindow().startDragging();
-    }
     const startX = event.clientX;
     const startY = event.clientY;
     const panelEl = document.querySelector("[data-quotos-panel]");
@@ -173,12 +180,12 @@ export default function App() {
         setDragging(true);
         setDetached(true);
         void setDetachedIpc(true);
-        if (isTauri) {
-          cleanup();
-          return;
-        }
       }
-      if (!isTauri && startRect) {
+      if (isTauri) {
+        void dragWindowStep();
+        return;
+      }
+      if (startRect) {
         setPosition({
           x: Math.max(8, startRect.left + (moveEvent.clientX - startX)),
           y: Math.max(8, startRect.top + (moveEvent.clientY - startY)),
@@ -187,6 +194,9 @@ export default function App() {
     };
     const onUp = () => {
       setDragging(false);
+      if (isTauri) {
+        void endWindowDrag();
+      }
       cleanup();
     };
     window.addEventListener("mousemove", onMove);

@@ -65,6 +65,23 @@ export async function setDetached(detached: boolean): Promise<void> {
   return invoke("set_detached", { detached });
 }
 
+/** I7 detached-window drag, called on every `mousemove` of a header-drag
+ * gesture — see `drag_window_step`'s doc comment in `src-tauri/src/lib.rs`,
+ * including the still-open finding it records: moving the window's frame at
+ * all while the mouse is held down over it reactivates the app, which this
+ * replaced `startDragging()`/`performWindowDragWithEvent:` call to fix a
+ * *different*, closed bug (a missing ACL capability that made hand-dragging
+ * do nothing) — not that one. */
+export async function dragWindowStep(): Promise<void> {
+  return invoke("drag_window_step");
+}
+
+/** Ends a header-drag gesture (mouseup) so the next one re-anchors instead
+ * of jumping from a stale position — see `end_window_drag`. */
+export async function endWindowDrag(): Promise<void> {
+  return invoke("end_window_drag");
+}
+
 export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
   return invoke("debug_rate_limit_snapshot");
 }

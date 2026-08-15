@@ -108,6 +108,13 @@ struct AppState {
     /// position after its delay, not a value captured (and potentially
     /// already stale) at scheduling time.
     last_known_position: Mutex<(f64, f64)>,
+    /// Anchor for `drag_window_step`'s manual, frame-based detached-window
+    /// drag (see that function's doc comment for why native
+    /// `performWindowDragWithEvent:` dragging isn't used) — the cursor and
+    /// the window's own top-left, both in global points, captured on the
+    /// first `mousemove` of a header-drag gesture. `None` whenever no manual
+    /// drag is in progress.
+    manual_drag_anchor: Mutex<Option<((f64, f64), (f64, f64))>>,
 }
 
 /// R4-2: `async` purely for its *threading* effect, not because the body
@@ -592,8 +599,9 @@ fn schedule_resync_after_icon_change(app: &tauri::AppHandle, tray: tauri::tray::
 /// 332px panel floating inset inside it. The handoff has no system chrome in
 /// either state ("Кнопки нет... В отцепленном состоянии в шапке появляется
 /// стрелка") — decorations must stay off always; dragging comes from
-/// `App.tsx`'s own header-drag calling `startDragging()`, which needs no
-/// native title bar at all. Whether decorations were the actual reason the
+/// `App.tsx`'s own header-drag calling `drag_window_step` on every
+/// `mousemove` (see that function's doc comment), which needs no native
+/// title bar at all. Whether decorations were the actual reason the
 /// drag itself didn't respond was never isolated (the screenshot alone can't
 /// tell it apart from "the frame just looks wrong"), but there is no reason
 /// left to keep them and the handoff explicitly rules them out either way.
@@ -606,8 +614,12 @@ fn set_detached(
 ) -> Result<(), String> {
     *state.detached.lock().expect("detached mutex poisoned") = detached;
     window.set_skip_taskbar(!detached).map_err(|e| e.to_string())?;
-    window.set_always_on_top(true).map_err(|e| e.to_string())?;
     if detached {
+        // R3-9's own doc comment: `NSFloatingWindowLevel` (what this sets) is
+        // right for a free-floating detached window, and specifically wrong
+        // for the popover — see the `else` branch below for why this can't
+        // just be called unconditionally for both.
+        window.set_always_on_top(true).map_err(|e| e.to_string())?;
         // Dragging must never fight the docked-position self-correction —
         // see `AppState.docked_target`'s doc comment.
         clear_docked_target(&app);
@@ -621,6 +633,26 @@ fn set_detached(
             let _ = window.set_focus();
         }
     } else {
+        // Snapping back must restore `NSStatusWindowLevel` — needed to stay
+        // above a full-screen Space the same way the tray-click-driven open
+        // does — which is what `set_popover_collection_behavior` below does.
+        // It must be the *only* level-setting call in this branch: `tao`'s
+        // `set_always_on_top` (what the `if` branch above calls) ends in
+        // `util::set_level_async`, a `DispatchQueue.main.async` — calling it
+        // here too would schedule a *later* runloop turn to drop the level
+        // back to floating right after this synchronous restore set it to
+        // status, undoing it. Confirmed live: with both calls present, a
+        // temporary trace showed this function's own `setLevel(25)` running
+        // and returning, and the window still read back at the floating
+        // level moments later — the async callback from a stale
+        // `set_always_on_top(true)` (still queued from the detach that
+        // preceded this snap-back) won the race by construction, since it
+        // can only run after this whole synchronous command returns. Without
+        // this fix a single detach+reattach permanently stuck the popover at
+        // the lower level for the rest of the app's run — unreachable, and so
+        // unseen, until dragging itself was fixed (see `drag_window_step`'s
+        // doc comment for that story).
+        set_popover_collection_behavior(&window);
         // C6 fix: snapping back must actually re-dock the window under the
         // tray icon, not just restore the chrome (beak, no titlebar) —
         // without this the window silently stayed wherever the drag left
@@ -1125,6 +1157,138 @@ fn place_window_top_left_sync(_window: &tauri::WebviewWindow, _x: f64, _y: f64) 
     false
 }
 
+/// I7's detached-window drag moves the window by hand, one `mousemove` at a
+/// time, instead of calling AppKit's `-[NSWindow performWindowDragWithEvent:]`
+/// (what `tao`'s `startDragging()`/`drag_window()` bottoms out in — and what
+/// the header actually called before this). Two independent things were found
+/// wrong with that native path, in order:
+///
+/// 1. `startDragging()`'s IPC call (`plugin:window|start_dragging`) was
+///    silently denied the whole time — `capabilities/default.json` never
+///    granted `core:window:allow-start-dragging` (it isn't part of
+///    `core:window:default`/`core:default`, unlike `allow-show`/`allow-hide`/
+///    etc., which are explicitly listed there for the same reason). The
+///    denial rejects the JS promise, and since the call site never awaited or
+///    caught it, the rejection was invisible — this alone fully explains "the
+///    window doesn't drag at all," independent of anything below.
+/// 2. Once that permission is granted, `performWindowDragWithEvent:` *does*
+///    move the window — but doing so while the mouse stays down measurably
+///    reactivates the app, which is exactly the Space-losing bug
+///    `panel_window.rs` (R4-1) exists to prevent. This function's own
+///    replacement mechanism (see below) turned out to have the **same**
+///    problem, which is the more important finding: it is not specific to
+///    `performWindowDragWithEvent:`.
+///
+/// The measurement (`NSWorkspace.frontmostApplication`, read from a separate
+/// process — the same ground truth `panel_window.rs`'s own A/B uses, since
+/// `-[NSApplication isActive]` read from inside is useless here too): a
+/// synthetic click-and-hold on the header that never moves the cursor never
+/// activates the app, and neither does a full click-drag-release gesture
+/// anywhere else in the panel that never touches the window's frame — so
+/// WKWebView gaining first responder, or a live mouse-tracking gesture by
+/// itself, isn't the trigger. What *does* trigger it, reproduced cleanly and
+/// repeatedly: **any call that changes the window's frame while the mouse
+/// button is still down over it** — and that held not just for
+/// `performWindowDragWithEvent:`, but for this function's own replacement,
+/// the plain, otherwise-inert `place_window_top_left_sync` (`-[NSWindow
+/// setFrameTopLeftPoint:]`, the same call the tray-docking path already uses
+/// with no activation side effect *outside* a live mouse-down gesture). A
+/// single frame-set mid-gesture was enough — it does not need repetition.
+/// Reproduced identically whether the window is the non-activating
+/// `QuotosNonActivatingPanel` or the old activating path
+/// (`QUOTOS_PANEL_MODE=window`), so this is not something the R4-1 panel swap
+/// caused or can be asked to fix by itself, and not something a different
+/// repositioning API sidesteps either. Read as a plain fact about this OS:
+/// relocating a window while the user is actively holding the mouse down on
+/// it appears to carry an implicit "bring this app forward" outside
+/// `NSWindowStyleMaskNonactivatingPanel`'s own promise, which is scoped to
+/// key/main status, not to window-server-level drag handling.
+///
+/// So this is a **partial** fix, not a closed one: `drag_window_step` below
+/// does make the window move — which it never did before point 1 above — but
+/// live-following the cursor while the button is held still reactivates the
+/// app for that gesture's duration, same as the native path did. Whether
+/// that is acceptable (drag now works, at the cost of reactivating only
+/// while physically dragging) or needs a different interaction shape
+/// (e.g. visually tracking the cursor without moving the real window until
+/// mouseup, committing the position in one frame-set after the button is
+/// released, which was *not* tested here) is a product call, not this
+/// function's to make — see the round's own status/report for the decision
+/// this was escalated as.
+///
+/// `drag_window_step` is called on every `mousemove` while a header drag is
+/// in progress. The first call of a gesture only records where the cursor and
+/// the window each started (`AppState.manual_drag_anchor`); every call after
+/// that sets the window's frame directly from the live delta, via the same
+/// synchronous `place_window_top_left_sync` the docking path already uses.
+#[tauri::command]
+fn drag_window_step(window: tauri::WebviewWindow, state: tauri::State<'_, AppState>) {
+    let Some((mouse, window_origin)) = current_mouse_and_window_points(&window) else { return };
+    let mut anchor = state.manual_drag_anchor.lock().expect("manual_drag_anchor mutex poisoned");
+    match *anchor {
+        None => *anchor = Some((mouse, window_origin)),
+        Some((anchor_mouse, anchor_window)) => {
+            let (x, y) = drag_target_from_anchor(anchor_mouse, anchor_window, mouse);
+            drop(anchor);
+            place_window_top_left_sync(&window, x, y);
+        }
+    }
+}
+
+/// Clears `AppState.manual_drag_anchor` at the end of a header-drag gesture
+/// (mouseup) — without this, the *next* drag's first `drag_window_step` call
+/// would see the previous gesture's stale anchor instead of re-anchoring to
+/// where this new one actually started, and jump the window on its first
+/// move.
+#[tauri::command]
+fn end_window_drag(state: tauri::State<'_, AppState>) {
+    *state.manual_drag_anchor.lock().expect("manual_drag_anchor mutex poisoned") = None;
+}
+
+/// Pure delta math for `drag_window_step`, split out so it's testable without
+/// a real window: the target keeps the same offset from the live cursor that
+/// it had when the gesture began, so a drag never accumulates rounding drift
+/// across many small steps the way repeatedly re-anchoring to the previous
+/// step would.
+fn drag_target_from_anchor(anchor_mouse: (f64, f64), anchor_window: (f64, f64), current_mouse: (f64, f64)) -> (f64, f64) {
+    (anchor_window.0 + (current_mouse.0 - anchor_mouse.0), anchor_window.1 + (current_mouse.1 - anchor_mouse.1))
+}
+
+/// Reads the live global mouse location and the window's own current
+/// top-left, both in the same CG-style (y-down, top-left-of-primary-screen)
+/// global points `place_window_top_left_sync` writes in — see
+/// `DisplayPoints`'s doc comment for why points, not physical pixels, are the
+/// only coordinate space safe for this kind of arithmetic. Both `NSEvent
+/// .mouseLocation` and `NSWindow.frame` are natively in points already, so
+/// unlike `TrayIconEvent.rect`/`Monitor.position()` there is no per-display
+/// scale factor to resolve here at all.
+#[cfg(target_os = "macos")]
+fn current_mouse_and_window_points(window: &tauri::WebviewWindow) -> Option<((f64, f64), (f64, f64))> {
+    use objc2_app_kit::{NSEvent, NSScreen, NSWindow};
+    use objc2_foundation::MainThreadMarker;
+
+    let mtm = MainThreadMarker::new()?;
+    let ptr = window.ns_window().ok()?;
+    if ptr.is_null() {
+        return None;
+    }
+    let screens = NSScreen::screens(mtm);
+    let primary = screens.iter().next()?;
+    let flip = primary.frame().size.height;
+
+    let mouse = NSEvent::mouseLocation();
+    let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+    let frame = ns_window.frame();
+    let window_top = frame.origin.y + frame.size.height;
+
+    Some(((mouse.x, flip - mouse.y), (frame.origin.x, flip - window_top)))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn current_mouse_and_window_points(_window: &tauri::WebviewWindow) -> Option<((f64, f64), (f64, f64))> {
+    None
+}
+
 /// Applies a docked position/beak-offset and records it as the window's
 /// current *intended* target (`AppState.docked_target`) — see that field's
 /// own doc comment for why: the `WindowEvent::Moved` handler reapplies this
@@ -1517,6 +1681,8 @@ pub fn run() {
             hide_panel,
             set_tray_status,
             set_detached,
+            drag_window_step,
+            end_window_drag,
             debug_rate_limit_snapshot,
             start_sign_in,
             submit_sign_in_code,
@@ -1570,6 +1736,7 @@ pub fn run() {
                 docked_target: Mutex::new(None),
                 move_generation: Mutex::new(0),
                 last_known_position: Mutex::new((0.0, 0.0)),
+                manual_drag_anchor: Mutex::new(None),
             });
             spawn_scheduler(app.handle().clone());
 
@@ -2093,5 +2260,34 @@ mod docked_layout_tests {
             let layout = docked_layout_in_points(BUILT_IN, tray_left, item_top(BUILT_IN), item_bottom(BUILT_IN), Some(ITEM_W), ICON_PX);
             assert!(layout.beak_left >= 0.0 && layout.beak_left <= 332.0 - 20.0, "tray_left={tray_left} gave {}", layout.beak_left);
         }
+    }
+}
+
+#[cfg(test)]
+mod manual_drag_tests {
+    use super::drag_target_from_anchor;
+
+    // The window must follow the cursor 1:1: whatever offset it had from the
+    // cursor when the gesture began (its own top-left minus the anchor
+    // mouse point) has to be exactly preserved at every later cursor
+    // position, on both axes and through negative deltas (dragging up/left,
+    // e.g. toward the second display's negative coordinate space — see
+    // `DisplayPoints`).
+    #[test]
+    fn the_target_preserves_the_grab_offset_across_a_move() {
+        let anchor_mouse = (500.0, 200.0);
+        let anchor_window = (420.0, 150.0); // grabbed 80pt right, 50pt down of the window's own top-left
+        let target = drag_target_from_anchor(anchor_mouse, anchor_window, (650.0, 120.0));
+        assert_eq!(target, (570.0, 70.0));
+    }
+
+    // A cursor position identical to the anchor must be a true no-op — this
+    // is what keeps a stationary mousedown-then-immediate-move (a plain
+    // click) from nudging the window at all.
+    #[test]
+    fn no_cursor_movement_yields_no_window_movement() {
+        let anchor_mouse = (100.0, 100.0);
+        let anchor_window = (10.0, 10.0);
+        assert_eq!(drag_target_from_anchor(anchor_mouse, anchor_window, anchor_mouse), anchor_window);
     }
 }

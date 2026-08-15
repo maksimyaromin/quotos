@@ -13,6 +13,13 @@ export const fetchSnapshot = client.fetchSnapshot;
 export const hidePanel = client.hidePanel;
 export const onPanelVisibility = client.onPanelVisibility;
 export const setDetached = client.setDetached;
+
+/** I7's manual, frame-based detached-window drag — see `liveClient.ts`'s
+ * `dragWindowStep`/`endWindowDrag`. The mock harness has no native window to
+ * move, so it no-ops the same way `setTrayStatus` above does; App.tsx's own
+ * `!isTauri` branch handles dragging locally via React state instead. */
+export const dragWindowStep: () => Promise<void> = isTauri ? live.dragWindowStep : async () => {};
+export const endWindowDrag: () => Promise<void> = isTauri ? live.endWindowDrag : async () => {};
 export const debugRateLimitSnapshot = client.debugRateLimitSnapshot;
 
 /** R2-6: both sides implement the same sign-in lifecycle — mockClient.ts
