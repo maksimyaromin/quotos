@@ -7,6 +7,7 @@ mod ratelimit;
 mod scheduler;
 mod shell;
 mod signin;
+mod single_instance;
 pub mod statusline;
 mod tray_render;
 
@@ -172,6 +173,28 @@ pub fn run() {
             // isn't available until setup — see persistence.rs for why a
             // plain, `fsync`'d file is what R2-5's reproduction called for.
             let app_support_dir = app.path().app_config_dir()?;
+            // Before anything else touches shared state (the tracked store,
+            // the scheduler): if a Quotos is already running, this one must
+            // bow out — two instances each run their own rate limiter
+            // against the same shared 5-per-300s allowance and spend it
+            // double-speed (see single_instance.rs for the full argument).
+            match single_instance::claim(&app_support_dir) {
+                single_instance::Claim::Held(guard) => {
+                    // The OS lock lives exactly as long as this handle stays
+                    // open, and its owner is the process itself — so the
+                    // handle is deliberately never closed.
+                    std::mem::forget(guard);
+                }
+                single_instance::Claim::TakenByOther => {
+                    eprintln!("quotos: another Quotos instance is already running; exiting");
+                    std::process::exit(0);
+                }
+                single_instance::Claim::Unavailable(err) => {
+                    eprintln!(
+                        "quotos: could not check for another running instance ({err}); continuing"
+                    );
+                }
+            }
             let tracked_path = app_support_dir.join("tracked.json");
             // Computed here (rather than down by the tray builder, where it
             // used to live) so `AppState.last_icon_width_px` can start at the

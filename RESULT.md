@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**288 automated tests pass** (181 vitest, 107 `cargo test`); `tsc --noEmit`,
+**292 automated tests pass** (181 vitest, 111 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (107)
+- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (111)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -167,6 +167,16 @@ clean.
     screen reader heard "More, button" and then six unrelated buttons;
     Chrome's live accessibility tree now reports the standard menu pattern,
     matching the keyboard behavior item 16 already gave it.
+19. **Only one Quotos runs at a time** — `single_instance.rs` takes an OS
+    file lock (`instance.lock` in the app config dir, pure std
+    `File::try_lock`, no plugin crate) at setup; a second instance exits
+    quietly, and an uncheckable lock steps aside rather than blocking
+    launch. Two live instances each ran their own limiter against the same
+    shared 5-per-300s allowance and spent it double-speed — the realistic
+    pair being a dev run beside the installed build, which share a bundle
+    identifier and therefore the config dir the lock lives in. The
+    statusline helper (`main.rs`'s ingest intercept) exits before `run()`
+    and never meets the lock.
 
 ## Honest gaps, still open
 

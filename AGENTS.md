@@ -131,6 +131,14 @@ rewritten each round, not appended to.
   one-time profile fetch is deliberately *outside* the budget — the captain's
   fixed one-read-per-minute cadence already consumes the whole allowance, so
   charging it would make the limiter refuse a scheduled read every launch.
+  The same allowance is also why only one Quotos may run at a time:
+  `single_instance.rs` takes an OS file lock (`instance.lock` in the app
+  config dir, std `File::try_lock` — no plugin crate) at the top of setup;
+  a second instance exits quietly, an uncheckable lock lets launch proceed
+  (the guard is optional protection, not a launch requirement). The
+  realistic double-instance pair is a dev run beside the installed build
+  (same bundle identifier → same config dir). The statusline helper exits
+  in `main.rs` before `run()` and never meets the lock.
 - **A self-imposed wait must never disable the way out.** `useSubscriptions.ts`
   no longer filters rate-limited subscriptions out of `refreshAll` /
   `refreshAccountById`, and the panel's refresh button is no longer disabled
