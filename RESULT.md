@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**269 automated tests pass** (164 vitest, 105 `cargo test`); `tsc --noEmit`,
+**274 automated tests pass** (169 vitest, 105 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (163) from `quotos-app/`; `cargo test` (105)
+- **Tests**: `npx vitest run` (169) from `quotos-app/`; `cargo test` (105)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -137,6 +137,15 @@ clean.
     after hours painted "Last read 2 min ago", stale "Resets today at …"
     copy, and wrong rate-budget waits until the first post-resume tick. The
     clock now re-reads on the panel-visibility show event.
+15. **macOS "Reduce Motion" is honored** — `tokens/elevation.css` now answers
+    `prefers-reduced-motion` in one place: the `--dur-*` tokens (which every
+    transition takes its duration from) zero out, the inline-styled keyframe
+    animations (pulse, spin, shimmer) stop via `!important`, and the shimmer
+    overlay is hidden outright (stopped, its gradient reads as a static white
+    stripe). Verified in a real browser engine with
+    `--force-prefers-reduced-motion`; `reducedMotion.test.jsx` pins the token
+    coverage and the no-literal-duration-transitions invariant that makes it
+    complete.
 
 ## Honest gaps, still open
 

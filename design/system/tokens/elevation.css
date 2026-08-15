@@ -34,3 +34,25 @@
   --shadow-menu: 0 8px 24px -8px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
   --shadow-sheet: 0 20px 56px -12px rgba(0, 0, 0, 0.3);
 }
+
+/* macOS "Reduce Motion" (System Settings → Accessibility → Display) reaches
+   the webview as prefers-reduced-motion. Every transition in the system takes
+   its duration from the --dur-* tokens above, so zeroing them covers all of
+   them; the infinite keyframe animations (pulse, spin, shimmer) carry literal
+   durations in inline styles, which only !important reaches. The shimmer
+   overlay is additionally hidden outright: merely stopped, its gradient would
+   sit as a static white stripe over the left of the bar. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+  * {
+    animation: none !important;
+  }
+  [data-quotos-shimmer] {
+    display: none;
+  }
+}

@@ -27,7 +27,15 @@ rewritten each round, not appended to.
   `quotos-app/src/design-system/` is a verbatim copy consumed by the app —
   when you change a component, edit both copies identically (there is no
   build step that syncs them; `quotos-app/src/design-system/sync.test.js`
-  fails the vitest suite if the copies ever diverge).
+  fails the vitest suite if the copies ever diverge). Motion is token-driven:
+  every `transition` takes its duration from `tokens/elevation.css`'s
+  `--dur-*` tokens, and that same file's `prefers-reduced-motion` block is
+  the single place macOS's Reduce Motion is honored (tokens zeroed,
+  `animation: none !important` for the inline keyframe animations, and
+  `[data-quotos-shimmer]` display-hidden — merely stopping the shimmer
+  leaves its gradient as a static white stripe). `reducedMotion.test.jsx`
+  pins the token coverage and the no-literal-duration-transitions invariant;
+  don't add a transition with a literal duration.
 - `data/quotos-source-s1/report.md` (in the firstmate data dir, not this repo)
   — how the Claude usage-reading mechanism was verified: endpoint, headers,
   Keychain service naming, rate limits, the 401 refresh trick.

@@ -65,7 +65,11 @@ export function CapacityBar({
         }}
       />
       {reading ? (
+        // data-quotos-shimmer lets tokens/elevation.css hide this overlay
+        // under prefers-reduced-motion, where a stopped gradient would sit
+        // as a static white stripe instead of a moving glint.
         <div
+          data-quotos-shimmer=""
           style={{
             position: "absolute",
             inset: 0,
