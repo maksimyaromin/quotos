@@ -496,8 +496,9 @@ rewritten each round, not appended to.
   single `tray.rect()` call right after `set_icon()` reads a stale rect.**
   Two independent bugs, both found only by pixel-measuring a real tray item
   (`screencapture` + centroid analysis, cross-checked against
-  `CGWindowListCopyWindowInfo` and the item's own Accessibility rect — see
-  `RESULT.md`'s round-3 entry for the exact numbers), caused the beak to
+  `CGWindowListCopyWindowInfo` and the item's own Accessibility rect — the
+  exact numbers are in `git show 4495bdc:RESULT.md`, since `RESULT.md` is
+  rewritten each round), caused the beak to
   drift off the glyph on pin/unpin exactly as the captain described. First:
   a prior round's `GLYPH_CENTER_FROM_ICON_LEFT_LOGICAL = 6px padding + 9px`
   constant was never actually checked against a real tray item — the true
