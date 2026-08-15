@@ -212,6 +212,16 @@ clean.
     skip-identical guard, since a renamed subscription changes its tooltip
     line while leaving every digit byte-identical.
 
+23. **The template's opener plugin is gone** — `tauri-plugin-opener` was
+    registered at startup, granted to the webview (`opener:default`), and
+    shipped as an npm dependency, yet nothing ever called it: the UI has no
+    links, and the sign-in flow deliberately lets the Claude CLI open the
+    browser itself. Removing it pruned 42 crates from `Cargo.lock` (the
+    whole zbus/dbus async ecosystem, compiled on macOS for nothing) and
+    revoked the one capability that let the webview ask the OS to open
+    arbitrary URLs or paths — the same "remove what nothing uses" rule that
+    already took out `tauri-plugin-positioner`.
+
 ## Honest gaps, still open
 
 - **Where `claude setup-token` writes for the default account** is unverified
