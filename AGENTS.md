@@ -237,7 +237,13 @@ rewritten each round, not appended to.
   doesn't explicitly restore `state`/`reason` from what was captured
   *before* that patch — this exact race was a real regression caught in
   manual testing (see the `useSubscriptions.test.ts` "B6" describe blocks,
-  including the native-path variant).
+  including the native-path variant). The restore has one exception (R5):
+  a captured prior state that is itself in-flight ("reading"/"connecting")
+  settles to `working`/`idle` instead of being written back — for an
+  account whose *first-ever* read got rate-limited, the captured prior is
+  the seeded "connecting", and restoring it left the row claiming
+  "Reading…" forever while also masking the "Waiting for the rate budget"
+  footer note (the row's `reading` branch wins over `footerNote`).
 - The Rust side never returns a stale number as current: on read failure it
   returns a typed `FetchError` (see `providers/mod.rs`), and the frontend
   decides `behind` vs `broken` based on whether prior good data exists.

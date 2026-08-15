@@ -245,6 +245,24 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
     expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i);
     expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
   });
+
+  // R5: the restore rule's blind spot. For an account that had never been
+  // read at all, the "prior" state captured before the attempt is the seeded
+  // in-flight "connecting" — writing that back left the row claiming
+  // "Reading…" forever (nothing was in flight), and the footer's reading
+  // branch masked the "Waiting for the rate budget" note entirely. Found by
+  // driving the mock harness's demo-waiting account in a real browser.
+  it("a first-ever read that is rate-limited settles to idle — never a permanent 'Reading…'", async () => {
+    fetchSnapshot.mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 214 });
+
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    const sub = result.current.subscriptions[0];
+    expect(sub.state).toBe("idle");
+    expect(sub.rateLimitedUntil).not.toBeNull();
+    expect(sub.needsSignIn).toBe(false);
+  });
 });
 
 // R3-4: revival. A wrong diagnosis is survivable if the user can re-test

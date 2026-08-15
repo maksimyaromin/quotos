@@ -81,8 +81,16 @@ export function LimitWindow({
           whiteSpace: "nowrap",
         }}>{name}</span>
         {scope ? (
-          <Badge tone="neutral" style={{ flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" }}>
-            {scope}
+          // `text-overflow` only applies to block containers, and the Badge is
+          // itself a flex container — on it, overflow:hidden hard-clips the tag
+          // mid-character with no "…" ever drawn (verified live; R3-2's note
+          // claiming otherwise mistook the clip for an ellipsis). So the badge
+          // keeps only the layout constraints and an inner block span owns the
+          // truncation.
+          <Badge tone="neutral" style={{ flex: "0 1 auto", minWidth: 0, maxWidth: 120 }}>
+            <span style={{ display: "block", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {scope}
+            </span>
           </Badge>
         ) : null}
         <span style={{

@@ -223,9 +223,23 @@ export function useSubscriptions() {
         // Restore exactly the health state/reason this account had before
         // this attempt started; a real diagnosis (e.g. Broken/expired
         // login) must never decay into a generic wait.
+        //
+        // R5: unless that prior state is itself an in-flight presentation
+        // ("connecting"/"reading" — an attempt, not a diagnosis). Writing
+        // one back leaves the row claiming "Reading…" forever with nothing
+        // in flight, and the footer's reading branch then masks the wait
+        // note rowPresentation composes. A never-read account settles back
+        // to idle; one with data settles to working (transient either way —
+        // an in-flight prior means another attempt's own result is coming).
         const until = new Date(Date.now() + err.retry_after_secs * 1000).toISOString();
+        const settledPrior =
+          prior.state === "connecting" || prior.state === "reading"
+            ? prior.hadGoodRead
+              ? "working"
+              : "idle"
+            : prior.state;
         patch(accountId, {
-          state: prior.state,
+          state: settledPrior,
           reason: prior.reason,
           needsSignIn: prior.needsSignIn,
           rateLimitedUntil: until,
