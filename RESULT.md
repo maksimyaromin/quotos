@@ -1,4 +1,133 @@
-# Quotos round 3 — visual precision pass (branch `fm/quotos-polish-p1`) — result
+# Quotos — round 4, panel/Space + subscription-view half (branch `fm/quotos-panel-ux-p1`)
+
+> This file is rewritten each round. Round 4 ships as **Quotos 3.1** and is the
+> merge of two branches; the section below covers only this one (panel and
+> Space behaviour, view synchronisation, menu rendering). The other half —
+> credential reading, sign-in classification, revival — landed separately in
+> `5ab9d5a`. Everything under "Round 3" further down is the previous round's
+> record, kept because its measurements are still the basis for the tray and
+> placement geometry.
+
+**176 automated tests pass** (112 vitest, 64 `cargo test`); `tsc --noEmit` and
+`cargo check` are clean.
+
+## The headline bug: a tray click threw the captain off his full-screen Space
+
+His 2026-08-15 screencast catches the Space-transition animation mid-slide at
+t=6.6: he clicks the tray icon from a full-screen browser, macOS leaves that
+Space, and the panel opens on the desktop behind it.
+
+Rounds 2 and 3 attacked this as *window membership* —
+`CanJoinAllSpaces | FullScreenAuxiliary`, `NSStatusWindowLevel`,
+`orderFrontRegardless`. All three are necessary, all three are kept, and none
+of them is the trigger. The trigger is that every open calls
+`WebviewWindow::set_focus()`, whose second half is
+`activateIgnoringOtherApps: YES` (`tao`'s `util::set_focus`) — and activating a
+*different application* while a full-screen Space is frontmost is precisely
+what makes macOS leave it. Round 3 knew about that call and kept it on purpose,
+because dropping it left the window non-key, and a non-key window breaks
+click-away-to-close, the rename field and the sign-in field.
+
+That trade is real for an `NSWindow` and dissolves for an `NSPanel`:
+`src-tauri/src/panel_window.rs` converts the window to a **non-activating
+panel**, the AppKit type that can hold keyboard focus while another
+application stays active, and the show path stops activating at all.
+
+**Measured here, same-machine A/B against `QUOTOS_PANEL_MODE=window` (the old
+path, kept as an escape hatch):**
+
+| | frontmost app after the panel opens | panel `isKeyWindow` |
+|---|---|---|
+| old path | **quotos-app** — it took activation | true |
+| this path | **unchanged** (Arc / iTerm2, whatever was in front) | true |
+
+Read from a separate process, because `-[NSApplication isActive]` inside an
+accessory app reports `true` either way and cannot tell them apart.
+`windowDidResignKey` still arrives when another app takes focus, so
+click-away-to-close is unaffected — observed live, in the same run.
+
+**Honest limit: the full-screen end-to-end is unverified.** An agent here may
+not put an app into full screen. What is verified is the mechanism — the
+application no longer activates — which is the condition macOS needs in order
+to stay put. The captain's own check is the proof.
+
+Also verified on the real build, from a genuine tray click (not a synthetic
+one): the panel opens docked at the computed position, `isKeyWindow=true`,
+frontmost application unchanged, and it hides on the next focus loss.
+
+## The Subscriptions view kept offering [Remove] for accounts already dropped
+
+"Stop tracking" only *scheduled* a removal that a timer inside `App.tsx`
+applied five seconds later, so the panel and the Subscriptions screen watched
+two different facts. In his recording: both Undo rows visible at t=24.25, both
+accounts still listed as tracked at t=25.0, "Claude Team" flipping at t≈26.0
+and "Claude Max" at t≈29.2 — each exactly five seconds after its own click.
+
+Untracking is immediate now, everywhere: persistence, the tray digits and the
+Subscriptions screen all read `trackedSubscriptions`, and the undo window is
+only a slot the panel keeps (`Subscription.pendingRemoval`). Measured in the
+live app: with the panel still showing "Claude Team is no longer tracked /
+Undo", the Subscriptions screen already lists that account as **[Add]**.
+
+Names are consistent between the two views as well — the id-derived fallback
+is title-cased ("claude team" → "Claude Team"), and a label a real read
+reported is remembered for the session, so an account keeps the name the
+captain knows it by after it stops being tracked instead of reverting to the
+config directory's.
+
+## The row menu was drawn inside the panel's scroll box
+
+Opening a bottom row's "…" menu clipped "Stop tracking" at the panel's bottom
+edge *and* made a two-row panel scrollable, so reaching the clipped item meant
+scrolling the rows out from under the cursor first. Both come from one
+property: an absolutely-positioned element is clipped by, and counts toward the
+scroll extent of, its scroll-container ancestor. The menu is `position: fixed`
+now, anchored to its own button, flipping above it near the window's bottom.
+
+Measured in the live WKWebView (temporary instrumentation, removed before
+commit — jsdom has no layout engine and there is no headless browser here):
+
+| state | panel | body | scrollHeight vs clientHeight | menu |
+|---|---|---|---|---|
+| 2 rows | 332×354 | 332×274 | 274 == 274 (no scrollbar) | — |
+| 2 rows, bottom row's menu open | 332×354 | 332×274 | **274 == 274, unchanged** | fixed, 178×122 at (154,232), fully inside the 360×560 window |
+| after Stop tracking (row + Undo row) | 332×269 | 332×190 | 190 == 190 | — |
+| that row's menu open | — | 332×190 | 190 == 190 | fixed, inside the window |
+
+`offsetWidth == clientWidth == 332` throughout, i.e. no scrollbar gutter
+either. A screenshot of the menu-open state is what the fix looks like: the
+full menu, including "Stop tracking", overlaying the panel with the rows
+exactly where they were.
+
+## The reported row-removal lag did not reproduce
+
+Frame-stepping the captain's own recording puts the click ripple on "Stop
+tracking" at **t=20.80** and the Undo row on screen at **t=20.92** — ~120 ms,
+not the ~1–1.5 s in the brief. The perceptible delay before it was the menu
+having to be scrolled into view first (above); the earlier timestamp was the
+cursor arriving on the item, not the click.
+
+Real main-thread blocking *was* found while measuring, and is fixed anyway: a
+`#[tauri::command]` without `(async)` runs inline on the main thread, and
+`list_accounts` forks a `security(1)` process per candidate account while
+`save_tracked` `fsync`s. Both are `(async)` now, as is `load_tracked`.
+`set_tray_status` (which must stay on the main thread) now returns early when
+the digits are unchanged and only re-docks the open panel when the icon's width
+actually changed; the save effect no longer rewrites the tracked file on every
+automatic read.
+
+## Notes for whoever picks this up next
+
+- A bare `cargo build` binary renders **nothing** — it loads `build.devUrl`
+  instead of the bundled assets, and a transparent window with no page looks
+  exactly like "the panel opened on another Space". Use `npm run tauri dev`.
+  With it, screenshots of this app's own windows work fine.
+- If the captain reports the panel "not opening" while an agent is testing,
+  suspect two Quotos icons in his menu bar before suspecting the code.
+
+---
+
+# Round 3 (previous) — visual precision pass (branch `fm/quotos-polish-p1`)
 
 The captain ran the delivered build and found the panel "not neat": the beak
 drifted off the glyph, a row's `Fable` tag looked broken, detaching produced a

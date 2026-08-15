@@ -268,10 +268,50 @@ rewritten each round, not appended to.
   only ever *closes* — never (re)opens — so it can't race the trigger
   button's own toggle-on-click. Keep both elements' `data-quotos-menu-scope`
   attribute if you touch this markup, or the menu will close itself on its
-  own click.
+  own click. **R4-5: it is `position: fixed`, placed from the trigger
+  button's own viewport rect, and that is load-bearing.** As an
+  absolutely-positioned child it lived inside the panel body's
+  `overflow-y: auto` box, which both clipped its last item at the panel's
+  bottom edge and — because an abspos element counts toward its scroll
+  container's scrollable area — made a two-row panel scrollable just by being
+  opened. A fixed element is neither clipped by an ancestor's `overflow` nor
+  part of any scroll extent. This only works while nothing above the row
+  establishes a containing block for fixed descendants: no `transform`,
+  `filter`, `backdrop-filter`, `perspective`, `will-change` or `contain` on
+  `Panel`'s wrappers (the blurred backdrop layer is a *sibling*). Deliberately
+  not a React portal — `design/system/`'s components are consumed through a
+  prebuilt `_ds_bundle.js`, so adding a `react-dom` import there would need
+  that bundle regenerated.
+- **R4-3: "Stop tracking" untracks immediately; the undo window is only a
+  slot the panel keeps.** `Subscription.pendingRemoval` marks a row that the
+  panel still draws (as the Undo row, in place) while `trackedSubscriptions`
+  — what persistence, the tray digits and the Subscriptions screen all read —
+  already excludes it. The previous shape deferred the whole removal by five
+  seconds inside `App.tsx`, so the Subscriptions screen went on offering
+  [Remove] for accounts the captain had already stop-tracked. If you add
+  another consumer of the list, take `trackedSubscriptions`, not
+  `subscriptions`.
+- **R4-4: one account, one name, in both views.** `accountLabel` (the
+  id-derived fallback) is title-cased, and `useSubscriptions` keeps a
+  session-lifetime map of the best label a real read ever reported per
+  account id, exposed as `displayLabelFor` for the Subscriptions screen's
+  untracked half. Without it an account silently renamed itself from the
+  provider's own "Claude Max" to a bare "Claude" the moment it stopped being
+  tracked. Not persisted — it is derived from this session's reads.
 
 ## Sharp edges
 
+- **A `#[tauri::command]` without `(async)` runs on the main thread, inline
+  with the IPC — so it blocks the webview's own rendering.** (`tauri-macros`
+  maps a plain command to `ExecutionContext::Blocking`.) That is correct for
+  anything touching `NSStatusItem`, and wrong for everything else: three
+  commands here forked processes or `fsync`'d on that thread before R4-2
+  (`list_accounts`, `load_tracked`, `save_tracked` — all `(async)` now). The
+  same reasoning applies to how often the main-thread ones are *called*:
+  `set_tray_status` compares its segments and returns early when nothing
+  changed, and only re-docks the open panel when the composited icon's width
+  actually changed, because it is driven by an effect keyed on the whole
+  subscription list.
 - macOS (APFS) is case-insensitive by default: `rm -f src/App.css` will
   silently delete `src/app.css` too if both exist. Confirm with `ls` after
   any case-sensitive-looking cleanup.
@@ -415,6 +455,32 @@ rewritten each round, not appended to.
   renders blank/white for a window on an inactive Space (no real compositing
   happened to sample from), even though the window and its content genuinely
   exist.
+  **R4 correction, and check this first before blaming the environment: a
+  bare `cargo build` binary renders nothing at all.** Without the `tauri` CLI
+  driving it, `generate_context!` resolves to the *dev* configuration and the
+  webview loads `build.devUrl` (`http://localhost:1420`) instead of the
+  bundled `dist` — with no vite running, the page never loads, and a
+  `transparent: true` window with no page is invisible. That is
+  indistinguishable from "the window is on another Space": correct bounds,
+  `kCGWindowIsOnscreen=true`, blank capture. Hours were spent on the Space
+  theory before this turned out to be the whole explanation. Use `npm run
+  tauri dev` (or a real bundle); with it, `screencapture -R <the window's own
+  bounds from CGWindowListCopyWindowInfo>` captured the panel reliably, dozens
+  of times, including one opened by a real tray click. Ordering evidence that
+  *is* trustworthy either way: `CGWindowListCopyWindowInfo(.optionOnScreenOnly)`
+  returns front-to-back, so where the panel sits relative to a full-screen
+  window is readable without capturing anything.
+- **Reading the live DOM beats reasoning about it: a temporary
+  `debug_report(String)` command plus a small measurement module is the way to
+  get real layout numbers out of the WKWebView.** jsdom has no layout engine
+  and there is no headless browser in this repo, so "does the panel scroll?"
+  is otherwise unanswerable. Have the module drive the UI itself
+  (`element.click()`), not synthetic CGEvents — no aiming, no risk of a click
+  landing outside Quotos. Two things that cost a cycle each: React
+  `StrictMode` invokes the effect twice, so an unguarded measurement script
+  fires every click twice (a menu opens and instantly closes); and vite HMR
+  does *not* re-run a `[]`-dependency effect, so iterate by restarting, not by
+  editing. Remove the scaffolding before committing.
 - **There is no global "physical pixel" coordinate space on macOS, and three
   APIs this app depends on each invent a different one.** This was the root
   cause of the captain's "панель мерцает, прыгает по экрану, появляется не на
@@ -456,24 +522,33 @@ rewritten each round, not appended to.
   under the cursor*. Both paths were checked to agree. The captain's standing
   rule — "нигде не хардкодите мой сетап мониторов" — applies to every value of
   this kind: if it has to come from the running system, read it every time.
-- **Unresolved: the panel opens on the wrong Space from inside another app's
-  full-screen Space.** The captain's own isolated reproduction: from an
-  ordinary desktop it works on both displays; from a full-screen Space it is
-  ordered onto the default desktop Space, which he cannot see. What is
-  shipped: `CanJoinAllSpaces | FullScreenAuxiliary | Transient | IgnoresCycle`
-  (the `FullScreenAuxiliary` half was missing from every earlier round),
-  `NSStatusWindowLevel`, and `orderFrontRegardless` alongside the normal focus
-  path — none of it confirmed. Tested here against a *real* live full-screen
-  Space, `-[NSWindow isOnActiveSpace]` read `false` under five collection
-  behaviours (including `CanJoinAllSpaces` alone **and** `empty()`), window
-  levels 3/25/101, with and without `activateIgnoringOtherApps`, and under both
-  direct exec and LaunchServices. Identical results for `CanJoinAllSpaces` and
-  `empty()` mean the measurement does not discriminate on this box — treat it
-  as evidence about the environment, not the fix. Do not drop `set_focus()` in
-  favour of `orderFrontRegardless` alone: measured, that leaves the window
-  non-key, breaking click-away-to-close (it rides on `Focused(false)`) and the
-  rename/sign-in fields. `QUOTOS_DEBUG_SPACE_BEHAVIOR` and
-  `QUOTOS_DEBUG_WINDOW_LEVEL` exist to sweep variants without a rebuild.
+- **R4-1: the panel must never activate the application — that, not any
+  collection behaviour, is what threw the captain out of a full-screen
+  Space.** Rounds 2 and 3 chased this as window *membership*
+  (`CanJoinAllSpaces | FullScreenAuxiliary | Transient | IgnoresCycle`,
+  `NSStatusWindowLevel`, `orderFrontRegardless`); all of it is necessary and
+  all of it is kept, and none of it was the trigger. `set_focus()` ends in
+  `activateIgnoringOtherApps: YES` (`tao`'s `util::set_focus`), and activating
+  another application while a full-screen Space is frontmost is exactly what
+  makes macOS leave it — the same visible slide Cmd-Tab produces. The fix is
+  `src-tauri/src/panel_window.rs`: the window becomes a **non-activating
+  `NSPanel`**, the one AppKit type that can hold keyboard focus while another
+  app stays active, so the show path never activates at all. Read that module
+  before touching any of it — it carries the class-swap safety argument, the
+  measured A/B, and two traps (the non-activating style bit on a plain
+  `NSWindow` *aborts the process*; the swap displaces a pre-existing KVO
+  isa-swizzle). `QUOTOS_PANEL_MODE=window` restores the old path for a
+  same-session comparison. **Unverified end-to-end**: an agent here cannot put
+  an app into full screen; what is measured is that the frontmost application
+  no longer changes while the panel is key, which is the condition macOS needs
+  to stay put.
+- **`-[NSApplication isActive]` is useless for "did we steal focus" in an
+  accessory app** — it read `true` both with and without
+  `activateIgnoringOtherApps`, so the `app_active` field in the
+  `QUOTOS_DEBUG_POS` trace cannot discriminate. Read
+  `NSWorkspace.frontmostApplication` / `NSRunningApplication.isActive` from a
+  *separate* process (`xcrun swift <file>.swift`) instead; that told the two
+  cases apart immediately.
 - **Iterate on tray/panel behaviour without clicking the captain's menu bar.**
   He watches it while he works and repeated test-clicking drew a complaint.
   `QUOTOS_DEBUG_AUTO_OPEN=1` opens the panel from `tray.rect()` a few seconds
