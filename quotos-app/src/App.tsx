@@ -148,15 +148,15 @@ export default function App() {
   // `startDragging()`: `dragWindowStep()` is invoked on every `mousemove`
   // once a gesture has started, and the Rust side sets the window's frame
   // directly from the live cursor delta (see `drag_window_step`'s doc
-  // comment in `src-tauri/src/lib.rs`). That doc comment also records an
-  // open finding, not a closed one: live-following the cursor this way
-  // reactivates the app for as long as the mouse stays down, same as
+  // comment in `src-tauri/src/lib.rs`). That doc comment also records a
+  // deliberate, captain-approved tradeoff: live-following the cursor this
+  // way reactivates the app for as long as the mouse stays down, same as
   // `performWindowDragWithEvent:` did — measured to be a property of
   // relocating the window's frame *at all* while a mouse-down gesture is
-  // live over it, not specific to either API. That is the same Space-losing
-  // trigger the R4-1 non-activating panel exists to prevent, so shipping
-  // this as the final answer without a decision on the tradeoff would be
-  // trading one captain bug for another — see the round's own report.
+  // live over it, not specific to either API, and not something the R4-1
+  // non-activating panel can be asked to fix by itself. Escalated rather
+  // than shipped silently; the captain chose live-follow, reactivation
+  // scoped to the physical gesture only, over the alternatives on offer.
   //
   // Calling this only after the first real movement (not on the mousedown
   // itself) is what keeps C3 ("a plain click does not detach") true —

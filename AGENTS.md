@@ -598,6 +598,51 @@ rewritten each round, not appended to.
   `NSWorkspace.frontmostApplication` / `NSRunningApplication.isActive` from a
   *separate* process (`xcrun swift <file>.swift`) instead; that told the two
   cases apart immediately.
+- **R5: relocating this window's frame while the mouse is held down over it
+  reactivates the app, on this non-activating panel and on the old activating
+  `NSWindow` alike — R4-1's fix does not cover dragging, and no repositioning
+  API sidesteps it.** Found chasing "detached panel doesn't drag by hand"
+  (`4495bdc` claimed the fix and didn't close it): the header's
+  `startDragging()` call was first found to do nothing at all because
+  `capabilities/default.json` never granted `core:window:allow-start-dragging`
+  (missing from `core:window:default`/`core:default`, unlike `allow-show`/
+  `allow-hide`/etc. which are listed explicitly for the same reason) — a
+  denied-ACL promise, never awaited or caught, so silently invisible. Granting
+  it made `performWindowDragWithEvent:` actually move the window, which
+  surfaced the real, deeper finding: doing so measurably reactivates the app
+  (`NSWorkspace.frontmostApplication`, read from a separate process, same as
+  R4-1's own method) — and replacing that call with a hand-rolled drag
+  (`drag_window_step` in `lib.rs`, moving the frame directly via the same
+  `place_window_top_left_sync` the docking path already uses, on every
+  `mousemove`) has the **identical** problem. Isolated precisely: a stationary
+  click-and-hold never activates, a full click-drag-release gesture over
+  non-header content that never touches the window's frame never activates,
+  and a *single* frame-set mid-gesture is enough to activate regardless of
+  which API performs it — so the trigger is "the frame changed while a
+  mouse-down is live over this window," not anything specific to
+  `performWindowDragWithEvent:`'s documented Space-participation. Escalated to
+  the captain rather than picked silently; his call (2026-08-15): **ship as
+  live-follow, reactivation and all** — dragging working smoothly, at the cost
+  of reactivating only for the physical gesture's duration (never on show, and
+  never on a Magnet/AX move), beat the two alternatives offered (a live
+  "hand focus back to the previous frontmost app" correction, rejected as an
+  unverifiable hack this sandbox cannot check against a real full-screen
+  Space; commit-only-on-mouseup, rejected for feeling like repositioning
+  rather than dragging). If a future round needs to revisit this, both
+  rejected alternatives are still open, just not the current answer.
+- **A second, previously-unreachable bug the above uncovered: `set_detached`'s
+  snap-back path never restored `NSStatusWindowLevel`, because `tao`'s
+  `set_always_on_top` is asynchronous.** It ends in `util::set_level_async`
+  (`DispatchQueue.main.async`), so a call still queued from the *detach* that
+  preceded a snap-back could fire *after* the snap-back's own synchronous
+  `setLevel(25)` restore and silently drop it back to
+  `NSFloatingWindowLevel` — confirmed live with a temporary trace showing the
+  restore call run and return, then the window still read back at the lower
+  level moments later. `set_detached` now only calls `set_always_on_top` in
+  the `detached=true` branch; snap-back relies solely on the synchronous
+  `set_popover_collection_behavior`. Unreachable, and so unseen, until
+  dragging itself worked at all — the captain caught this live, mid-round, by
+  watching a real detach/reattach happen for the first time.
 - **Iterate on tray/panel behaviour without clicking the captain's menu bar.**
   He watches it while he works and repeated test-clicking drew a complaint.
   `QUOTOS_DEBUG_AUTO_OPEN=1` opens the panel from `tray.rect()` a few seconds

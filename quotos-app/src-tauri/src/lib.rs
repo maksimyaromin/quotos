@@ -1207,14 +1207,13 @@ fn place_window_top_left_sync(_window: &tauri::WebviewWindow, _x: f64, _y: f64) 
 /// So this is a **partial** fix, not a closed one: `drag_window_step` below
 /// does make the window move — which it never did before point 1 above — but
 /// live-following the cursor while the button is held still reactivates the
-/// app for that gesture's duration, same as the native path did. Whether
-/// that is acceptable (drag now works, at the cost of reactivating only
-/// while physically dragging) or needs a different interaction shape
-/// (e.g. visually tracking the cursor without moving the real window until
-/// mouseup, committing the position in one frame-set after the button is
-/// released, which was *not* tested here) is a product call, not this
-/// function's to make — see the round's own status/report for the decision
-/// this was escalated as.
+/// app for that gesture's duration, same as the native path did. Escalated
+/// rather than picked silently; the captain's call (2026-08-15): ship it —
+/// live-follow dragging, reactivation and all, beats a live "hand focus back"
+/// correction (rejected, unverifiable from this sandbox against a real
+/// full-screen Space) and a commit-only-on-mouseup shape (rejected, feels
+/// like repositioning rather than dragging). Reactivation is scoped to the
+/// physical gesture only — never on show, never on a Magnet/AX move.
 ///
 /// `drag_window_step` is called on every `mousemove` while a header drag is
 /// in progress. The first call of a gesture only records where the cursor and
