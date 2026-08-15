@@ -139,6 +139,17 @@ rewritten each round, not appended to.
   realistic double-instance pair is a dev run beside the installed build
   (same bundle identifier → same config dir). The statusline helper exits
   in `main.rs` before `run()` and never meets the lock.
+- **Launch at Login (`launch_at_login.rs`) stores nothing** — the tray
+  menu's check item drives `SMAppService.mainAppService` (macOS 13+) via raw
+  `objc2` `msg_send!` plus an empty `#[link(name = "ServiceManagement",
+  kind = "framework")]` extern block (the same zero-new-crates
+  framework-linking trick `tray_render`'s `text` module uses for Core Text).
+  The checkmark is always re-read from the OS's `status` after a toggle,
+  never assumed from the click, so a refused registration reads as
+  still-off. An unbundled binary (cargo test, bare `cargo build`) gets
+  `NotFound` — measured — so the registered happy path is only reachable
+  from the packaged `.app`, and tests must never call `set_registered`
+  (it would mutate the login items of the machine running them).
 - **A self-imposed wait must never disable the way out.** `useSubscriptions.ts`
   no longer filters rate-limited subscriptions out of `refreshAll` /
   `refreshAccountById`, and the panel's refresh button is no longer disabled

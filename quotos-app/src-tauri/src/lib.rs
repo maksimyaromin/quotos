@@ -1,5 +1,6 @@
 mod accounts;
 mod geometry;
+mod launch_at_login;
 mod panel_window;
 mod persistence;
 mod providers;
@@ -17,7 +18,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
@@ -407,8 +408,27 @@ pub fn run() {
                 });
             }
 
+            // The tray's right-click menu. "Launch at Login" drives the
+            // OS's own login-item registry (`launch_at_login.rs`); its
+            // checkmark is read from the OS at build time and re-read after
+            // every toggle, never assumed from the click.
+            let launch_item = CheckMenuItem::with_id(
+                app,
+                "launch-at-login",
+                "Launch at Login",
+                true,
+                launch_at_login::status().is_registered(),
+                None::<&str>,
+            )?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit Quotos", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&quit_item])?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &launch_item,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit_item,
+                ],
+            )?;
 
             // Built from the same procedural glyph `set_tray_status` uses
             // (see `tray_render::plain_glyph_rgba`'s doc comment) rather than
@@ -428,10 +448,22 @@ pub fn run() {
                 // `set_tray_status` keeps this current as pinned digits
                 // change; this is just the pre-any-data baseline.
                 .tooltip("Quotos")
-                .on_menu_event(|app, event| {
-                    if event.id.as_ref() == "quit" {
-                        app.exit(0);
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "quit" => app.exit(0),
+                    "launch-at-login" => {
+                        // Toggle relative to what the OS currently reports
+                        // (the native click already flipped the checkmark
+                        // optimistically), then set the checkmark from what
+                        // the OS says afterwards — a refused registration
+                        // (e.g. an unbundled dev binary) reads as still-off
+                        // rather than lying.
+                        let target = !launch_at_login::status().is_registered();
+                        if let Err(message) = launch_at_login::set_registered(target) {
+                            eprintln!("quotos: launch at login: {message}");
+                        }
+                        let _ = launch_item.set_checked(launch_at_login::status().is_registered());
                     }
+                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     // Carried through raw, exactly as `tray-icon` reports it

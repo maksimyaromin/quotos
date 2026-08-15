@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**294 automated tests pass** (181 vitest, 113 `cargo test`); `tsc --noEmit`,
+**297 automated tests pass** (181 vitest, 116 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (113)
+- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (116)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -66,6 +66,9 @@ clean.
   proves recovery by re-reading the account.
 - **Appearance**: the full token system renders correctly in both light and
   dark, and follows a macOS appearance change live.
+- **Launch at Login**: a check item in the tray's right-click menu, backed by
+  the OS's own login-item registry (`SMAppService`, macOS 13+) — Quotos
+  stores nothing and always re-reads what the OS says.
 
 ## What this round changed
 
@@ -187,6 +190,15 @@ clean.
     concurrent CLI renewals, for one read. `Scheduler::begin_pass` (an
     `AtomicBool` gate with an RAII guard, no new dependencies) now makes the
     loser skip; whatever is due is already the running pass's job.
+21. **Launch at Login** — a "Launch at Login" check item now sits above "Quit
+    Quotos" in the tray's right-click menu (`launch_at_login.rs`), driving
+    `SMAppService.mainAppService` directly via the already-present `objc2`
+    (an empty `#[link]` extern block links `ServiceManagement`; zero new
+    crates). The OS owns the state: the checkmark is read from `status` at
+    menu build and re-read after every toggle, so a refused registration
+    reads as still-off instead of lying. Measured from an unbundled test
+    binary the OS answers `NotFound` — which is the graceful-refusal path;
+    the registered happy path needs the packaged `.app` (see gaps below).
 
 ## Honest gaps, still open
 
@@ -199,6 +211,12 @@ clean.
 - **A real hand drag** was confirmed live by the captain mid-round-R5;
   synthetic drags still produce no `WindowEvent::Moved` on this machine, so
   drag regressions cannot be caught from here — ask him.
+- **Launch at Login's happy path** (toggling it on from the packaged `.app`
+  and seeing Quotos in System Settings → Login Items) is untested end-to-end:
+  registering a login item mutates the live machine's settings, which is the
+  captain's own click to make. What is verified: the framework links, the
+  live `status` call answers, and an unregistrable binary degrades to an
+  unchecked box plus a stderr line rather than an error dialog or a lie.
 
 ## Diagnostics left in the build (all opt-in, all silent by default)
 
