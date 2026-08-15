@@ -528,7 +528,7 @@ rewritten each round, not appended to.
   in four files with no build step syncing them.** The captain rejected the
   handoff's 12x12 beak on sight ("маленький… слишком близко к левому краю…
   слишком низко от топбара"), so: `Panel.jsx`'s `BEAK_BASE_HALF`/`BEAK_HEIGHT`/
-  `NOTCH_RESERVE` (both copies), `lib.rs`'s `BEAK_BASE_WIDTH`/`BEAK_HEIGHT`/
+  `NOTCH_RESERVE` (both copies), `geometry.rs`'s `BEAK_BASE_WIDTH`/`BEAK_HEIGHT`/
   `BEAK_INSET_IN_PANEL`/`BEAK_TIP_CLEARANCE` in `docked_layout_in_points`, and
   `app.css`'s `body { padding-top }` all have to move together — each one's own
   comment names the others. Two invariants make the whole thing work and are
@@ -626,7 +626,7 @@ rewritten each round, not appended to.
   and `set_position(Physical)`/`WindowEvent::Moved` use **the window's
   current** one (`tao` `window.rs`/`window_delegate.rs` — all read from the
   crate sources, not inferred). They coincide on a single-display machine and
-  diverge on a mixed-DPI multi-display one. `lib.rs`'s `DisplayPoints` doc
+  diverge on a mixed-DPI multi-display one. `geometry.rs`'s `DisplayPoints` doc
   comment carries the full table and the worked examples; the rules that fall
   out: convert at the edges via `resolve_tray_point` (it recovers the tray
   rect's true point position by trying each display's own scale and keeping
