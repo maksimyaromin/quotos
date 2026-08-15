@@ -26,7 +26,8 @@ rewritten each round, not appended to.
   don't reinvent it; `design/system/readme.md` explains the visual language.
   `quotos-app/src/design-system/` is a verbatim copy consumed by the app —
   when you change a component, edit both copies identically (there is no
-  build step that syncs them).
+  build step that syncs them; `quotos-app/src/design-system/sync.test.js`
+  fails the vitest suite if the copies ever diverge).
 - `data/quotos-source-s1/report.md` (in the firstmate data dir, not this repo)
   — how the Claude usage-reading mechanism was verified: endpoint, headers,
   Keychain service naming, rate limits, the 401 refresh trick.
