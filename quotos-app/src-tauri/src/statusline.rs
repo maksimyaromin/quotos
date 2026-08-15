@@ -327,14 +327,15 @@ pub fn install(app_support_dir: &Path, config_dir: &Path, force: bool) -> Result
     if already_ours {
         return Ok(InstallOutcome { replaced_existing: false });
     }
-    if existing_status_line.is_some() && !force {
-        let existing = existing_status_line.expect("checked is_some above");
-        let existing_command = existing
-            .get("command")
-            .and_then(|c| c.as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| existing.to_string());
-        return Err(StatuslineError::Conflict { existing_command });
+    if !force {
+        if let Some(existing) = &existing_status_line {
+            let existing_command = existing
+                .get("command")
+                .and_then(|c| c.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| existing.to_string());
+            return Err(StatuslineError::Conflict { existing_command });
+        }
     }
 
     backup(app_support_dir, config_dir, raw_existing.as_deref(), existing_status_line.clone())?;

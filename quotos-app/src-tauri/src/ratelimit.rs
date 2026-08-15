@@ -105,7 +105,7 @@ impl RateLimiter {
         let mut windows = self.windows.lock().expect("ratelimit mutex poisoned");
         if let Some(entry) = windows.get_mut(key) {
             for instant in entry.iter_mut() {
-                *instant = *instant - age;
+                *instant -= age;
             }
         }
     }

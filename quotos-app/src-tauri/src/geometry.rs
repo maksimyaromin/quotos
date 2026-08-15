@@ -394,13 +394,23 @@ pub(crate) fn docked_layout_in_points(
     DockedLayout { x, y, beak_left }
 }
 
+/// Where a header-drag gesture started: the live cursor and the window's own
+/// top-left at that moment, both in global points (see `DisplayPoints`).
+/// Captured on the gesture's first `mousemove`, held in
+/// `AppState.manual_drag_anchor` until mouseup.
+#[derive(Clone, Copy)]
+pub(crate) struct DragAnchor {
+    pub(crate) mouse: (f64, f64),
+    pub(crate) window_top_left: (f64, f64),
+}
+
 /// Pure delta math for `drag_window_step`, split out so it's testable without
 /// a real window: the target keeps the same offset from the live cursor that
 /// it had when the gesture began, so a drag never accumulates rounding drift
 /// across many small steps the way repeatedly re-anchoring to the previous
 /// step would.
-pub(crate) fn drag_target_from_anchor(anchor_mouse: (f64, f64), anchor_window: (f64, f64), current_mouse: (f64, f64)) -> (f64, f64) {
-    (anchor_window.0 + (current_mouse.0 - anchor_mouse.0), anchor_window.1 + (current_mouse.1 - anchor_mouse.1))
+pub(crate) fn drag_target_from_anchor(anchor: DragAnchor, current_mouse: (f64, f64)) -> (f64, f64) {
+    (anchor.window_top_left.0 + (current_mouse.0 - anchor.mouse.0), anchor.window_top_left.1 + (current_mouse.1 - anchor.mouse.1))
 }
 
 #[cfg(test)]
@@ -670,7 +680,7 @@ mod docked_layout_tests {
 
 #[cfg(test)]
 mod manual_drag_tests {
-    use super::drag_target_from_anchor;
+    use super::{drag_target_from_anchor, DragAnchor};
 
     // The window must follow the cursor 1:1: whatever offset it had from the
     // cursor when the gesture began (its own top-left minus the anchor
@@ -680,9 +690,9 @@ mod manual_drag_tests {
     // `DisplayPoints`).
     #[test]
     fn the_target_preserves_the_grab_offset_across_a_move() {
-        let anchor_mouse = (500.0, 200.0);
-        let anchor_window = (420.0, 150.0); // grabbed 80pt right, 50pt down of the window's own top-left
-        let target = drag_target_from_anchor(anchor_mouse, anchor_window, (650.0, 120.0));
+        // Grabbed 80pt right, 50pt down of the window's own top-left.
+        let anchor = DragAnchor { mouse: (500.0, 200.0), window_top_left: (420.0, 150.0) };
+        let target = drag_target_from_anchor(anchor, (650.0, 120.0));
         assert_eq!(target, (570.0, 70.0));
     }
 
@@ -691,8 +701,7 @@ mod manual_drag_tests {
     // click) from nudging the window at all.
     #[test]
     fn no_cursor_movement_yields_no_window_movement() {
-        let anchor_mouse = (100.0, 100.0);
-        let anchor_window = (10.0, 10.0);
-        assert_eq!(drag_target_from_anchor(anchor_mouse, anchor_window, anchor_mouse), anchor_window);
+        let anchor = DragAnchor { mouse: (100.0, 100.0), window_top_left: (10.0, 10.0) };
+        assert_eq!(drag_target_from_anchor(anchor, anchor.mouse), anchor.window_top_left);
     }
 }

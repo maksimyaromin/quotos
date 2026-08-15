@@ -15,7 +15,7 @@ use tauri::image::Image;
 use tauri::{Emitter, Manager};
 
 use crate::geometry::{
-    displays_in_points, docked_layout_in_points, drag_target_from_anchor, resolve_tray_point, DockedLayout,
+    displays_in_points, docked_layout_in_points, drag_target_from_anchor, resolve_tray_point, DockedLayout, DragAnchor,
 };
 use crate::{panel_window, tray_render, AppState};
 
@@ -456,9 +456,9 @@ pub(crate) fn drag_window_step(window: tauri::WebviewWindow, state: tauri::State
     let Some((mouse, window_origin)) = current_mouse_and_window_points(&window) else { return };
     let mut anchor = state.manual_drag_anchor.lock().expect("manual_drag_anchor mutex poisoned");
     match *anchor {
-        None => *anchor = Some((mouse, window_origin)),
-        Some((anchor_mouse, anchor_window)) => {
-            let (x, y) = drag_target_from_anchor(anchor_mouse, anchor_window, mouse);
+        None => *anchor = Some(DragAnchor { mouse, window_top_left: window_origin }),
+        Some(start) => {
+            let (x, y) = drag_target_from_anchor(start, mouse);
             drop(anchor);
             place_window_top_left_sync(&window, x, y);
         }

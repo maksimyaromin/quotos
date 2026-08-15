@@ -24,7 +24,7 @@ use persistence::Store;
 use ratelimit::RateLimiter;
 use scheduler::Scheduler;
 
-use geometry::{DockedLayout, PANEL_WINDOW_HEIGHT_LOGICAL, PANEL_WINDOW_WIDTH_LOGICAL};
+use geometry::{DockedLayout, DragAnchor, PANEL_WINDOW_HEIGHT_LOGICAL, PANEL_WINDOW_WIDTH_LOGICAL};
 
 struct AppState {
     http: reqwest::Client,
@@ -121,11 +121,9 @@ struct AppState {
     last_known_position: Mutex<(f64, f64)>,
     /// Anchor for `drag_window_step`'s manual, frame-based detached-window
     /// drag (see that function's doc comment for why native
-    /// `performWindowDragWithEvent:` dragging isn't used) — the cursor and
-    /// the window's own top-left, both in global points, captured on the
-    /// first `mousemove` of a header-drag gesture. `None` whenever no manual
-    /// drag is in progress.
-    manual_drag_anchor: Mutex<Option<((f64, f64), (f64, f64))>>,
+    /// `performWindowDragWithEvent:` dragging isn't used). `None` whenever
+    /// no manual drag is in progress.
+    manual_drag_anchor: Mutex<Option<DragAnchor>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
