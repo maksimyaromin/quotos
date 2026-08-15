@@ -222,6 +222,23 @@ clean.
     arbitrary URLs or paths — the same "remove what nothing uses" rule that
     already took out `tauri-plugin-positioner`.
 
+24. **The webview runs under a real Content-Security-Policy** — the config
+    shipped `"csp": null` (template residue, the same class as the opener
+    plugin above): any injected markup could have run scripts, talked to any
+    host, loaded anything. The policy is now `default-src 'self'; script-src
+    'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;
+    connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri
+    'none'; form-action 'none'` — the webview cannot reach the network at
+    all (`connect-src` is Tauri's own IPC and nothing else). Each relaxation
+    is earned: `style-src 'unsafe-inline'` for React's inline style
+    attributes plus the three keyframe `<style>` elements, `font-src data:`
+    because vite inlines the two sub-4KB MonoLisa weights into the CSS.
+    Verified twice: the built bundle served in a real browser under the same
+    policy (zero `securitypolicyviolation` events across the full UI,
+    including the data: fonts and a live subscription row), and the packaged
+    `.app` itself rendering a seeded probe row end-to-end (the IPC
+    round-trip proven under the policy, not assumed).
+
 ## Honest gaps, still open
 
 - **Where `claude setup-token` writes for the default account** is unverified

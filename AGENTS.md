@@ -539,6 +539,22 @@ rewritten each round, not appended to.
   environments (`bundle_dmg.sh` needs real disk-image arbitration).
   `tauri.conf.json` bundle targets are `["app"]` only for that reason — add
   `"dmg"` back only where DMG creation is actually needed and works.
+- **The webview ships under a strict CSP (`tauri.conf.json`
+  `app.security.csp`), and it is enforced only in the packaged build — not
+  under `npm run tauri dev`.** Tauri injects the policy into the embedded
+  `index.html` at build time; in dev the page comes straight from vite over
+  `devUrl` with no CSP attached, so a violating change (a remote resource,
+  an inline `<script>`, an eval) passes every dev-mode and vitest check and
+  breaks only in the built `.app` — test CSP-touching changes against the
+  bundle (a seeded probe row rendering proves the IPC round-trip; a
+  policy-broken build shows the empty state forever). Every current
+  relaxation is load-bearing: `style-src 'unsafe-inline'` (React inline
+  style attributes plus the three keyframe `<style>` elements), `font-src
+  data:` (vite inlines assets under 4KB — the MonoLisa 600/700 woff2s land
+  in the CSS as `data:` URIs), `connect-src ipc: http://ipc.localhost`
+  (Tauri IPC itself; removing it silently breaks every `invoke`). There is
+  deliberately no remote host anywhere in the policy — all HTTP happens on
+  the Rust side.
 - **`tray-icon` v0.24.2's macOS `set_title(None)` is a silent no-op** — it
   only calls `NSStatusItem`'s `setTitle` when given `Some(..)`, so passing
   `None` to "clear" a tray title leaves whatever was last set stuck forever.
