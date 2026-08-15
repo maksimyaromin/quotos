@@ -301,6 +301,16 @@ rewritten each round, not appended to.
 
 ## Sharp edges
 
+- **Never hardcode anything that describes the running system — read it fresh
+  every time, and never bake in a number measured on one particular Mac.**
+  The captain's standing rule (2026-08-14): not his subscriptions, not his
+  monitor setup. Two cases already paid for ignoring this: a menu-bar-height
+  constant that was right on one display and wrong on the other (see the
+  menu-bar-height entry below), and `TrayIconEvent`'s rect / `Monitor`'s
+  position / `set_position`'s physical coordinates each quietly using a
+  *different* display's scale factor (see the coordinate-space entry below).
+  The same rule extends to data, not just geometry: subscriptions/accounts
+  are discovered (`tauriClient.listAccounts`), never listed in code.
 - **A `#[tauri::command]` without `(async)` runs on the main thread, inline
   with the IPC — so it blocks the webview's own rendering.** (`tauri-macros`
   maps a plain command to `ExecutionContext::Blocking`.) That is correct for
@@ -510,7 +520,8 @@ rewritten each round, not appended to.
   visible at its stale position and moves a runloop turn later — a guaranteed
   one-frame flash wherever it last was. `place_window_top_left_sync` in
   `lib.rs` sets the `NSWindow` frame directly instead.
-- **Never hardcode a menu bar height; it differs per display on one machine.**
+- **Menu bar height differs per display on one machine — don't hardcode it**
+  (see the do-not-hardcode-the-environment rule at the top of this section).
   The handoff's "32px from the top" is a bar height plus a 6px gap, and this
   machine's notched built-in measures **33pt** against an unnotched display's
   24-30pt — so the constant put the panel *inside* the bar on one display and
@@ -519,9 +530,7 @@ rewritten each round, not appended to.
   `NSScreen.visibleFrame` per display, and keep the tray-item fallback in
   `docked_layout_in_points`: inside a full-screen Space the bar is auto-hidden
   and `visibleFrame` reports no bar at all *even while the bar is on screen
-  under the cursor*. Both paths were checked to agree. The captain's standing
-  rule — "нигде не хардкодите мой сетап мониторов" — applies to every value of
-  this kind: if it has to come from the running system, read it every time.
+  under the cursor*. Both paths were checked to agree.
 - **R4-1: the panel must never activate the application — that, not any
   collection behaviour, is what threw the captain out of a full-screen
   Space.** Rounds 2 and 3 chased this as window *membership*
