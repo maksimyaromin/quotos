@@ -458,7 +458,7 @@ rewritten each round, not appended to.
 - **`tray-icon` v0.24.2's macOS `set_title(None)` is a silent no-op** — it
   only calls `NSStatusItem`'s `setTitle` when given `Some(..)`, so passing
   `None` to "clear" a tray title leaves whatever was last set stuck forever.
-  Always pass `Some("")` to clear it (see `set_tray_title` in `lib.rs`).
+  Always pass `Some("")` to clear it (see `repaint_tray_icon` in `shell.rs`).
   Verified by reading `platform_impl/macos/mod.rs` in the crate source
   directly — don't trust the `Option<S>` signature's apparent symmetry.
 - **`tauri-plugin-positioner` is gone — its `TrayBottomLeft` anchor math was
@@ -476,7 +476,7 @@ rewritten each round, not appended to.
   reports each window's real on-screen bounds independent of what the app
   itself believes). Root cause narrowed to the plugin's own
   `calculate_position`/`get_monitor_for_tray_icon` path, not chased further
-  upstream — instead `show_panel` in `lib.rs` now computes the position
+  upstream — instead `show_panel` in `shell.rs` now computes the position
   itself, directly from the tray icon's own `Rect` (handed fresh on every
   click via `TrayIconEvent::Click`'s `rect` field, always physical pixels per
   `tray-icon` v0.24.2's own `Rect` type) plus `window.monitor_from_point` on
@@ -555,7 +555,7 @@ rewritten each round, not appended to.
   a pressed menu bar button rather than a box hugging the ink, and it is
   applied whether highlighted or not so the glyph — and therefore the beak —
   cannot shift when the highlight toggles. `plain_glyph_rgba` and `render`
-  must keep producing the same width (there's a test). `lib.rs` reads
+  must keep producing the same width (there's a test). `geometry.rs` reads
   `GLYPH_LEFT_INSET_POINTS` from `tray_render` rather than assuming the glyph
   is the image's leftmost 18pt.
 - **This machine is live and shared — not a clean test box — and
@@ -642,7 +642,7 @@ rewritten each round, not appended to.
   tray handler, which is already on the main thread, the window becomes
   visible at its stale position and moves a runloop turn later — a guaranteed
   one-frame flash wherever it last was. `place_window_top_left_sync` in
-  `lib.rs` sets the `NSWindow` frame directly instead.
+  `shell.rs` sets the `NSWindow` frame directly instead.
 - **Menu bar height differs per display on one machine — don't hardcode it**
   (see the do-not-hardcode-the-environment rule at the top of this section).
   The handoff's "32px from the top" is a bar height plus a 6px gap, and this
@@ -695,7 +695,7 @@ rewritten each round, not appended to.
   surfaced the real, deeper finding: doing so measurably reactivates the app
   (`NSWorkspace.frontmostApplication`, read from a separate process, same as
   R4-1's own method) — and replacing that call with a hand-rolled drag
-  (`drag_window_step` in `lib.rs`, moving the frame directly via the same
+  (`drag_window_step` in `shell.rs`, moving the frame directly via the same
   `place_window_top_left_sync` the docking path already uses, on every
   `mousemove`) has the **identical** problem. Isolated precisely: a stationary
   click-and-hold never activates, a full click-drag-release gesture over
