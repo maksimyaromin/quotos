@@ -12,7 +12,6 @@ export type SubscriptionState =
   | "working" // data is current
   | "reading" // refresh in flight, previous numbers still shown
   | "behind" // refresh failed, older data held
-  | "repairing" // recoverable problem being fixed automatically
   | "broken"; // cannot be read at all
 
 export interface LimitWindowEntity {

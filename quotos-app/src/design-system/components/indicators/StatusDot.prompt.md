@@ -1,4 +1,4 @@
-Use `StatusDot` to show a subscription's state compactly, paired with a word (never alone). Eight states map to muted colors; `connecting` / `reading` / `repairing` pulse.
+Use `StatusDot` to show a subscription's state compactly, paired with a word (never alone). Six states map to muted colors; `connecting` / `reading` pulse.
 
 ```jsx
 <StatusDot state="behind" /> <span>Behind</span>

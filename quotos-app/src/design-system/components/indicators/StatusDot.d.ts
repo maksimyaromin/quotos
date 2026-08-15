@@ -6,7 +6,6 @@ export type SubscriptionState =
   | "working"
   | "reading"     // refresh in flight
   | "behind"      // stale data held
-  | "repairing"
   | "broken";
 // Note: "waiting on our own rate budget" is deliberately NOT a health state
 // (see B6/B5) — it is tracked separately as a rate-limit fact that never

@@ -6,11 +6,10 @@ const STATE_COLOR = {
   working: "var(--status-working)",
   reading: "var(--status-progress)",
   behind: "var(--status-behind)",
-  repairing: "var(--status-progress)",
   broken: "var(--status-broken)",
 };
 
-const PULSING = new Set(["connecting", "reading", "repairing"]);
+const PULSING = new Set(["connecting", "reading"]);
 
 /** A small state dot. Color maps to subscription state; in-progress states
  *  pulse gently. "working" reads as calm (teal), not a loud green "OK". */

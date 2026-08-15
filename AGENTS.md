@@ -257,11 +257,11 @@ rewritten each round, not appended to.
   `used` isn't a number, for every non-data state (`idle`, `connecting`,
   `broken`, or `working` with nothing to report) — see `SubscriptionRow.jsx`
   and mirror `quotos-prototype.html`'s `renderVals()` if this needs to
-  change. `SubscriptionState` still has an unused `"repairing"` member from
-  round 1; the round-2 handoff's fixed vocabulary is exactly `working`,
-  `reading`, `behind`, `broken`, `connecting`, `idle` — don't render
-  `"repairing"` and don't introduce new state values without updating both
-  this file and the handoff's row-state table.
+  change. `SubscriptionState`'s vocabulary is exactly the round-2 handoff's
+  `working`, `reading`, `behind`, `broken`, `connecting`, `idle` (round 1's
+  unused `"repairing"` was removed from the union and both `StatusDot`
+  copies); don't introduce new state values without updating both this file
+  and the handoff's row-state table.
 - The "…" row menu (`SubscriptionRow.jsx`) closes on any interaction outside
   itself via a single `window` `mousedown` listener in `App.tsx`, gated by
   `data-quotos-menu-scope` on both the trigger button and the dropdown. It
