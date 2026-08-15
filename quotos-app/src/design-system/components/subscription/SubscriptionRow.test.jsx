@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SubscriptionRow } from "./SubscriptionRow.jsx";
 
@@ -174,5 +174,87 @@ describe("the row menu's Move up / Move down (v5)", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
     expect(screen.getByText("Move up").disabled).toBe(true);
     expect(screen.getByText("Move down").disabled).toBe(true);
+  });
+});
+
+// v6: before this, the open menu's items were reachable by keyboard only by
+// tabbing through the row's other controls in between, arrows did nothing,
+// and closing the menu (Escape, or activating an item) unmounted the focused
+// button — dropping focus to <body> and stranding a keyboard user mid-panel.
+describe("the row menu is keyboard-operable (v6)", () => {
+  // Keydowns bubble from wherever focus is to the row div's own handler, so
+  // firing on the trigger models "Enter opened the menu, focus still on the
+  // '…' button".
+  const arrow = (key) => fireEvent.keyDown(document.activeElement === document.body
+    ? screen.getByLabelText("More")
+    : document.activeElement, { key });
+
+  it("ArrowDown walks the items top-to-bottom and wraps past the end", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveUp canMoveDown />);
+    const expected = ["Read now", "Rename", "Show in menu bar", "Move up", "Move down", "Stop tracking"];
+    for (const label of expected) {
+      arrow("ArrowDown");
+      expect(document.activeElement.textContent).toBe(label);
+    }
+    arrow("ArrowDown");
+    expect(document.activeElement.textContent).toBe("Read now");
+  });
+
+  it("ArrowUp enters at the last item and walks backwards", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveUp canMoveDown />);
+    arrow("ArrowUp");
+    expect(document.activeElement.textContent).toBe("Stop tracking");
+    arrow("ArrowUp");
+    expect(document.activeElement.textContent).toBe("Move down");
+  });
+
+  it("skips disabled items, exactly as the pointer path does", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveDown />);
+    arrow("ArrowDown"); // Read now
+    arrow("ArrowDown"); // Rename
+    arrow("ArrowDown"); // Show in menu bar
+    arrow("ArrowDown"); // Move up is disabled — lands on Move down
+    expect(document.activeElement.textContent).toBe("Move down");
+  });
+
+  it("Home and End jump to the edges", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveUp canMoveDown />);
+    arrow("End");
+    expect(document.activeElement.textContent).toBe("Stop tracking");
+    arrow("Home");
+    expect(document.activeElement.textContent).toBe("Read now");
+  });
+
+  it("leaves the arrow keys alone while the menu is closed", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} />);
+    fireEvent.keyDown(screen.getByLabelText("More"), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("leaves the sign-in code field's caret alone even with the menu open", () => {
+    render(<SubscriptionRow label="Claude Max" state="broken" menuOpen signInInProgress />);
+    const code = screen.getByPlaceholderText("Paste code");
+    code.focus();
+    fireEvent.keyDown(code, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(code);
+  });
+
+  it("hands focus back to the trigger when closing unmounts the focused item", () => {
+    const { rerender } = render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
+    arrow("ArrowDown");
+    expect(document.activeElement.textContent).toBe("Read now");
+    rerender(<SubscriptionRow label="Claude Max" state="working" used={40} />);
+    expect(document.activeElement).toBe(screen.getByLabelText("More"));
+  });
+
+  it("does not steal focus when the close left it somewhere real", () => {
+    const windows = [{ id: "w1", label: "Session", used: 40 }];
+    const { rerender } = render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} menuOpen />,
+    );
+    const disclosure = screen.getByRole("button", { name: /1 limit/ });
+    disclosure.focus();
+    rerender(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} />);
+    expect(document.activeElement).toBe(disclosure);
   });
 });

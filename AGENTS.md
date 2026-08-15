@@ -297,7 +297,16 @@ rewritten each round, not appended to.
   (`useSubscriptions.ts`'s `moveSubscription`), which the persisted list and
   the tray's digit order both already derive from, so one swap reorders all
   three — an edge row's impossible direction renders disabled, never hidden
-  (the menu keeps one fixed item set). **R4-5: it is `position: fixed`, placed from the trigger
+  (the menu keeps one fixed item set). v6 made the open menu
+  keyboard-operable: a keydown handler on the row div (the fixed-position
+  dropdown is still the row's DOM child, so keydowns bubble there) moves
+  focus with ArrowUp/ArrowDown (wrapping, disabled items skipped) and
+  Home/End, and a menu close that unmounts the focused item (Escape, or
+  activating an item) hands focus back to the "…" trigger — guarded by
+  `document.activeElement === document.body` so a click-away close never
+  steals focus from what was clicked. The sign-in code field is the one
+  focusable that can coexist with an open menu; its keydowns are exempt so
+  arrows keep moving its caret. **R4-5: it is `position: fixed`, placed from the trigger
   button's own viewport rect, and that is load-bearing.** As an
   absolutely-positioned child it lived inside the panel body's
   `overflow-y: auto` box, which both clipped its last item at the panel's

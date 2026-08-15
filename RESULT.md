@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**274 automated tests pass** (169 vitest, 105 `cargo test`); `tsc --noEmit`,
+**282 automated tests pass** (177 vitest, 105 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (169) from `quotos-app/`; `cargo test` (105)
+- **Tests**: `npx vitest run` (177) from `quotos-app/`; `cargo test` (105)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -146,6 +146,12 @@ clean.
     `--force-prefers-reduced-motion`; `reducedMotion.test.jsx` pins the token
     coverage and the no-literal-duration-transitions invariant that makes it
     complete.
+16. **The "…" row menu is fully keyboard-operable** — with the menu open,
+    ArrowUp/ArrowDown walk the enabled items (wrapping, disabled items
+    skipped), Home/End jump to the edges, and a close that unmounts the
+    focused item (Escape, or activating an item) hands focus back to the "…"
+    trigger instead of stranding it on `<body>`. Verified live in a real
+    engine: Enter opens, arrows navigate, Enter activates, focus returns.
 
 ## Honest gaps, still open
 

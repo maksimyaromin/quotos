@@ -183,6 +183,19 @@ export function SubscriptionRow({
     };
   }, [menuOpen]);
 
+  // v6: when the menu closes, focus is often standing on an item that just
+  // unmounted (Escape, or Enter on the item itself), which drops it to
+  // <body> and strands a keyboard user mid-panel. Hand it back to the "…"
+  // trigger — but only when it was genuinely lost; a click that closed the
+  // menu by landing somewhere else keeps its own target.
+  const wasMenuOpen = React.useRef(false);
+  React.useEffect(() => {
+    if (wasMenuOpen.current && !menuOpen && document.activeElement === document.body) {
+      menuButtonRef.current?.focus();
+    }
+    wasMenuOpen.current = menuOpen;
+  }, [menuOpen]);
+
   React.useEffect(() => {
     if (signInInProgress) {
       setCodeDraft("");
@@ -236,9 +249,37 @@ export function SubscriptionRow({
     onToggleExpand?.();
   };
 
+  // v6: the open menu's keyboard path — ArrowUp/ArrowDown walk the enabled
+  // items (wrapping, like a native NSMenu), Home/End jump to the edges.
+  // Lives on the row div because the fixed-position dropdown is still this
+  // row's DOM child, so keydowns from the trigger and the items alike bubble
+  // through here: Enter on the "…" button, then ArrowDown, reaches "Read
+  // now" without tabbing through the row's other controls first. Dismissal
+  // is deliberately not handled here — Escape and click-away stay with
+  // App's window-level layering. The sign-in code field is the one focusable
+  // that can coexist with an open menu; its caret keeps the arrow keys.
+  const handleMenuKeyDown = (e) => {
+    if (!menuOpen || !menuRef.current) return;
+    if (e.target.tagName === "INPUT") return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+    const items = Array.from(menuRef.current.querySelectorAll("button")).filter((b) => !b.disabled);
+    if (items.length === 0) return;
+    e.preventDefault();
+    const current = items.indexOf(document.activeElement);
+    const next = e.key === "Home"
+      ? 0
+      : e.key === "End"
+      ? items.length - 1
+      : e.key === "ArrowDown"
+      ? (current < 0 ? 0 : (current + 1) % items.length)
+      : current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
+    items[next].focus();
+  };
+
   return (
     <div
       onClick={handleRowClick}
+      onKeyDown={handleMenuKeyDown}
       style={{
         position: "relative",
         display: "flex", flexDirection: "column", gap: "var(--space-2)",
