@@ -42,7 +42,7 @@ const MENU_MIN_WIDTH = 168;
 function MenuItem({ danger, disabled, onClick, children }) {
   const [hover, setHover] = React.useState(false);
   return (
-    <button type="button" disabled={disabled} onClick={onClick}
+    <button type="button" role="menuitem" disabled={disabled} onClick={onClick}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         display: "flex", alignItems: "center", height: 26, padding: "0 var(--space-2)",
@@ -345,7 +345,7 @@ export function SubscriptionRow({
         {badge ? (
           <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>{badge}</Badge>
         ) : null}
-        <button type="button" title="More" aria-label="More" aria-expanded={menuOpen}
+        <button type="button" title="More" aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen}
           data-quotos-menu-scope="true"
           ref={menuButtonRef}
           onClick={(e) => { e.stopPropagation(); onToggleMenu?.(); }}
@@ -511,6 +511,8 @@ export function SubscriptionRow({
       {menuOpen ? (
         <div
           ref={menuRef}
+          role="menu"
+          aria-label="Subscription actions"
           data-quotos-menu-scope="true"
           onClick={(e) => e.stopPropagation()}
           style={{
@@ -531,7 +533,7 @@ export function SubscriptionRow({
           </MenuItem>
           <MenuItem disabled={!canMoveUp} onClick={() => { onToggleMenu?.(); onMoveUp?.(); }}>Move up</MenuItem>
           <MenuItem disabled={!canMoveDown} onClick={() => { onToggleMenu?.(); onMoveDown?.(); }}>Move down</MenuItem>
-          <div style={{ height: "0.5px", margin: "var(--space-1) var(--space-2)", background: "var(--border-default)" }} />
+          <div role="separator" style={{ height: "0.5px", margin: "var(--space-1) var(--space-2)", background: "var(--border-default)" }} />
           <MenuItem danger onClick={() => { onToggleMenu?.(); onStopTracking?.(); }}>Stop tracking</MenuItem>
         </div>
       ) : null}

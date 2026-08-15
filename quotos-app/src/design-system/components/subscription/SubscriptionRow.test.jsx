@@ -258,3 +258,36 @@ describe("the row menu is keyboard-operable (v6)", () => {
     expect(document.activeElement).toBe(disclosure);
   });
 });
+
+// v7: the "…" dropdown carries the standard WAI-ARIA menu semantics. Before
+// this, a screen reader saw "More, button, expanded" and then six unrelated
+// buttons in the document — nothing announced that a menu had opened, how many
+// items it holds, or where it ends. The keyboard behavior (arrows wrap,
+// disabled items skipped — v6) already matched the ARIA menu pattern; these
+// roles make the markup say what the interaction already does.
+describe("the row menu exposes WAI-ARIA menu semantics (v7)", () => {
+  it("the trigger declares it opens a menu", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} />);
+    expect(screen.getByLabelText("More").getAttribute("aria-haspopup")).toBe("menu");
+  });
+
+  it("the open dropdown is a named menu", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
+    const menu = screen.getByRole("menu");
+    expect(menu.getAttribute("aria-label")).toBe("Subscription actions");
+    expect(menu.getAttribute("data-quotos-menu-scope")).toBe("true");
+  });
+
+  it("every action is a menuitem, in the menu's one fixed order", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((b) => b.textContent)).toEqual([
+      "Read now", "Rename", "Show in menu bar", "Move up", "Move down", "Stop tracking",
+    ]);
+  });
+
+  it("the divider before Stop tracking is a separator", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
+    expect(screen.getByRole("separator")).toBeTruthy();
+  });
+});

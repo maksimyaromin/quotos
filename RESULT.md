@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**284 automated tests pass** (177 vitest, 107 `cargo test`); `tsc --noEmit`,
+**288 automated tests pass** (181 vitest, 107 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (177) from `quotos-app/`; `cargo test` (107)
+- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (107)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -160,6 +160,13 @@ clean.
     (best-effort, one slot) before starting empty, so recovery stays
     possible by hand — the same recoverability rule the localStorage
     migration already followed.
+18. **The "…" menu says what it is to assistive tech** — the trigger carries
+    `aria-haspopup="menu"`, the dropdown is a real `role="menu"` named
+    "Subscription actions", every action is a `role="menuitem"` (disabled
+    edges included), and the divider is a `role="separator"`. Before this, a
+    screen reader heard "More, button" and then six unrelated buttons;
+    Chrome's live accessibility tree now reports the standard menu pattern,
+    matching the keyboard behavior item 16 already gave it.
 
 ## Honest gaps, still open
 

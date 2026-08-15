@@ -306,7 +306,12 @@ rewritten each round, not appended to.
   `document.activeElement === document.body` so a click-away close never
   steals focus from what was clicked. The sign-in code field is the one
   focusable that can coexist with an open menu; its keydowns are exempt so
-  arrows keep moving its caret. **R4-5: it is `position: fixed`, placed from the trigger
+  arrows keep moving its caret. v7 added the matching WAI-ARIA menu roles
+  (`aria-haspopup="menu"` on the trigger, `role="menu"` +
+  `aria-label="Subscription actions"` on the dropdown, `role="menuitem"` on
+  items, `role="separator"` on the divider) — the v6 keyboard nav's
+  `querySelectorAll("button")` is unaffected since roles don't change tags.
+  **R4-5: it is `position: fixed`, placed from the trigger
   button's own viewport rect, and that is load-bearing.** As an
   absolutely-positioned child it lived inside the panel body's
   `overflow-y: auto` box, which both clipped its last item at the panel's
