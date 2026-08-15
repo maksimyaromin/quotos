@@ -21,6 +21,13 @@ pub struct RawSnapshot {
     pub fetched_at: String,
     pub usage: serde_json::Value,
     pub profile: Option<serde_json::Value>,
+    /// The zero-cost Claude Code statusline feed's most recent reading for
+    /// this config dir, if any — `None` covers "never opted in", "no
+    /// interactive session has fed it yet" and "the feed file is stale or
+    /// unreadable" identically (see `statusline.rs`'s `read_feed`). The
+    /// frontend's provider adapter reconciles this against `usage` itself
+    /// (freshest wins) — see `providers/claude/statuslineMerge.ts`.
+    pub statusline: Option<crate::statusline::StatuslineFeedDto>,
 }
 
 #[derive(Serialize, Clone, Debug)]

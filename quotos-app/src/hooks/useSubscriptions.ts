@@ -168,7 +168,10 @@ export function useSubscriptions() {
     ) => {
       if (outcome.ok) {
         const raw = outcome.raw;
-        const normalized = normalizeFor(provider, raw.usage, raw.profile, fallbackLabel);
+        const normalized = normalizeFor(provider, raw.usage, raw.profile, fallbackLabel, {
+          fetchedAt: raw.fetched_at,
+          statuslineFeed: raw.statusline,
+        });
         const mapped = mapOutcomeFor(provider, { kind: "ok", normalized }, prior.hadGoodRead);
         // R4-4: remember it for the Subscriptions screen, which otherwise has
         // only the config directory's name to show once this account stops

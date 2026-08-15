@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AccountDescriptor, RawSnapshot, ScheduledRefreshEvent, SignInFinishedEvent, TraySegment } from "../types/entities";
+import type {
+  AccountDescriptor,
+  RawSnapshot,
+  ScheduledRefreshEvent,
+  SignInFinishedEvent,
+  StatuslineIntegrationStatus,
+  TraySegment,
+} from "../types/entities";
 
 export async function listAccounts(): Promise<AccountDescriptor[]> {
   return invoke<AccountDescriptor[]>("list_accounts");
@@ -86,4 +93,24 @@ export async function forgetSignIn(accountId: string): Promise<void> {
 /** R2-6: fires once when the sign-in process for `accountId` exits. */
 export function onSignInFinished(callback: (event: SignInFinishedEvent) => void): Promise<() => void> {
   return listen<SignInFinishedEvent>("sign-in-finished", (event) => callback(event.payload));
+}
+
+/** S2: what's currently configured for this account's `statusLine` — the
+ * opt-in offer's own status check, so it never claims "not installed" for
+ * an account someone already pointed `statusLine` at some other way. */
+export async function statuslineStatus(configDir: string): Promise<StatuslineIntegrationStatus> {
+  return invoke("statusline_status", { configDir });
+}
+
+/** S2: the explicit in-app opt-in write. Rejects with a typed
+ * `StatuslineError` (see types/entities.ts) — in particular `conflict` when
+ * a different `statusLine` is already configured and `force` wasn't set. */
+export async function statuslineInstall(configDir: string, force: boolean): Promise<{ replaced_existing: boolean }> {
+  return invoke("statusline_install", { configDir, force });
+}
+
+/** S2: "remove integration" — restores exactly the previous `statusLine`
+ * state (or clears the key). */
+export async function statuslineRemove(configDir: string): Promise<void> {
+  return invoke("statusline_remove", { configDir });
 }

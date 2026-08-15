@@ -103,6 +103,60 @@ export interface RawSnapshot {
   fetched_at: string;
   usage: unknown;
   profile: unknown | null;
+  /** S2: the Claude Code statusline feed's most recent reading for this
+   * config dir, attached by the Rust side on every read attempt (manual or
+   * scheduled) — `null`/absent whenever nothing was ever installed, no
+   * session has fed it yet, or the feed file is stale/unreadable. See
+   * `providers/claude/statuslineMerge.ts` for how this reconciles with
+   * `usage` (freshest wins, never inventing a window the API didn't already
+   * report). */
+  statusline?: StatuslineFeedWire | null;
+}
+
+/** One window's reading from Claude Code's own statusline hook, exactly as
+ * its docs define `rate_limits.five_hour`/`rate_limits.seven_day`:
+ * `used_percentage` 0-100, `resets_at` Unix epoch seconds. */
+export interface StatuslineWindowWire {
+  used_percentage: number;
+  resets_at: number | null;
+}
+
+export interface StatuslineFeedWire {
+  /** When the helper actually saw this reading (ISO 8601) — not when
+   * Quotos later happens to read the file. This is the timestamp
+   * reconciliation compares against the API read's own `fetched_at`. */
+  written_at: string;
+  rate_limits: {
+    five_hour?: StatuslineWindowWire | null;
+    seven_day?: StatuslineWindowWire | null;
+  };
+}
+
+/** S2: what's currently configured for an account's Claude Code
+ * `statusLine` — the in-app opt-in offer's own status check. */
+export type StatuslineIntegrationStatus =
+  | { kind: "not_installed" }
+  | { kind: "installed" }
+  | { kind: "conflict"; existing_command: string };
+
+/** Wire shape of the Rust `StatuslineError` enum (tagged by `kind`) — the
+ * install-flow errors the write-mechanism contract requires: refuse on
+ * unparseable JSON, and surface (never silently overwrite) a differing
+ * existing `statusLine`. */
+export type StatuslineError =
+  | { kind: "parse_failed"; message: string }
+  | { kind: "read_failed"; message: string }
+  | { kind: "write_failed"; message: string }
+  | { kind: "helper_install_failed"; message: string }
+  | { kind: "conflict"; existing_command: string };
+
+export function isStatuslineError(value: unknown): value is StatuslineError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    typeof (value as { kind: unknown }).kind === "string"
+  );
 }
 
 /** Wire shape of the Rust `FetchError` enum (tagged by `kind`). */

@@ -1,7 +1,17 @@
-import type { FetchError, NormalizedRead, SubscriptionState } from "../types/entities";
+import type { FetchError, NormalizedRead, StatuslineFeedWire, SubscriptionState } from "../types/entities";
 import { normalize as normalizeClaude, mapOutcome as mapOutcomeClaude } from "./claude";
 
-export type Normalizer = (usage: unknown, profile: unknown, fallbackLabel: string) => NormalizedRead;
+/** S2: everything a provider's normalizer needs about *this particular
+ * read* beyond the raw usage/profile payloads — when it was fetched, and
+ * whatever the statusline feed most recently reported, so a provider can
+ * reconcile the two itself (see `providers/claude/index.ts`'s `normalize`
+ * and `statuslineMerge.ts`). A provider with no such feed just ignores it. */
+export interface NormalizeContext {
+  fetchedAt: string;
+  statuslineFeed?: StatuslineFeedWire | null;
+}
+
+export type Normalizer = (usage: unknown, profile: unknown, fallbackLabel: string, context: NormalizeContext) => NormalizedRead;
 
 /** What a refresh attempt produced, for the provider's outcome→state
  * mapper. Deliberately excludes `rate_limited` — B5/B6: a self-imposed
@@ -46,12 +56,18 @@ export function providerDisplayName(provider: string): string {
   return PROVIDER_DISPLAY_NAMES[provider] ?? provider;
 }
 
-export function normalizeFor(provider: string, usage: unknown, profile: unknown, fallbackLabel: string): NormalizedRead {
+export function normalizeFor(
+  provider: string,
+  usage: unknown,
+  profile: unknown,
+  fallbackLabel: string,
+  context: NormalizeContext,
+): NormalizedRead {
   const normalizer = PROVIDER_NORMALIZERS[provider];
   if (!normalizer) {
     return { label: fallbackLabel, account: null, windows: [], used: null, resetsAt: null, severity: "healthy" };
   }
-  return normalizer(usage, profile, fallbackLabel);
+  return normalizer(usage, profile, fallbackLabel, context);
 }
 
 export function mapOutcomeFor(provider: string, outcome: ReadOutcome, hadGoodRead: boolean): OutcomeResult {

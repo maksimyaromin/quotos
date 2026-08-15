@@ -4,6 +4,7 @@ mod providers;
 mod ratelimit;
 mod scheduler;
 mod signin;
+pub mod statusline;
 mod tray_render;
 
 use std::collections::HashMap;
@@ -33,6 +34,11 @@ struct AppState {
     /// R2-5: the tracked-subscriptions list, natively owned (see
     /// `persistence.rs` for why — reproduced first, on a real build).
     tracked_store: Store,
+    /// Quotos's own app-support directory (`app.path().app_config_dir()`),
+    /// computed once at setup — see `statusline.rs`, which stores the
+    /// installed helper binary, per-account feed readings and install
+    /// backups underneath it.
+    statusline_root: PathBuf,
     /// R2-4: one automatic read per account per minute, on a native timer
     /// (see `scheduler.rs` for why — also reproduced first).
     scheduler: Scheduler,
@@ -184,6 +190,14 @@ async fn perform_fetch(
         }
     };
 
+    // R2-4/S2: opportunistic, never budgeted — a plain file read of
+    // whatever the statusline helper last wrote for this config dir, or
+    // `None` if it never has (see `statusline::read_feed`'s doc comment).
+    // The frontend's provider adapter is what actually reconciles this
+    // against `usage` (freshest wins); this is just attaching it to the
+    // snapshot both the manual and scheduled read paths already share.
+    let statusline = statusline::read_feed(&state.statusline_root, &path);
+
     Ok(RawSnapshot {
         account_id: account_id.to_string(),
         provider: provider.to_string(),
@@ -191,6 +205,7 @@ async fn perform_fetch(
         fetched_at: chrono::Utc::now().to_rfc3339(),
         usage,
         profile,
+        statusline,
     })
 }
 
@@ -230,6 +245,38 @@ fn load_tracked(state: tauri::State<'_, AppState>) -> Vec<TrackedAccount> {
 #[tauri::command(async)]
 fn save_tracked(state: tauri::State<'_, AppState>, tracked: Vec<TrackedAccount>) -> Result<(), String> {
     state.tracked_store.save(tracked)
+}
+
+/// S2: what's currently configured for this account's statusline — used by
+/// the in-app opt-in offer before it shows anything, so a row never claims
+/// "not installed" for an account someone already pointed `statusLine` at
+/// some other way. Off the main thread — this touches the filesystem, same
+/// reasoning as `list_accounts`/`load_tracked` above.
+#[tauri::command(async)]
+fn statusline_status(
+    state: tauri::State<'_, AppState>,
+    config_dir: String,
+) -> Result<statusline::IntegrationStatus, statusline::StatuslineError> {
+    statusline::status(&state.statusline_root, &PathBuf::from(config_dir))
+}
+
+/// S2: the explicit in-app opt-in write — never called except from a
+/// captain's own click in the panel (`useSubscriptions`-adjacent UI calls
+/// this directly; see the write-mechanism contract in `statusline.rs`).
+#[tauri::command(async)]
+fn statusline_install(
+    state: tauri::State<'_, AppState>,
+    config_dir: String,
+    force: bool,
+) -> Result<statusline::InstallOutcome, statusline::StatuslineError> {
+    statusline::install(&state.statusline_root, &PathBuf::from(config_dir), force)
+}
+
+/// S2: "remove integration" — restores exactly the previous `statusLine`
+/// state (or clears the key), per the write-mechanism contract.
+#[tauri::command(async)]
+fn statusline_remove(state: tauri::State<'_, AppState>, config_dir: String) -> Result<(), statusline::StatuslineError> {
+    statusline::remove(&state.statusline_root, &PathBuf::from(config_dir))
 }
 
 /// R2-4: what the scheduler's automatic reads report back to the frontend —
@@ -1475,6 +1522,9 @@ pub fn run() {
             submit_sign_in_code,
             cancel_sign_in,
             forget_sign_in,
+            statusline_status,
+            statusline_install,
+            statusline_remove,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -1493,7 +1543,8 @@ pub fn run() {
             // because the tracked-list store needs `app.path()`, which
             // isn't available until setup — see persistence.rs for why a
             // plain, `fsync`'d file is what R2-5's reproduction called for.
-            let tracked_path = app.path().app_config_dir()?.join("tracked.json");
+            let app_support_dir = app.path().app_config_dir()?;
+            let tracked_path = app_support_dir.join("tracked.json");
             // Computed here (rather than down by the tray builder, where it
             // used to live) so `AppState.last_icon_width_px` can start at the
             // exact same width as the icon the builder below actually sets —
@@ -1509,6 +1560,7 @@ pub fn run() {
                 profile_cache: Mutex::new(HashMap::new()),
                 detached: Mutex::new(false),
                 tracked_store: Store::load(tracked_path),
+                statusline_root: app_support_dir,
                 scheduler: Scheduler::new(),
                 sign_in: signin::SignInRegistry::new(),
                 last_tray_rect: Mutex::new(None),

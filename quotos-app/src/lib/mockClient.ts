@@ -9,7 +9,7 @@
  * deliberately decoupled from what's tracked/shown (I6: the tracked list,
  * persisted in localStorage via lib/persistence.ts, starts empty and is the
  * only thing the panel renders). */
-import type { AccountDescriptor, FetchError, RawSnapshot, SignInFinishedEvent } from "../types/entities";
+import type { AccountDescriptor, FetchError, RawSnapshot, SignInFinishedEvent, StatuslineIntegrationStatus } from "../types/entities";
 
 const DELAY_MS = 500;
 const callCounts = new Map<string, number>();
@@ -78,6 +78,7 @@ const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:demo-nolimits", provider: "claude", config_dir: "~/.claude-demo-nolimits" },
   { id: "claude:demo-longnames", provider: "claude", config_dir: "~/.claude-demo-longnames" },
   { id: "claude:demo-severity", provider: "claude", config_dir: "~/.claude-demo-severity" },
+  { id: "claude:demo-statusline", provider: "claude", config_dir: "~/.claude-demo-statusline" },
 ];
 
 export async function listAccounts(): Promise<AccountDescriptor[]> {
@@ -215,6 +216,27 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         usage: usagePayload(85, 20, 8),
         profile: profilePayload("Severity demo", "claude_pro"),
       });
+    case "claude:demo-statusline":
+      // S2: the API read reports a session at 12% — but a statusline
+      // reading written *after* this fetch reports 45%, standing in for
+      // the captain having sent a few more messages since Quotos's last
+      // once-a-minute poll. Exercises reconcileWithStatusline end to end:
+      // the row should show the fresher 45%, not the API's stale 12%.
+      return delay({
+        account_id: account.id,
+        provider: "claude",
+        config_dir: account.config_dir,
+        fetched_at: new Date(Date.now() - 30_000).toISOString(),
+        usage: usagePayload(12, 24, 8),
+        profile: profilePayload("Statusline demo", "claude_pro"),
+        statusline: {
+          written_at: new Date().toISOString(),
+          rate_limits: {
+            five_hour: { used_percentage: 45, resets_at: Math.floor(Date.now() / 1000) + 3 * 3600 },
+            seven_day: null,
+          },
+        },
+      });
     case "claude:demo-longnames":
       // A provider-supplied window name long enough to force the ellipsis
       // truncation in LimitWindow.jsx — names are rendered verbatim, never
@@ -305,4 +327,37 @@ export function onSignInFinished(callback: (event: SignInFinishedEvent) => void)
   return Promise.resolve(() => {
     signInListeners = signInListeners.filter((l) => l !== callback);
   });
+}
+
+// S2: browser-only simulation of the statusline opt-in's install/status/
+// remove lifecycle, keyed by config dir — mirrors statusline.rs closely
+// enough for the offer/conflict/replace/remove UI to be reviewed end to end
+// here, without ever touching a real settings.json. The team account starts
+// with a foreign statusLine already configured, so the "conflict — show
+// what's there, require an explicit replace" path (contract point 3) is
+// reachable in a plain browser too.
+const statuslineState = new Map<string, StatuslineIntegrationStatus>([
+  ["~/.claude-team", { kind: "conflict", existing_command: "~/.claude-team/my-own-statusline.sh" }],
+]);
+
+export async function statuslineStatus(configDir: string): Promise<StatuslineIntegrationStatus> {
+  return delay(statuslineState.get(configDir) ?? { kind: "not_installed" });
+}
+
+export async function statuslineInstall(configDir: string, force: boolean): Promise<{ replaced_existing: boolean }> {
+  const current = statuslineState.get(configDir) ?? { kind: "not_installed" };
+  if (current.kind === "conflict" && !force) {
+    const rejection = delay({ kind: "conflict", existing_command: current.existing_command }).then((e) => {
+      throw e;
+    });
+    return rejection as Promise<never>;
+  }
+  const replaced = current.kind === "conflict";
+  statuslineState.set(configDir, { kind: "installed" });
+  return delay({ replaced_existing: replaced });
+}
+
+export async function statuslineRemove(configDir: string): Promise<void> {
+  statuslineState.set(configDir, { kind: "not_installed" });
+  return delay(undefined);
 }

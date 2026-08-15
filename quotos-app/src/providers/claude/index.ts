@@ -1,10 +1,18 @@
 import { normalizeUsage } from "./normalizeUsage";
 import { normalizeProfile } from "./normalizeProfile";
+import { reconcileWithStatusline } from "./statuslineMerge";
 import type { FetchError, NormalizedRead } from "../../types/entities";
-import type { ReadOutcome, OutcomeResult } from "../registry";
+import type { ReadOutcome, OutcomeResult, NormalizeContext } from "../registry";
 
-export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel: string): NormalizedRead {
-  const usage = normalizeUsage(usageRaw);
+/** S2: reconciles the zero-cost statusline feed (`context.statuslineFeed`)
+ * with the API payload before normalizing — see `statuslineMerge.ts` for
+ * why that happens on the raw shape rather than the normalized window
+ * list. A context with no feed (or an older one) leaves `usageRaw`
+ * untouched, so this is exactly today's behavior whenever nothing is
+ * feeding the statusline. */
+export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel: string, context: NormalizeContext): NormalizedRead {
+  const reconciled = reconcileWithStatusline(usageRaw, context.fetchedAt, context.statuslineFeed);
+  const usage = normalizeUsage(reconciled);
   const profile = normalizeProfile(profileRaw);
   return {
     label: profile.label ?? fallbackLabel,

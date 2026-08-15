@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../design-system/components/controls/Button";
 import type { AccountDescriptor, Subscription } from "../types/entities";
 import { listAccounts } from "../lib/tauriClient";
+import { StatuslineControl } from "./StatuslineControl";
 
 interface Row {
   id: string;
@@ -68,31 +69,37 @@ export function SubscriptionsScreen({
 
       {rows.map((r) => (
         <div key={r.id} style={{
-          display: "flex", alignItems: "center", gap: "var(--space-2)",
+          display: "flex", flexDirection: "column", gap: "var(--space-1-5)",
           padding: "var(--space-2)", borderRadius: "var(--radius-md)",
           border: "0.5px solid var(--border-subtle)",
           background: r.tracked ? "var(--bg-elevated)" : "transparent",
         }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
-              fontWeight: "var(--weight-medium)",
-              color: r.tracked ? "var(--text-primary)" : "var(--text-secondary)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>{r.name}</div>
-            <div style={{
-              fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-quaternary)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>{r.path}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
+                fontWeight: "var(--weight-medium)",
+                color: r.tracked ? "var(--text-primary)" : "var(--text-secondary)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{r.name}</div>
+              <div style={{
+                fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-quaternary)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{r.path}</div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              style={{ color: r.tracked ? "var(--red)" : "var(--text-primary)" }}
+              onClick={() => (r.tracked ? onRemove(r.id) : onAdd(r.account))}
+            >
+              {r.tracked ? "Remove" : "Add"}
+            </Button>
           </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            style={{ color: r.tracked ? "var(--red)" : "var(--text-primary)" }}
-            onClick={() => (r.tracked ? onRemove(r.id) : onAdd(r.account))}
-          >
-            {r.tracked ? "Remove" : "Add"}
-          </Button>
+          {/* S2: the statusline opt-in offer — only for tracked accounts,
+              right where "Add subscription" already lives (the captain's
+              own example placement for the offer). */}
+          {r.tracked ? <StatuslineControl configDir={r.path} /> : null}
         </div>
       ))}
 

@@ -298,6 +298,46 @@ rewritten each round, not appended to.
   untracked half. Without it an account silently renamed itself from the
   provider's own "Claude Max" to a bare "Claude" the moment it stopped being
   tracked. Not persisted — it is derived from this session's reads.
+- **S2: the Claude Code statusline feed is a second, zero-cost usage
+  source, opt-in per subscription, installed from the Subscriptions
+  screen.** `quotos-app/src-tauri/src/statusline.rs` owns install/status/
+  remove against a config dir's `settings.json` (read-merge-write, atomic
+  temp+rename, refuses on unparseable JSON, backs up the previous file plus
+  a small metadata record of the previous `statusLine` value under
+  `<app-support>/statusline-backups/`, and re-derives any conflict fresh on
+  every `install()` call rather than trusting an earlier `status()` — a
+  `settings.json` edited between the two is still caught). Confirmed live
+  against Claude Code's own docs (code.claude.com/docs/en/statusline, not
+  just the scout report): `statusLine: {type:"command", command}` runs in a
+  shell and receives the exact JSON documented there on stdin, including
+  `rate_limits.five_hour`/`.seven_day` (`used_percentage`, `resets_at` as
+  Unix epoch seconds) — absent on a session's first invocation, and a
+  script producing no stdout just leaves the statusline blank, which is why
+  the helper prints nothing at all. **The "helper" installed into
+  `<app-support>/statusline-helper/` is a copy of Quotos's own running
+  executable, not a purpose-built sidecar binary** — `main.rs` intercepts
+  `statusline::INGEST_FLAG` as `argv[1]` before `quotos_app_lib::run()`
+  touches Tauri at all, so the copy (invoked by Claude Code's hook, possibly
+  many times a minute) never spins up a second GUI instance; this sidesteps
+  needing Tauri's `externalBin` sidecar bundling (target-triple-suffixed
+  binaries staged before `tauri build`), which this round couldn't verify
+  end-to-end in a sandboxed dev environment. The tradeoff is disk (tens of
+  MB) for a local desktop app, not correctness — re-copied on a size
+  mismatch so an app update refreshes it. On the frontend,
+  `providers/claude/statuslineMerge.ts`'s `reconcileWithStatusline` patches
+  the *raw* API usage shape (not the already-normalized window list) before
+  `normalizeUsage` ever sees it, so every existing, tested rule (headline
+  selection, severity, window naming) applies unchanged — a fresher
+  statusline reading looks exactly like a fresher API response would have.
+  Freshest-wins is a plain `written_at` vs. the API read's own `fetched_at`
+  comparison, and it only ever refreshes a window the API response already
+  asserts exists (never synthesizes one from `null`/absent — the write-
+  mechanism contract's "never double-count"), which is also what makes "no
+  interactive session is feeding it" require zero special-casing: an empty
+  or stale feed is just never fresher. `providers/registry.ts`'s
+  `Normalizer` signature carries a `NormalizeContext` (`fetchedAt`,
+  `statuslineFeed`) for this — a provider with nothing to reconcile just
+  ignores it.
 
 ## Sharp edges
 
