@@ -31,7 +31,7 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
 
 /** B3/B5: the beak's horizontal offset (logical/CSS px from the panel's own
  * left edge), recomputed natively every time the panel docks or re-docks —
- * see `show_panel`/`compute_docked_layout` in `src-tauri/src/lib.rs` for why
+ * see `show_panel`/`compute_docked_layout` in `src-tauri/src/shell.rs` for why
  * this can't be a fixed constant (it depends on the tray icon's real
  * position and how much the panel's own left edge got clamped). */
 export function onPanelBeakOffset(callback: (offsetPx: number) => void): Promise<() => void> {
@@ -48,7 +48,7 @@ export function onQuotaRefresh(callback: (event: ScheduledRefreshEvent) => void)
  * called once, right after subscribing to `onQuotaRefresh`, so the launch
  * read is still near-instant instead of waiting out the periodic loop's
  * first (deliberately delayed) tick. See `kick_scheduler`'s doc comment in
- * `src-tauri/src/lib.rs` for why the delay exists at all. */
+ * `src-tauri/src/accounts.rs` for why the delay exists at all. */
 export async function kickScheduler(): Promise<void> {
   return invoke("kick_scheduler");
 }
@@ -69,7 +69,7 @@ export async function setDetached(detached: boolean): Promise<void> {
 }
 
 /** I7 detached-window drag, called on every `mousemove` of a header-drag
- * gesture — see `drag_window_step`'s doc comment in `src-tauri/src/lib.rs`,
+ * gesture — see `drag_window_step`'s doc comment in `src-tauri/src/shell.rs`,
  * including the captain-approved tradeoff it records: moving the window's
  * frame at all while the mouse is held down over it reactivates the app,
  * which this replaced `startDragging()`/`performWindowDragWithEvent:` call

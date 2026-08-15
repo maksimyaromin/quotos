@@ -15,7 +15,7 @@ body {
 /* R3-10: `padding-top` is the beak's own headroom inside the transparent
    window, and it is load-bearing in two directions. It must be at least
    Panel.jsx's NOTCH_RESERVE (or the beak is clipped by the window edge), and
-   it is subtracted by src-tauri/src/lib.rs's `docked_layout_in_points` when it
+   it is subtracted by src-tauri/src/geometry.rs's `docked_layout_in_points` when it
    works out where to put the window so the beak's *tip* lands just below the
    menu bar — the captain's *"он должен быть 'почти в иконке'"*. Every point of
    slack here is a point of visible gap between the menu bar and the panel, so

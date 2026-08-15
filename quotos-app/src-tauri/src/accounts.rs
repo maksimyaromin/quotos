@@ -2,7 +2,7 @@
 //! per-account rate budget, the native refresh scheduler, and the IPC
 //! commands for the tracked list, the statusline integration and sign-in.
 //! Nothing here knows a window or a tray icon exists — that layer stays in
-//! `lib.rs` — which is what keeps "what we know about accounts" and "how the
+//! `shell.rs` — which is what keeps "what we know about accounts" and "how the
 //! panel shows it" separately readable.
 
 use std::collections::HashMap;

@@ -2,7 +2,7 @@ import React, { useId, useLayoutEffect, useRef, useState } from "react";
 
 // Mirrors --panel-width/--radius-xl (tokens/spacing.css). Duplicated as a
 // plain number, the same way the native side duplicates it
-// (PANEL_WIDTH_LOGICAL in src-tauri/src/lib.rs) — the SVG path math below
+// (PANEL_WIDTH in src-tauri/src/geometry.rs's docked_layout_in_points) — the SVG path math below
 // needs concrete units, not a CSS custom property string.
 const PANEL_WIDTH = 332;
 export const PANEL_RADIUS = 12;
@@ -13,7 +13,7 @@ export const PANEL_RADIUS = 12;
 // visually, but three things elsewhere are keyed to them and must move
 // together (there is no build step that syncs them):
 //   - BEAK_BASE_HALF * 2 must equal `BEAK_BASE_WIDTH` in
-//     src-tauri/src/lib.rs's `docked_layout_in_points`, which converts a
+//     src-tauri/src/geometry.rs's `docked_layout_in_points`, which converts a
 //     glyph centre into this component's `beakLeft`;
 //   - BEAK_HEIGHT is what that same function subtracts to put the beak's
 //     *tip* just under the menu bar rather than the panel's top edge;

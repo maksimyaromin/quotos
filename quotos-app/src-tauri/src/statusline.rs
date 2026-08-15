@@ -7,7 +7,7 @@
 //!
 //! Write-mechanism contract (binding, from the launch brief):
 //!  1. Only written on an explicit in-app opt-in per subscription — never
-//!     automatic. Callers (the Tauri commands in `lib.rs`) are the only thing
+//!     automatic. Callers (the Tauri commands in `accounts.rs`) are the only thing
 //!     that invokes [`install`]/[`remove`], and only in response to a click.
 //!  2. Read-merge-write: parse first, refuse (change nothing) if it doesn't
 //!     parse, preserve every other key, write atomically (temp file + rename,

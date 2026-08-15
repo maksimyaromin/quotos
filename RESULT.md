@@ -8,8 +8,9 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**250 automated tests pass** (145 vitest, 105 `cargo test`); `tsc --noEmit`
-and `cargo check` are clean with zero warnings.
+**261 automated tests pass** (156 vitest, 105 `cargo test`); `tsc --noEmit`,
+`cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
+clean.
 
 ## How to run, build, test
 
@@ -23,9 +24,10 @@ and `cargo check` are clean with zero warnings.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (145) from `quotos-app/`; `cargo test` (105)
-  from `quotos-app/src-tauri` (no workspace manifest above it). `cargo clippy`
-  is not installed for this machine's stable toolchain.
+- **Tests**: `npx vitest run` (156) from `quotos-app/`; `cargo test` (105)
+  from `quotos-app/src-tauri` (no workspace manifest above it). Standing
+  lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
+  both clean (neither component was installed before this round).
 - **Packaging**: `npx tauri build` from `quotos-app/` (bundle target `"app"`
   only — the DMG step needs disk-image arbitration a sandbox doesn't have).
   The side-by-side v3 identity is
@@ -98,9 +100,30 @@ and `cargo check` are clean with zero warnings.
    shows the recovered account; Escape cancels back to the action button; the
    form survives an unrelated read-all); and header-drag detach →
    snap-back, both directions clean.
-7. **This file** — it was two-plus rounds stale (claimed 176 tests and round
-   4 as current, predating the statusline feed, working drag, and per-window
-   pinning entirely).
+7. **First-ever lint and format passes** — neither clippy nor rustfmt was
+   installed for this machine's toolchain; both are now. The three
+   default-level clippy findings are fixed (most notably a named `DragAnchor`
+   struct replacing `AppState`'s naked tuple-of-tuples drag anchor), and the
+   whole crate is rustfmt-normalized (deliberately no `rustfmt.toml`; the bar
+   is the community default, not the crate's accidental ~120-column habit).
+8. **The design-system two-copy rule is a test now** —
+   `src/design-system/sync.test.js` fails naming the exact offending file
+   whenever the app's verbatim copy diverges byte-wise from `design/system/`.
+9. **The Subscriptions screen picks up a new sign-in by itself** — it rescans
+   discovery whenever the panel comes back after a hide (sign in via
+   terminal, reopen the panel, the account is just there), and the footer's
+   factually-false "Quit and reopen Quotos to pick it up" copy now tells the
+   truth ("Reopen this screen to pick it up").
+10. **Transient layers dismiss in order** — Escape closes an open "…" row
+    menu first and only a bare Escape hides the panel; a menu left open no
+    longer survives a panel hide; the menu trigger carries `aria-expanded`.
+11. **Cross-references survived the decomposition** — every comment that
+    still pointed at `lib.rs` for code that moved in (1) — frontend comments,
+    `app.css`, both `Panel.jsx` copies, Rust doc comments — now names the
+    module that actually owns it.
+12. **This file** — it was two-plus rounds stale (claimed 176 tests and round
+    4 as current, predating the statusline feed, working drag, and per-window
+    pinning entirely).
 
 ## Honest gaps, still open
 

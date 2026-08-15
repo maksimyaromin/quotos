@@ -1,7 +1,7 @@
 //! Docked-panel placement arithmetic: the global-point coordinate space, the
 //! displays that define it, and the layout math that decides where the panel
 //! and its beak go. Everything here is pure math or a read-only screen query
-//! — the code that actually moves windows stays in `lib.rs` — which is what
+//! — the code that actually moves windows stays in `shell.rs` — which is what
 //! keeps the placement rules unit-testable against real measured geometry.
 
 use crate::tray_render;

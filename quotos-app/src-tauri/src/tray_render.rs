@@ -56,7 +56,7 @@ const SIDE_PAD_PX: u32 = 10; // 5 CSS-px air each end
 ///   shift there would move the beak, which is exactly the drift the captain
 ///   spent a whole round reporting.
 ///
-/// `lib.rs`'s `glyph_center_offset_from_item_left_points` reads
+/// `geometry.rs`'s `glyph_center_offset_from_item_left_points` reads
 /// `GLYPH_LEFT_INSET_POINTS` rather than assuming the glyph is the image's
 /// leftmost 18pt.
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
@@ -876,13 +876,13 @@ pub fn used_fallback_font() -> bool {
 /// Composites the glyph plus every segment's colored digits into one RGBA
 /// buffer. Returns `(rgba, width, height)`. `segments` empty still draws the
 /// bare glyph (callers that truly have nothing pinned should prefer the
-/// cheaper template-icon path in `lib.rs` instead of calling this).
+/// cheaper template-icon path in `shell.rs` instead of calling this).
 /// `highlighted` is A11's "panel open" state — draws the design's own
 /// translucent rounded-rect behind everything else when true (see
 /// `draw_highlight_background`); `segments` empty here still draws the bare
 /// glyph as a non-template colored image whenever `highlighted` is true
 /// (a plain template image can't carry a background tint of its own — see
-/// `lib.rs`'s `repaint_tray_icon` for why that case routes here rather than
+/// `shell.rs`'s `repaint_tray_icon` for why that case routes here rather than
 /// through `plain_glyph_rgba`'s template path at all). `worst_used_percent`
 /// (0-100) is the glyph's own arc fill — v4 design/NOTES.md §1: "filled to
 /// your worst active limit across everything tracked" — drawn regardless of

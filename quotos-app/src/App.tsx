@@ -24,7 +24,7 @@ const NOW_TICK_MS = 30_000;
 
 // Beak offset (px) from the panel's own left edge. B3/B5: the native side
 // computes and pushes the real value on every dock/re-dock (see
-// `compute_docked_layout` in src-tauri/src/lib.rs — it depends on the tray
+// `compute_docked_layout` in src-tauri/src/shell.rs — it depends on the tray
 // icon's actual position and how much the panel got clamped off it, so it
 // can't be a fixed constant there).
 //
@@ -177,7 +177,7 @@ export default function App() {
   // `startDragging()`: `dragWindowStep()` is invoked on every `mousemove`
   // once a gesture has started, and the Rust side sets the window's frame
   // directly from the live cursor delta (see `drag_window_step`'s doc
-  // comment in `src-tauri/src/lib.rs`). That doc comment also records a
+  // comment in `src-tauri/src/shell.rs`). That doc comment also records a
   // deliberate, captain-approved tradeoff: live-following the cursor this
   // way reactivates the app for as long as the mouse stays down, same as
   // `performWindowDragWithEvent:` did — measured to be a property of

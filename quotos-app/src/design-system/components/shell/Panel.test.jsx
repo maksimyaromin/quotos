@@ -70,7 +70,7 @@ describe("buildPanelOutlinePath", () => {
 
   // R3-10: the beak's size is the captain's own call, overriding the
   // handoff's 12×12 ("он маленький"), and three other places are keyed to
-  // these numbers with no build step to sync them — lib.rs's BEAK_BASE_WIDTH
+  // these numbers with no build step to sync them — geometry.rs's BEAK_BASE_WIDTH
   // and BEAK_HEIGHT, and app.css's `padding-top`. This pins the contract that
   // matters most: the reserve must actually contain the beak, or the window's
   // own top edge clips its tip.
