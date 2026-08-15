@@ -70,12 +70,25 @@ impl Store {
     /// starts empty rather than failing app startup — I6's "nothing tracked
     /// by default" is also the correct fallback for "we couldn't read the
     /// file", not a crash.
+    ///
+    /// A file that exists but doesn't parse is first moved aside to
+    /// `tracked.json.corrupt` (best-effort — starting empty never depends on
+    /// it succeeding): `save` atomically overwrites `tracked.json`, so
+    /// leaving the unread bytes in place would let the very next save
+    /// destroy the only copy of whatever the file held. One slot, latest
+    /// corruption wins — the point is that recovery stays possible, not an
+    /// archive.
     pub fn load(path: PathBuf) -> Self {
-        let tracked = fs::read_to_string(&path)
-            .ok()
-            .and_then(|raw| serde_json::from_str::<PersistedShape>(&raw).ok())
-            .map(|shape| shape.tracked)
-            .unwrap_or_default();
+        let tracked = match fs::read_to_string(&path) {
+            Err(_) => Vec::new(),
+            Ok(raw) => match serde_json::from_str::<PersistedShape>(&raw) {
+                Ok(shape) => shape.tracked,
+                Err(_) => {
+                    let _ = fs::rename(&path, path.with_extension("json.corrupt"));
+                    Vec::new()
+                }
+            },
+        };
         Self {
             path,
             tracked: Mutex::new(tracked),
@@ -174,6 +187,46 @@ mod tests {
         fs::write(&path, "{ not valid json").unwrap();
         let store = Store::load(path);
         assert!(store.list().is_empty());
+    }
+
+    /// A corrupt file's bytes must survive the load that failed to read them:
+    /// moved aside to `tracked.json.corrupt`, out of the path `save`
+    /// atomically overwrites — otherwise the very next save destroys the
+    /// only copy of whatever the user's file held.
+    #[test]
+    fn a_corrupt_file_is_preserved_where_no_save_can_overwrite_it() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        let corrupt_bytes = "{ not valid json";
+        fs::write(&path, corrupt_bytes).unwrap();
+
+        let store = Store::load(path.clone());
+        let backup = path.with_extension("json.corrupt");
+        assert!(!path.exists(), "the unparseable file should be moved aside");
+        assert_eq!(fs::read_to_string(&backup).unwrap(), corrupt_bytes);
+
+        store.save(vec![sample("Fresh start")]).unwrap();
+        assert_eq!(
+            fs::read_to_string(&backup).unwrap(),
+            corrupt_bytes,
+            "saving must not touch the preserved backup"
+        );
+        assert_eq!(
+            Store::load(path).list(),
+            vec![sample("Fresh start")],
+            "the store itself should carry on normally"
+        );
+    }
+
+    #[test]
+    fn a_valid_file_never_leaves_a_corrupt_backup() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        Store::load(path.clone()).save(vec![sample("X")]).unwrap();
+
+        let reloaded = Store::load(path.clone());
+        assert_eq!(reloaded.list(), vec![sample("X")]);
+        assert!(!path.with_extension("json.corrupt").exists());
     }
 
     /// R2-5's acceptance test at the storage-layer: what `save` wrote is

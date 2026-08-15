@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**282 automated tests pass** (177 vitest, 105 `cargo test`); `tsc --noEmit`,
+**284 automated tests pass** (177 vitest, 107 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (177) from `quotos-app/`; `cargo test` (105)
+- **Tests**: `npx vitest run` (177) from `quotos-app/`; `cargo test` (107)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -152,6 +152,14 @@ clean.
     focused item (Escape, or activating an item) hands focus back to the "…"
     trigger instead of stranding it on `<body>`. Verified live in a real
     engine: Enter opens, arrows navigate, Enter activates, focus returns.
+17. **A corrupt `tracked.json` can no longer be silently destroyed** — the
+    store already (correctly) started empty on an unparseable file, but it
+    left the bytes in place, where the very next save's atomic overwrite
+    erased the only copy of the user's tracked list. `Store::load` now moves
+    an existing-but-unparseable file aside to `tracked.json.corrupt`
+    (best-effort, one slot) before starting empty, so recovery stays
+    possible by hand — the same recoverability rule the localStorage
+    migration already followed.
 
 ## Honest gaps, still open
 
