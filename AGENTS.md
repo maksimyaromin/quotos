@@ -115,7 +115,7 @@ rewritten each round, not appended to.
   to be inferred from `state === "broken"`, so an offline launch or an HTTP
   403 also accused the account of being signed out.
 - **The request budget is per real HTTP request, not per read attempt**
-  (`providers::RequestBudget`, `lib.rs`'s `AccountBudget`). One reservation
+  (`providers::RequestBudget`, `accounts.rs`'s `AccountBudget`). One reservation
   for a read that could quietly make two requests is how Quotos spent the
   shared 5-per-300s allowance twice as fast as its own limiter believed,
   until the provider answered 429 with an hour-long `retry-after`. The
