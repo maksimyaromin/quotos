@@ -87,6 +87,13 @@ struct AppState {
     /// `set_tray_highlighted` (native visibility), neither of which knows
     /// the other's current value.
     last_tray_worst_used_percent: Mutex<u8>,
+    /// I7: the tray item's hover/VoiceOver text last set by
+    /// `set_tray_status` — composed in full on the frontend
+    /// (`lib/traySegments.ts`'s `buildTrayTooltip`, which names every
+    /// pinned figure), cached the same way `last_tray_segments` is and for
+    /// the same reason. Starts as the plain product name, matching the tray
+    /// builder's own pre-any-data baseline.
+    last_tray_tooltip: Mutex<String>,
     /// The layout the window is *supposed* to be at right now, while docked
     /// and visible (global points — see `DisplayPoints`) — `None` whenever
     /// it's hidden or detached (dragging must never fight this). A safety
@@ -220,6 +227,7 @@ pub fn run() {
                 tray_highlighted: Mutex::new(false),
                 last_tray_segments: Mutex::new(Vec::new()),
                 last_tray_worst_used_percent: Mutex::new(0),
+                last_tray_tooltip: Mutex::new("Quotos".to_string()),
                 docked_target: Mutex::new(None),
                 move_generation: Mutex::new(0),
                 last_known_position: Mutex::new((0.0, 0.0)),

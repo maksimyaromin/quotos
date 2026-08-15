@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTraySegments, worstActiveLimitPercent } from "./traySegments";
+import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "./traySegments";
 import type { LimitWindowEntity, Subscription } from "../types/entities";
 
 function window(overrides: Partial<LimitWindowEntity> & { id: string }): LimitWindowEntity {
@@ -109,6 +109,80 @@ describe("buildTraySegments", () => {
       subscription({ id: "b", state: "behind", pinnedWindowIds: [], windows: [window({ id: "w", used: 99 })] }),
     ];
     expect(buildTraySegments(subs)).toEqual([{ text: "10%", color: "neutral", groupStart: false }]);
+  });
+});
+
+describe("buildTrayTooltip", () => {
+  it("is just the product name when nothing contributes a figure", () => {
+    expect(buildTrayTooltip([])).toBe("Quotos");
+    // A pinned window with no number contributes no segment (never "!") and
+    // therefore no tooltip line either — the two surfaces must agree.
+    const subs = [
+      subscription({
+        id: "a",
+        pinnedWindowIds: ["session"],
+        windows: [window({ id: "session", used: null })],
+      }),
+    ];
+    expect(buildTrayTooltip(subs)).toBe("Quotos");
+  });
+
+  it("names each contributing figure, one line per subscription, in bar order", () => {
+    const subs = [
+      subscription({
+        id: "a",
+        label: "Claude Max",
+        pinnedWindowIds: ["weekly_all", "session"],
+        windows: [
+          window({ id: "session", name: "Session", used: 70 }),
+          window({ id: "weekly_all", name: "Weekly", used: 40 }),
+          window({ id: "weekly_scoped:Fable", name: "Weekly", scope: "Fable", used: 12 }),
+        ],
+      }),
+      subscription({
+        id: "b",
+        label: "Claude Pro",
+        pinnedWindowIds: ["weekly_scoped:Opus"],
+        windows: [window({ id: "weekly_scoped:Opus", name: "Weekly", scope: "Opus", used: 55 })],
+      }),
+    ];
+    expect(buildTrayTooltip(subs)).toBe(
+      "Quotos\nClaude Max: Session 70% · Weekly 40%\nClaude Pro: Weekly (Opus) 55%",
+    );
+  });
+
+  it("prefers the user's rename over the provider label", () => {
+    const subs = [
+      subscription({
+        id: "a",
+        label: "Claude Max",
+        labelOverride: "Work",
+        pinnedWindowIds: ["w"],
+        windows: [window({ id: "w", name: "Weekly", used: 40 })],
+      }),
+    ];
+    expect(buildTrayTooltip(subs)).toBe("Quotos\nWork: Weekly 40%");
+  });
+
+  it("marks only the stale subscription's own line, in the row badge's words", () => {
+    const subs = [
+      subscription({
+        id: "a",
+        label: "Claude Max",
+        state: "behind",
+        pinnedWindowIds: ["w"],
+        windows: [window({ id: "w", name: "Weekly", used: 40 })],
+      }),
+      subscription({
+        id: "b",
+        label: "Claude Pro",
+        pinnedWindowIds: ["w"],
+        windows: [window({ id: "w", name: "Weekly", used: 55 })],
+      }),
+    ];
+    expect(buildTrayTooltip(subs)).toBe(
+      "Quotos\nClaude Max: Weekly 40% — not current\nClaude Pro: Weekly 55%",
+    );
   });
 });
 

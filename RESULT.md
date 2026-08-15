@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**297 automated tests pass** (181 vitest, 116 `cargo test`); `tsc --noEmit`,
+**301 automated tests pass** (185 vitest, 116 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (116)
+- **Tests**: `npx vitest run` (185) from `quotos-app/`; `cargo test` (116)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -199,6 +199,18 @@ clean.
     reads as still-off instead of lying. Measured from an unbundled test
     binary the OS answers `NotFound` — which is the graceful-refusal path;
     the registered happy path needs the packaged `.app` (see gaps below).
+22. **Hovering the tray icon now says whose number is whose** — the tooltip
+    used to read "Quotos — 40% 70%": bare digits with no owner, useless
+    with more than one subscription pinned (and short of its own comment's
+    "in words" intent for VoiceOver). It now names every contributing
+    figure, one line per subscription in the bar's own order ("Claude Max:
+    Weekly 40% · Session 70%"), marks a stale subscription's line "— not
+    current" (the row badge's own words), and is composed in one testable
+    pure function (`lib/traySegments.ts`'s `buildTrayTooltip`) on the
+    frontend, where the labels live — the Rust side applies it verbatim. A
+    rename updates it too: the tooltip participates in `set_tray_status`'s
+    skip-identical guard, since a renamed subscription changes its tooltip
+    line while leaving every digit byte-identical.
 
 ## Honest gaps, still open
 

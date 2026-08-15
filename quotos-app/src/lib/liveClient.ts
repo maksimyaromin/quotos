@@ -59,9 +59,15 @@ export async function kickScheduler(): Promise<void> {
  * `src-tauri/src/tray_render.rs`). v4: `worstUsedPercent` (0-100) is the
  * bare glyph's own arc fill — the worst active limit across everything
  * tracked (design/NOTES.md §1), sent alongside the segments so the Rust side
- * can draw it whether or not anything is pinned. */
-export async function setTrayStatus(segments: TraySegment[], worstUsedPercent: number): Promise<void> {
-  return invoke("set_tray_status", { segments, worstUsedPercent });
+ * can draw it whether or not anything is pinned. I7: `tooltip` is the tray
+ * item's hover/VoiceOver text, composed in full by `lib/traySegments.ts`'s
+ * `buildTrayTooltip` and applied verbatim on the Rust side. */
+export async function setTrayStatus(
+  segments: TraySegment[],
+  worstUsedPercent: number,
+  tooltip: string,
+): Promise<void> {
+  return invoke("set_tray_status", { segments, worstUsedPercent, tooltip });
 }
 
 export async function setDetached(detached: boolean): Promise<void> {

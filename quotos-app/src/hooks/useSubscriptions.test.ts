@@ -477,6 +477,15 @@ describe("useSubscriptions tray segments (followup-2)", () => {
         { text: "20%", color: "amber", groupStart: true },
       ]),
     );
+
+    // I7: the same call carries the tooltip that names those bare digits —
+    // and the amber-everywhere rule stays digits-only: only the stale
+    // account's own tooltip line says "not current".
+    const tooltip = trayCalls[trayCalls.length - 1]?.[2];
+    expect(tooltip).toMatch(/^Quotos\n/);
+    expect(tooltip).toContain("Weekly 10%");
+    expect(tooltip).toContain("Weekly 20% — not current");
+    expect(tooltip).not.toContain("Weekly 10% — not current");
   });
 });
 

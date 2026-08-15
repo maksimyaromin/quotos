@@ -14,7 +14,7 @@ import {
 } from "../lib/tauriClient";
 import { normalizeFor, providerDisplayName, mapOutcomeFor } from "../providers/registry";
 import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
-import { buildTraySegments, worstActiveLimitPercent } from "../lib/traySegments";
+import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "../lib/traySegments";
 
 /** The id-derived default label for an account before any read has come back
  * (or before a custom rename) — shared with the add-subscription flow so a
@@ -628,7 +628,7 @@ export function useSubscriptions() {
   useEffect(() => {
     const segments = buildTraySegments(trackedSubscriptions);
     const worstUsedPercent = worstActiveLimitPercent(trackedSubscriptions);
-    setTrayStatus(segments, worstUsedPercent);
+    setTrayStatus(segments, worstUsedPercent, buildTrayTooltip(trackedSubscriptions));
   }, [trackedSubscriptions]);
 
   /** R4-4: the name to show for an account the panel isn't currently

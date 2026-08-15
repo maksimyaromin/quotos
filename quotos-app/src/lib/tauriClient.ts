@@ -37,9 +37,11 @@ export const onSignInFinished = client.onSignInFinished;
  * browser mock harness, so this branches directly here rather than adding
  * an unused stub export to mockClient.ts (owned by the surface half of this
  * round; see CLAUDE.md's file-ownership split). */
-export const setTrayStatus: (segments: TraySegment[], worstUsedPercent: number) => Promise<void> = isTauri
-  ? live.setTrayStatus
-  : async () => {};
+export const setTrayStatus: (
+  segments: TraySegment[],
+  worstUsedPercent: number,
+  tooltip: string,
+) => Promise<void> = isTauri ? live.setTrayStatus : async () => {};
 
 /** R2-4: the mock harness has no Rust scheduler to push events from — the
  * browser path never calls back, matching setTrayStatus's pattern above. */

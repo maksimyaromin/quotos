@@ -54,6 +54,27 @@ export function buildTraySegments(subscriptions: Subscription[]): TraySegment[] 
   return segments;
 }
 
+/** I7: the tray digits carry no text VoiceOver can read, and with more than
+ * one subscription pinned the bare figures don't say whose number is whose —
+ * so the tooltip names every contributing figure, one line per subscription,
+ * in the bar's own order. A stale subscription's line says so in the row
+ * badge's own words ("Not current" — the bar-wide amber rule stays a
+ * digits-only fact); with nothing contributing, the tooltip is just the
+ * product name. Applied verbatim by the Rust side (`shell.rs`'s
+ * `repaint_tray_icon`), which never composes tooltip text itself. */
+export function buildTrayTooltip(subscriptions: Subscription[]): string {
+  const lines: string[] = [];
+  for (const sub of subscriptions) {
+    const figures = sub.windows
+      .filter((w) => typeof w.used === "number" && sub.pinnedWindowIds.includes(w.id))
+      .map((w) => `${w.name}${w.scope ? ` (${w.scope})` : ""} ${w.used}%`);
+    if (figures.length === 0) continue;
+    const stale = sub.state === "behind" ? " — not current" : "";
+    lines.push(`${sub.labelOverride ?? sub.label}: ${figures.join(" · ")}${stale}`);
+  }
+  return lines.length === 0 ? "Quotos" : ["Quotos", ...lines].join("\n");
+}
+
 /** v4 design/NOTES.md §1: the bare glyph's own arc — always filled to the
  * worst *active* limit across everything tracked (not just pinned windows,
  * and not inactive ones — deliberately narrower than `severity`, which

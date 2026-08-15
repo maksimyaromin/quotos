@@ -49,6 +49,7 @@ pub(crate) fn set_tray_status(
     app: tauri::AppHandle,
     segments: Vec<TraySegmentDto>,
     worst_used_percent: u8,
+    tooltip: String,
 ) -> Result<(), String> {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return Ok(());
@@ -71,11 +72,19 @@ pub(crate) fn set_tray_status(
             .last_tray_worst_used_percent
             .lock()
             .expect("last_tray_worst_used_percent mutex poisoned");
-        if *last == segments && *last_worst == worst_used_percent {
+        let mut last_tooltip = state
+            .last_tray_tooltip
+            .lock()
+            .expect("last_tray_tooltip mutex poisoned");
+        // The tooltip participates in the skip guard because it can change
+        // alone: renaming a subscription rewrites its tooltip line while
+        // leaving every digit byte-identical.
+        if *last == segments && *last_worst == worst_used_percent && *last_tooltip == tooltip {
             return Ok(());
         }
         *last = segments;
         *last_worst = worst_used_percent;
+        *last_tooltip = tooltip;
     }
     repaint_tray_icon(&app, &tray)
 }
@@ -136,21 +145,15 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
     tray.set_title(Some("")).map_err(|e| e.to_string())?;
 
     // I7: the composited image carries no text a screen reader can read —
-    // keep the tray item's accessible name/tooltip current with the actual
-    // pinned values (in words, with the product name) rather than leaving a
-    // screen reader with nothing but the bare rendered percentage.
-    let tooltip = if segments.is_empty() {
-        "Quotos".to_string()
-    } else {
-        format!(
-            "Quotos — {}",
-            segments
-                .iter()
-                .map(|s| s.text.as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
-        )
-    };
+    // the tooltip names every pinned figure, with the product name. Composed
+    // in full by the frontend (`lib/traySegments.ts`'s `buildTrayTooltip`,
+    // where the labels live) and cached in `AppState` alongside the
+    // segments, so a native-only repaint (highlight toggle) keeps it.
+    let tooltip = state
+        .last_tray_tooltip
+        .lock()
+        .expect("last_tray_tooltip mutex poisoned")
+        .clone();
     tray.set_tooltip(Some(&tooltip))
         .map_err(|e| e.to_string())?;
 

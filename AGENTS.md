@@ -78,7 +78,14 @@ rewritten each round, not appended to.
   Retina without needing a separate `@2x` asset. The tray also never shows
   `"!"` or `"…"` (handoff: digits or nothing) — a pin with no number yet
   contributes no segment at all, and if *any* pinned value is stale every
-  digit turns amber, not just that one.
+  digit turns amber, not just that one. v8: the tray item's hover/VoiceOver
+  tooltip names those bare digits ("Claude Max: Weekly 40% · Session 70%",
+  one line per subscription, a stale line marked "— not current") — composed
+  entirely by `lib/traySegments.ts`'s `buildTrayTooltip` and passed through
+  `set_tray_status`, which the Rust side applies verbatim (never composes).
+  The tooltip participates in `set_tray_status`'s skip-identical guard
+  because it can change alone: a rename rewrites its line while every digit
+  stays byte-identical.
 - **R3-4: `CLAUDE_CONFIG_DIR=~/.claude` is NOT the same as leaving it
   unset, and that difference caused a false "sign-in expired" on the
   captain's live account.** With the variable set, Claude Code reads
