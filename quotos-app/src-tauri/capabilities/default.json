@@ -1,13 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "The webview's entire ACL grant. The frontend reaches Rust only two ways: invoking this app's own #[tauri::command]s (never gated by the capability system) and `listen`/its returned unlisten (`@tauri-apps/api/event` in liveClient.ts) — so event listen/unlisten is the whole grant. Every window operation goes through custom commands (hide_panel, drag_window_step, ...), which is why no core:window permission is needed; core:default's menu/tray/app/path grants were equally unused.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "core:window:allow-show",
-    "core:window:allow-hide",
-    "core:window:allow-is-visible",
-    "core:window:allow-set-focus"
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

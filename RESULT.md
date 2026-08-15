@@ -239,6 +239,22 @@ clean.
     `.app` itself rendering a seeded probe row end-to-end (the IPC
     round-trip proven under the policy, not assumed).
 
+25. **The webview's ACL is now two permissions, not a bundle** —
+    `capabilities/default.json` shipped `core:default` plus four explicit
+    `core:window:allow-*` grants, all first-commit residue from before every
+    window operation moved behind this app's own commands. The frontend
+    reaches Rust exactly two ways: custom `#[tauri::command]`s (not gated by
+    the capability system) and `listen`/`unlisten` from
+    `@tauri-apps/api/event` — so the grant is now exactly
+    `core:event:allow-listen` + `core:event:allow-unlisten`. Revoked along
+    with the window grants: `core:default`'s menu, tray, app, path,
+    resources, image, and webview bundles (a compromised webview could have
+    rewritten the tray icon or created native menus). Verified end-to-end in
+    the packaged `.app` with the round-24 probe technique: the seeded row
+    renders with its custom label (invoke works) *and* shows the
+    needs-sign-in diagnosis, which only reaches the frontend through the
+    `quota-refresh` push — proving `listen` survives the tightened grant.
+
 ## Honest gaps, still open
 
 - **Where `claude setup-token` writes for the default account** is unverified

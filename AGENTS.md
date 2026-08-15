@@ -555,6 +555,22 @@ rewritten each round, not appended to.
   (Tauri IPC itself; removing it silently breaks every `invoke`). There is
   deliberately no remote host anywhere in the policy — all HTTP happens on
   the Rust side.
+- **The webview's ACL grant (`capabilities/default.json`) is exactly
+  `core:event:allow-listen` + `allow-unlisten` — nothing else, on purpose.**
+  The frontend reaches Rust only via this app's own `#[tauri::command]`s
+  (never gated by the capability system — proven by the app running with
+  zero command grants) and `listen`; every window operation goes through
+  custom commands, so no `core:window` grant is needed and `core:default`'s
+  menu/tray/app/path bundle was dead weight (the original grants were
+  first-commit residue from before the custom-command architecture). Two
+  consequences: any future frontend call into `@tauri-apps/api`'s
+  window/menu/tray/path modules needs its explicit grant added, and a
+  missing grant fails as a silently-dropped promise (the R5
+  `startDragging()` lesson — never an error you'll see in dev casually).
+  Unlike the CSP, the ACL *is* enforced identically under `npm run tauri
+  dev`; the packaged-probe check (seeded row shows the needs-sign-in
+  diagnosis, which only arrives via the `quota-refresh` listen) is still the
+  end-to-end proof that the grant set is sufficient.
 - **`tray-icon` v0.24.2's macOS `set_title(None)` is a silent no-op** — it
   only calls `NSStatusItem`'s `setTitle` when given `Some(..)`, so passing
   `None` to "clear" a tray title leaves whatever was last set stuck forever.
@@ -789,8 +805,9 @@ rewritten each round, not appended to.
   (`4495bdc` claimed the fix and didn't close it): the header's
   `startDragging()` call was first found to do nothing at all because
   `capabilities/default.json` never granted `core:window:allow-start-dragging`
-  (missing from `core:window:default`/`core:default`, unlike `allow-show`/
-  `allow-hide`/etc. which are listed explicitly for the same reason) — a
+  (missing from `core:window:default`/`core:default` — the file carried
+  explicit `allow-show`/`allow-hide`/etc. grants at the time for the same
+  reason; all window grants are gone now, see the webview-ACL entry below) — a
   denied-ACL promise, never awaited or caught, so silently invisible. Granting
   it made `performWindowDragWithEvent:` actually move the window, which
   surfaced the real, deeper finding: doing so measurably reactivates the app
