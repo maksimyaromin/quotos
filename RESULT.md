@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**261 automated tests pass** (156 vitest, 105 `cargo test`); `tsc --noEmit`,
+**268 automated tests pass** (163 vitest, 105 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (156) from `quotos-app/`; `cargo test` (105)
+- **Tests**: `npx vitest run` (163) from `quotos-app/`; `cargo test` (105)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -51,7 +51,9 @@ clean.
   is a captain-approved tradeoff), snap-back arrow to redock.
 - **Subscriptions**: discovered, never hardcoded; nothing tracked by default;
   the tracked list is a natively persisted, `fsync`'d JSON file with one-shot
-  migration from the old localStorage store; one automatic read per account
+  migration from the old localStorage store; rows reorder from the "…" menu
+  (Move up / Move down — panel order drives the persisted list and the tray's
+  digit order alike); one automatic read per account
   per minute from the Rust scheduler (a manual refresh resets that minute);
   a shared 5-per-300s request budget with typed failures — a budget wait
   never overwrites a real diagnosis, and "sign-in expired" is only ever said
@@ -124,6 +126,11 @@ clean.
 12. **This file** — it was two-plus rounds stale (claimed 176 tests and round
     4 as current, predating the statusline feed, working drag, and per-window
     pinning entirely).
+13. **Subscriptions are reorderable** — "Move up" / "Move down" in the "…"
+    row menu swap the row with its neighbor; panel order is the one order
+    everywhere, so the persisted list and the tray's digit order follow the
+    same swap. An edge row's impossible direction renders disabled
+    (macOS-style) rather than hidden, keeping the menu's fixed item set.
 
 ## Honest gaps, still open
 

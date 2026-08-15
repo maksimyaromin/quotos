@@ -138,3 +138,41 @@ describe("the 'N limits' disclosure is a real, focusable control (R6)", () => {
     expect(screen.queryByRole("button", { name: /limits?/ })).toBeNull();
   });
 });
+
+// v5: "Move up"/"Move down" reorder the panel's rows (and with them the
+// tray's digit order). The menu keeps its one fixed set of items — an edge
+// row's impossible direction renders disabled, macOS-style, never hidden.
+describe("the row menu's Move up / Move down (v5)", () => {
+  it("fires the move callback and closes the menu, once each", () => {
+    const onMoveDown = vi.fn();
+    const onToggleMenu = vi.fn();
+    render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen
+        canMoveUp canMoveDown onMoveDown={onMoveDown} onToggleMenu={onToggleMenu} />,
+    );
+    screen.getByText("Move down").click();
+    expect(onMoveDown).toHaveBeenCalledTimes(1);
+    expect(onToggleMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders an impossible direction disabled, and clicking it does nothing", () => {
+    const onMoveUp = vi.fn();
+    const onToggleMenu = vi.fn();
+    render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen
+        canMoveDown onMoveUp={onMoveUp} onToggleMenu={onToggleMenu} />,
+    );
+    const moveUp = screen.getByText("Move up");
+    expect(moveUp.disabled).toBe(true);
+    expect(screen.getByText("Move down").disabled).toBe(false);
+    moveUp.click();
+    expect(onMoveUp).not.toHaveBeenCalled();
+    expect(onToggleMenu).not.toHaveBeenCalled();
+  });
+
+  it("keeps both items in the menu even when neither direction is possible", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
+    expect(screen.getByText("Move up").disabled).toBe(true);
+    expect(screen.getByText("Move down").disabled).toBe(true);
+  });
+});

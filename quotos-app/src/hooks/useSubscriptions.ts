@@ -349,6 +349,23 @@ export function useSubscriptions() {
     setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, labelOverride: label } : s)));
   }, []);
 
+  /** The "…" menu's "Move up"/"Move down": swaps the row with its neighbor
+   * in the panel's own slot order (an Undo row is a slot too, so moving past
+   * one is visible and coherent). Panel order is the one order everywhere —
+   * the persisted list and the tray's digit order both derive from it, so a
+   * swap here reorders all three together. */
+  const moveSubscription = useCallback((id: string, direction: "up" | "down") => {
+    setSubscriptions((prev) => {
+      const index = prev.findIndex((s) => s.id === id);
+      if (index === -1) return prev;
+      const neighbor = direction === "up" ? index - 1 : index + 1;
+      if (neighbor < 0 || neighbor >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[neighbor]] = [next[neighbor], next[index]];
+      return next;
+    });
+  }, []);
+
   /** R4-3: cancels a pending "Stop tracking" timer, if one is running. */
   const clearRemovalTimer = useCallback((id: string) => {
     const timer = removalTimers.current[id];
@@ -634,6 +651,7 @@ export function useSubscriptions() {
     refreshAccountById,
     togglePin,
     renameSubscription,
+    moveSubscription,
     addSubscription,
     removeSubscription,
     stopTracking,

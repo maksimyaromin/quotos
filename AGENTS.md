@@ -280,7 +280,12 @@ rewritten each round, not appended to.
   hides the panel, a panel hide also resets the menu (via
   `onPanelVisibility` false — the prototype's `menuId: null`-on-open rule),
   and the rename/sign-in fields stopPropagation so their Escape never
-  reaches that listener at all. **R4-5: it is `position: fixed`, placed from the trigger
+  reaches that listener at all. v5 added "Move up"/"Move down" to the menu:
+  they swap the row with its neighbor in `subscriptions`' own array order
+  (`useSubscriptions.ts`'s `moveSubscription`), which the persisted list and
+  the tray's digit order both already derive from, so one swap reorders all
+  three — an edge row's impossible direction renders disabled, never hidden
+  (the menu keeps one fixed item set). **R4-5: it is `position: fixed`, placed from the trigger
   button's own viewport rect, and that is load-bearing.** As an
   absolutely-positioned child it lived inside the panel body's
   `overflow-y: auto` box, which both clipped its last item at the panel's

@@ -49,6 +49,7 @@ export default function App() {
     refreshAccountById,
     togglePin,
     renameSubscription,
+    moveSubscription,
     addSubscription,
     removeSubscription,
     stopTracking,
@@ -364,7 +365,7 @@ export default function App() {
           <p>Nothing tracked yet. Add a subscription and you'll see what's left on it here.</p>
         </div>
       ) : (
-        subscriptions.map((sub) => {
+        subscriptions.map((sub, index) => {
           if (sub.pendingRemoval) {
             return (
               <UndoRow
@@ -418,6 +419,10 @@ export default function App() {
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}
+              canMoveUp={index > 0}
+              canMoveDown={index < subscriptions.length - 1}
+              onMoveUp={() => moveSubscription(sub.id, "up")}
+              onMoveDown={() => moveSubscription(sub.id, "down")}
               onStopTracking={() => stopTracking(sub.id)}
               signInInProgress={sub.signInInProgress}
               onSubmitSignInCode={(code: string) => submitSignInCode(sub.id, code)}

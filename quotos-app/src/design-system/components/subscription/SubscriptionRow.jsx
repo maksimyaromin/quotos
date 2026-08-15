@@ -39,18 +39,18 @@ const MENU_GAP = 4; // between the "…" button's bottom edge and the menu's top
 const MENU_VIEWPORT_MARGIN = 8; // never closer than this to the window's own edge
 const MENU_MIN_WIDTH = 168;
 
-function MenuItem({ danger, onClick, children }) {
+function MenuItem({ danger, disabled, onClick, children }) {
   const [hover, setHover] = React.useState(false);
   return (
-    <button type="button" onClick={onClick}
+    <button type="button" disabled={disabled} onClick={onClick}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         display: "flex", alignItems: "center", height: 26, padding: "0 var(--space-2)",
         border: 0, borderRadius: "var(--radius-sm)",
-        background: hover ? "var(--bg-row-hover)" : "transparent",
+        background: hover && !disabled ? "var(--bg-row-hover)" : "transparent",
         fontFamily: "var(--font-sans)", fontSize: "var(--text-base)",
-        color: danger ? "var(--red)" : "var(--text-primary)",
-        textAlign: "left", cursor: "pointer",
+        color: disabled ? "var(--text-quaternary)" : danger ? "var(--red)" : "var(--text-primary)",
+        textAlign: "left", cursor: disabled ? "default" : "pointer",
       }}>
       {children}
     </button>
@@ -102,6 +102,15 @@ export function SubscriptionRow({
   onToggleMenu,
   onRename,
   onReadNow,
+  /** v5: reordering — the "…" menu's "Move up"/"Move down". Panel order
+   * drives the tray's digit order too, so this is how the person controls
+   * which account's numbers come first. An edge row's impossible direction
+   * renders disabled (macOS-style) rather than hidden, keeping the menu's
+   * one fixed set of items. */
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
   onStopTracking,
   signInInProgress = false,
   onSubmitSignInCode,
@@ -479,6 +488,8 @@ export function SubscriptionRow({
           <MenuItem onClick={() => { onToggleMenu?.(); onTogglePin?.(); }}>
             {headlinePinned ? "Hide from menu bar" : "Show in menu bar"}
           </MenuItem>
+          <MenuItem disabled={!canMoveUp} onClick={() => { onToggleMenu?.(); onMoveUp?.(); }}>Move up</MenuItem>
+          <MenuItem disabled={!canMoveDown} onClick={() => { onToggleMenu?.(); onMoveDown?.(); }}>Move down</MenuItem>
           <div style={{ height: "0.5px", margin: "var(--space-1) var(--space-2)", background: "var(--border-default)" }} />
           <MenuItem danger onClick={() => { onToggleMenu?.(); onStopTracking?.(); }}>Stop tracking</MenuItem>
         </div>

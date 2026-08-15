@@ -795,6 +795,98 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
   });
 });
 
+// v5: "Move up"/"Move down" in the row menu. Panel order is the one order
+// everywhere — the persisted list and the tray's digit order both derive
+// from `subscriptions`' own array order — so a swap must show up in all
+// three, and an impossible move must change nothing (not even a save).
+describe("useSubscriptions reordering (v5)", () => {
+  const TWO = [
+    { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: true },
+  ];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    saveTracked.mockReset();
+    loadTracked.mockResolvedValue(TWO);
+    fetchSnapshot.mockImplementation(async (account: { id: string; config_dir: string }) => ({
+      account_id: account.id,
+      provider: "claude",
+      config_dir: account.config_dir,
+      fetched_at: new Date().toISOString(),
+      usage: {
+        limits: [
+          {
+            kind: "weekly_all",
+            percent: account.id === "claude:claude" ? 40 : 70,
+            is_active: true,
+            resets_at: null,
+            scope: null,
+          },
+        ],
+      },
+      profile: null,
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    loadTracked.mockResolvedValue(TRACKED);
+  });
+
+  it("swaps the row with its neighbor and persists the new order", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    saveTracked.mockClear();
+
+    act(() => result.current.moveSubscription("claude:claude", "down"));
+    await flush();
+
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude-team", "claude:claude"]);
+    const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0];
+    expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude-team", "claude:claude"]);
+  });
+
+  it("moving up then down lands back where it started", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+
+    act(() => result.current.moveSubscription("claude:claude-team", "up"));
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude-team", "claude:claude"]);
+
+    act(() => result.current.moveSubscription("claude:claude-team", "down"));
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+  });
+
+  it("is a no-op at the edges — no reorder, no save", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    saveTracked.mockClear();
+
+    act(() => result.current.moveSubscription("claude:claude", "up"));
+    act(() => result.current.moveSubscription("claude:claude-team", "down"));
+    await flush();
+
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(saveTracked).not.toHaveBeenCalled();
+  });
+
+  it("reorders the tray digits with it", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    const before = setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0];
+    expect(before.map((s: { text: string }) => s.text)).toEqual(["40%", "70%"]);
+
+    act(() => result.current.moveSubscription("claude:claude", "down"));
+    await flush();
+
+    const after = setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0];
+    expect(after.map((s: { text: string }) => s.text)).toEqual(["70%", "40%"]);
+  });
+});
+
 // R4-4: one account, one spelling. The same screencast showed "Claude Max" in
 // the panel and "Claude" in the Subscriptions screen for one account, and
 // "Claude Team" / "claude team" for the other.

@@ -59,6 +59,14 @@ export interface SubscriptionRowProps {
   onRename?: (nextLabel: string | null) => void;
   /** "Read now" menu item — an explicit one-off refresh, independent of the footer action. */
   onReadNow?: () => void;
+  /** v5: whether "Move up"/"Move down" are possible for this row; an
+   * impossible direction renders disabled (macOS-style), never hidden. */
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  /** v5: "Move up"/"Move down" menu items — reorder the panel's rows, and
+   * with them the tray's digit order. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   /** "Stop tracking" menu item. */
   onStopTracking?: () => void;
   /** R2-6: a `claude setup-token` session is running for this account —
