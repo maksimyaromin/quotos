@@ -19,6 +19,7 @@
 //! wire up.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -28,13 +29,46 @@ pub const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 pub struct Scheduler {
     next_due: Mutex<HashMap<String, Instant>>,
+    pass_running: AtomicBool,
+}
+
+/// Exclusive ownership of the one running due-pass; the gate frees when this
+/// drops (including on an early return or a panic in the pass).
+pub struct PassGuard<'a> {
+    scheduler: &'a Scheduler,
+}
+
+impl Drop for PassGuard<'_> {
+    fn drop(&mut self) {
+        self.scheduler.pass_running.store(false, Ordering::Release);
+    }
 }
 
 impl Scheduler {
     pub fn new() -> Self {
         Self {
             next_due: Mutex::new(HashMap::new()),
+            pass_running: AtomicBool::new(false),
         }
+    }
+
+    /// Claim the right to run a due-pass, or `None` if one is already
+    /// running. Two independent entrants call `run_due_pass` — the periodic
+    /// 5s loop and the frontend's launch-time `kick_scheduler` — and an
+    /// account is only marked attempted *after* its fetch completes, so
+    /// overlapping passes would both see the same account as due and fetch
+    /// it twice, spending two slots of the shared 5-per-300s budget on one
+    /// read. The overlap is realistic, not theoretical: a fetch may first
+    /// run a bounded-20s CLI credential renewal (the ordinary ~8h token
+    /// expiry, e.g. every morning's first launch), so the kicked pass can
+    /// still be mid-fetch when the loop's own tick arrives. The loser skips
+    /// rather than waits — whatever is due is already the running pass's
+    /// job, and anything that becomes due later is at most one 5s tick away.
+    pub fn begin_pass(&self) -> Option<PassGuard<'_>> {
+        self.pass_running
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+            .then_some(PassGuard { scheduler: self })
     }
 
     /// Whether `account_id` is due for an automatic read right now. An
@@ -134,5 +168,26 @@ mod tests {
         s.mark_attempted("claude:claude", None);
         assert!(!s.is_due("claude:claude"));
         assert!(s.is_due("claude:team"));
+    }
+
+    /// The double-spend guard: while one due-pass runs, a second entrant
+    /// (the launch kick racing the periodic tick) must be refused, or both
+    /// would fetch the same still-unmarked account and spend two budget
+    /// slots on one read.
+    #[test]
+    fn a_second_pass_is_refused_while_one_is_running() {
+        let s = Scheduler::new();
+        let running = s.begin_pass();
+        assert!(running.is_some());
+        assert!(s.begin_pass().is_none());
+    }
+
+    /// The gate frees when the pass guard drops, so passes gate on "one at
+    /// a time", never "one ever".
+    #[test]
+    fn the_pass_gate_frees_when_the_guard_drops() {
+        let s = Scheduler::new();
+        drop(s.begin_pass());
+        assert!(s.begin_pass().is_some());
     }
 }

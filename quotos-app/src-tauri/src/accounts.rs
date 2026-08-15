@@ -219,6 +219,13 @@ enum ScheduledRefreshEvent {
 /// on the timer).
 async fn run_due_pass(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
+    // One pass at a time, or the launch-time kick and the periodic tick can
+    // both fetch the same still-unmarked account and spend two budget slots
+    // on one read — see `Scheduler::begin_pass` for the full argument.
+    // Skipping is safe: whatever is due is already the running pass's job.
+    let Some(_pass) = state.scheduler.begin_pass() else {
+        return;
+    };
     let tracked = state.tracked_store.list();
 
     let live_ids: std::collections::HashSet<String> =

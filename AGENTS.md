@@ -195,7 +195,12 @@ rewritten each round, not appended to.
   own 30-second *presentation* tick (`App.tsx`'s `NOW_TICK_MS`, feeding the
   "ago"/reset/budget-wait copy) is subject to the same suspension, so
   `App.tsx` re-reads `now` on the panel-visibility show event — a clock
-  re-read, never a data read.
+  re-read, never a data read. `run_due_pass` has two entrants (the periodic
+  5s loop and the launch-time `kick_scheduler`), and an account is only
+  marked attempted *after* its fetch completes — so overlapping passes
+  would double-fetch the same account (realistic whenever the first fetch
+  runs a bounded-20s CLI renewal, i.e. every morning's first launch).
+  `Scheduler::begin_pass` gates this: the loser skips, never waits.
 - `ratelimit.rs`'s sliding window prunes with `duration_since(front) >=
   window`, not `>` — at exactly `window` old, a reservation must age out
   or the limiter fights the 1-read-per-minute schedule that expects the

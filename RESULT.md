@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**292 automated tests pass** (181 vitest, 111 `cargo test`); `tsc --noEmit`,
+**294 automated tests pass** (181 vitest, 113 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (111)
+- **Tests**: `npx vitest run` (181) from `quotos-app/`; `cargo test` (113)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -177,6 +177,16 @@ clean.
     identifier and therefore the config dir the lock lives in. The
     statusline helper (`main.rs`'s ingest intercept) exits before `run()`
     and never meets the lock.
+20. **Two scheduler passes can no longer double-spend the budget** — the
+    launch-time `kick_scheduler` and the periodic 5s tick both call
+    `run_due_pass`, and an account is only marked attempted *after* its
+    fetch completes, so when the first pass ran long (the ordinary case: an
+    ~8h-expired token at morning launch means a bounded-20s CLI renewal
+    before the request) the tick's pass saw the same account still due and
+    fetched it again — two slots of the 5-per-300s budget, plus two
+    concurrent CLI renewals, for one read. `Scheduler::begin_pass` (an
+    `AtomicBool` gate with an RAII guard, no new dependencies) now makes the
+    loser skip; whatever is due is already the running pass's job.
 
 ## Honest gaps, still open
 
