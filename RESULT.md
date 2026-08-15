@@ -255,6 +255,18 @@ clean.
     needs-sign-in diagnosis, which only reaches the frontend through the
     `quota-refresh` push — proving `listen` survives the tightened grant.
 
+26. **The last of the template's icon residue is gone** — this macOS-only
+    app (bundle targets `["app"]`) still shipped twelve Windows icon files
+    from the Tauri template: ten Windows Store logos
+    (`Square*Logo.png`/`StoreLogo.png`, referenced by nothing) and
+    `icon.ico` (listed in the bundle config), all still carrying the stock
+    Tauri logo — the round-that-drew-the-Q-mark regeneration only covered
+    `icon.icns` and the PNGs. Deleted all twelve, dropped `icon.ico` from
+    `tauri.conf.json`'s icon list, and removed `Cargo.toml`'s placeholder
+    `authors = ["you"]`. Verified by a passing production bundle whose
+    `Contents/Resources` holds exactly the correct Q-mark `icon.icns`,
+    byte-identical to source.
+
 ## Honest gaps, still open
 
 - **Where `claude setup-token` writes for the default account** is unverified
