@@ -523,11 +523,9 @@ mod tests {
             );
         }
 
-        // Inside a full-screen Space the menu bar is auto-hidden and
-        // visibleFrame reports no bar at all, even while the bar sits
-        // revealed under the cursor. Reconstructing the bar from the
-        // status item, since a status item is centered in its bar, must
-        // land on the same answer as reading the bar directly.
+        // Reconstructing the bar from the status item, since a status item
+        // is centered in its bar, must land on the same answer as reading
+        // the bar directly.
         #[test]
         fn a_hidden_menu_bar_is_reconstructed_from_the_status_item_to_the_same_answer() {
             let hidden_bar = DisplayPoints {
@@ -558,9 +556,6 @@ mod tests {
             );
         }
 
-        // A display left of the primary has negative coordinates
-        // throughout, where a "no menu bar reported" floor of 0 would read
-        // as far below such a display's real bar rather than as neutral.
         #[test]
         fn the_fallback_floor_works_on_a_negative_coordinate_display() {
             let hidden_bar = DisplayPoints {
