@@ -1,47 +1,38 @@
-//! One running Quotos per machine, enforced with an OS file lock.
+//! One running Quotos per machine, enforced with an OS file lock: the
+//! shared per-account request budget (`ratelimit.rs`, documented in
+//! claude-provider.md) has no cross-instance coordination, so two live
+//! instances would each spend the whole allowance at double speed until
+//! the provider answers 429.
 //!
-//! The shared per-account request budget, documented in
-//! claude-provider.md, has no cross-instance coordination: `ratelimit.rs`
-//! owns it, but each running instance tracks it independently with no
-//! knowledge of its siblings. Two live instances each believe the whole
-//! allowance is theirs and spend it at double speed until the provider
-//! answers 429. Double-clicking the bundle does not produce two instances,
-//! because Launch Services activates the running copy instead. A dev run
-//! alongside an installed build, or a duplicated `.app`, does: both share
-//! one bundle identifier and therefore one config dir, which is where this
-//! lock lives.
+//! Double-clicking the bundle never produces two instances, since Launch
+//! Services activates the running copy instead. A dev run alongside an
+//! installed build, or a duplicated `.app`, does: both share one bundle
+//! identifier and therefore one config dir, which is where this lock lives.
 //!
-//! `File::try_lock` calls `flock`. The kernel releases an `flock` lock when
-//! the owning process exits, however it exits, so there is no stale lock
-//! file to detect or repair and no pid to misread after reuse. A pid file
-//! would need both. This module also does not depend on
-//! `tauri-plugin-single-instance`: a menu bar app has no window to focus, so it
-//! needs none of the plugin's second-launch argv forwarding, and the Rust
-//! standard library has had file locking since 1.89, which makes the
-//! plugin a dependency for one syscall.
+//! `File::try_lock` calls `flock`, which the kernel releases when the
+//! owning process exits however it exits, so there is no stale lock file
+//! to detect or repair and no pid to misread after reuse, unlike a pid
+//! file. The standard library has had file locking since Rust 1.89, so
+//! `tauri-plugin-single-instance`, built around forwarding argv to a
+//! window to focus, would be a dependency pulled in for one syscall this
+//! windowless app has no use for.
 
 use std::fs::{self, File, TryLockError};
 use std::io;
 use std::path::Path;
 
-/// The lock file lives inside the app's own config dir, alongside
-/// tracked.json. Its presence on disk means nothing. Only the live OS lock
-/// on it does, so this file is never cleaned up.
+/// The file's presence on disk means nothing; only the live OS lock on it
+/// does, so this file is never cleaned up.
 const LOCK_FILE_NAME: &str = "instance.lock";
 
 pub(crate) enum Claim {
-    /// This process holds the instance lock now. The lock lives exactly as
-    /// long as this handle stays open, so the caller must keep it for the
-    /// whole process lifetime.
+    /// The lock lives exactly as long as this handle stays open, so the
+    /// caller must keep it for the whole process lifetime.
     Held(File),
-    /// Another live process holds the lock. A Quotos instance is already
-    /// running.
     TakenByOther,
-    /// The lock could not be taken and could not be refused either, for
-    /// example an unwritable directory or a filesystem without flock. This
-    /// guard protects the shared rate budget, and refusing to launch over
-    /// an optional protection would cost more than a double-spent budget,
-    /// so the caller should run anyway.
+    /// For example an unwritable directory or a filesystem without flock.
+    /// Refusing to launch over an optional protection would cost more than
+    /// a double-spent budget, so the caller should run anyway.
     Unavailable(io::Error),
 }
 
@@ -101,8 +92,8 @@ mod tests {
     }
 
     /// `flock` locks belong to the open file description, so a second open
-    /// and lock conflicts even from the same process. This is what lets one
-    /// test model two instances.
+    /// and lock conflicts even from the same process, which is what lets
+    /// this test model two instances.
     #[test]
     fn a_second_claim_is_refused_while_the_first_lives_and_frees_with_it() {
         let dir = TempDir::new();
@@ -126,7 +117,6 @@ mod tests {
     #[test]
     fn an_uncreatable_dir_reports_unavailable_never_taken() {
         let dir = TempDir::new();
-        // A path with a regular file as a parent component can never be a dir.
         let obstruction = dir.path.join("file");
         fs::write(&obstruction, "x").unwrap();
         assert!(matches!(
