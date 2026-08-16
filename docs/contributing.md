@@ -136,6 +136,22 @@ own word and stays only where the code touches Tauri's API directly,
 such as `tauri::tray::TrayIcon`. A rename is swept across the whole tree
 by search, then searched again for the old shape.
 
+File names are kebab-case in every language, including TypeScript:
+`row-presentation.ts`, not `rowPresentation.ts` or `RowPresentation.ts`. A
+React component's exported name still reads `PascalCase`; only its file,
+and its `.module.css`, `.prompt.md` and `.spec` siblings, move. `README.md`,
+`AGENTS.md` and `CLAUDE.md` keep the capitalization the ecosystem expects
+of them, and `Cargo.toml`, `Cargo.lock` and `Info.plist` keep the exact
+spelling their own tooling requires. A source file under `src-tauri/src`
+stays `snake_case`, matching the module identifier Rust derives from its
+file name; a `#[path]` attribute to carry a kebab-case file under a
+snake_case module was weighed and rejected; see
+[Architecture](./architecture.md#module-file-names) for why. Vendor font
+files under `src/design-system/assets/fonts/` and the icon set under
+`src-tauri/icons/` keep the names their own tooling produced. The
+`check:kebab-case` lane of `npm run verify` enforces this across every
+tracked file, with exactly these exceptions.
+
 ## Comments
 
 The default is deletion. A comment earns its line by explaining an idea

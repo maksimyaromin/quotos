@@ -27,6 +27,27 @@ this page is the map between them.
 | `single_instance.rs` | The OS file lock that keeps one Quotos running per machine, since the shared request budget assumes exactly one reader. |
 | `launch_at_login.rs` | The Launch at Login toggle, through `SMAppService`. Quotos stores nothing; the OS is the single owner of this state. |
 
+### Module file names
+
+Rust derives a module's identifier from its file name, and a Rust
+identifier cannot contain a hyphen, so a kebab-case file such as
+`atomic-write.rs` can only back the `atomic_write` module through a
+`#[path = "atomic-write.rs"] mod atomic_write;` declaration. Every module
+in this crate would need one, since every multi-word module here is
+snake_case: `atomic_write`, `launch_at_login`, `panel_window`,
+`single_instance`, `status_item_render`, plus the single-word modules
+that already read as kebab-case by coincidence. That `#[path]` line
+would then sit on every `mod` declaration in `lib.rs`, permanently
+diverging the file name from the module identifier every reader, every
+`rustfmt` run, and every `rust-analyzer` jump-to-definition would show
+them by, in exchange for no readability gain: a Rust file's own name is
+never read as a URL slug or a cross-language import path the way a
+TypeScript module's is. `snake_case` file names matching their module
+identifiers is also the convention the Rust ecosystem itself uses
+throughout the standard library and crates.io, the same kind of
+established, tool-recognized spelling this repository already keeps for
+`README.md`. This crate's source files stay `snake_case`.
+
 ## React frontend
 
 | Module | Owns |
