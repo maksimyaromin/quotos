@@ -1,47 +1,6 @@
 //! Makes the panel window a non-activating `NSPanel`, the AppKit type built
-//! to hold keyboard focus without activating its application.
-//!
-//! A full-screen Space belongs to one application, and activating a
-//! different one while a full-screen Space is frontmost makes macOS leave
-//! that Space, the same transition Cmd-Tab produces. An ordinary `NSWindow`
-//! can only become key while its application is active, so
-//! `WebviewWindow::set_focus()` triggered that transition on every panel
-//! open: it is `tao`'s `makeKeyAndOrderFront:` followed by
-//! `activateIgnoringOtherApps: YES`. `NSWindowStyleMaskNonactivatingPanel`
-//! lifts the constraint, but only on an `NSPanel`; set on a plain
-//! `NSWindow` it is silently inert.
-//!
-//! Tauri and `tao` create a plain `NSWindow` subclass with no switch for
-//! "make it a panel", so [`make_nonactivating_panel`] swaps the window's
-//! class after creation, the same approach `tauri-nspanel` takes.
-//! `object_setClass` is only safe when the new class is no larger than the
-//! object's original allocation: `NSPanel` adds no instance storage over
-//! `NSWindow`, the original window class is larger since it adds a
-//! `focusable` ivar, and the replacement class declares no ivars of its
-//! own, so the runtime size check in `make_nonactivating_panel` passes
-//! today and fails closed if a future AppKit changes that. The original
-//! class overrides `canBecomeKeyWindow` and `canBecomeMainWindow`, both
-//! reimplemented below, and `sendEvent:`, whose body is a no-op unless
-//! `isMovableByWindowBackground` is set, which Tauri never sets since this
-//! app drags through `startDragging()` instead. The window delegate is a
-//! separate object and stays attached, so `tao`'s `Focused`, `Moved` and
-//! `Resized` events keep firing unchanged. `set_focusable()` becomes
-//! unusable after the swap, since it writes the now-absent `focusable`
-//! ivar by name; nothing here calls it.
-//!
-//! Setting the non-activating style bit on a plain `NSWindow` raises an
-//! Objective-C exception, and an exception crossing the Rust FFI boundary
-//! aborts the process, so the class swap is verified by reading the class
-//! back before the style mask is ever written. The window already carries
-//! a KVO isa-swizzle when `setup` runs; the class swap displaces it, which
-//! is safe only because Tauri sets the content view once, during window
-//! creation, before this ever runs.
-//!
-//! `QUOTOS_PANEL_MODE=window` restores the old activate-on-show path for a
-//! same-session comparison without a rebuild. `-[NSApplication isActive]`
-//! reads `true` for an accessory app regardless of which path ran, so
-//! telling them apart needs `NSWorkspace.frontmostApplication` read from a
-//! separate process.
+//! to hold keyboard focus without activating its application. See
+//! docs/platform-constraints.md for the class swap and its safety proof.
 
 #[cfg(target_os = "macos")]
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
@@ -162,12 +121,9 @@ pub fn make_nonactivating_panel(_window: &tauri::WebviewWindow) -> bool {
     false
 }
 
-/// Shows and focuses the panel without activating the application.
-/// `orderFrontRegardless()` fronts the window regardless of which
-/// application is active; `makeKeyWindow()` then gives it keyboard focus,
-/// which only a non-activating panel can accept while its app is inactive.
-/// Deliberately not `WebviewWindow::set_focus()`, whose second half is
-/// `activateIgnoringOtherApps: YES`.
+/// `orderFrontRegardless()` fronts the window without activating the app;
+/// `makeKeyWindow()` then gives it focus, which only a non-activating panel
+/// accepts while inactive. Not `WebviewWindow::set_focus()`, which activates.
 #[cfg(target_os = "macos")]
 pub fn order_front_without_activating(window: &tauri::WebviewWindow) {
     use objc2_app_kit::NSWindow;

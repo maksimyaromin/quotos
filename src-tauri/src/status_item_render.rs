@@ -1,17 +1,6 @@
 //! Composites the status item's glyph plus colored percentage digits into
-//! a raw RGBA buffer. `tray-icon` v0.24.2's macOS `set_title` calls
-//! `NSStatusItem`'s button `setTitle:` with a plain `NSString`, and there
-//! is no attributed-string or color path anywhere in the crate's public
-//! API, so the only route to a colored digit is to paint it directly and
-//! hand macOS a finished bitmap through `set_icon`.
-//!
-//! `set_icon_for_ns_status_item_button` always asks for an 18pt-tall
-//! `NSImage` regardless of the source bitmap's own pixel size, so
-//! supplying a denser buffer than 18x18 is what keeps the result crisp on
-//! a Retina menu bar.
-//!
-//! Digits are rendered with real system text through Core Text. See the
-//! `text` submodule below.
+//! a raw RGBA buffer, since `tray-icon` has no colored-title path. See
+//! docs/status-item-rendering.md.
 
 use std::process::Command;
 
@@ -23,34 +12,16 @@ const GLYPH_PX: u32 = 36;
 /// fixed 2x-of-18pt convention, matching GLYPH_PX itself. 5 CSS-px of air
 /// sits at each end.
 const SIDE_PAD_PX: u32 = 10;
-/// Horizontal air on each side of the glyph and digits, inside the
-/// composited image. Two things need it, and one of them is not optional:
-///
-/// * The "panel open" highlight is painted across this whole buffer, so
-///   without padding it hugs the ink and reads as a box drawn around the
-///   glyph rather than as a pressed menu bar button. macOS fills the
-///   status item's own width for its own open items.
-/// * It is applied unconditionally, highlighted or not, so the glyph's
-///   position inside the item cannot shift when the highlight toggles. A
-///   shift there would move the beak too.
-///
-/// `geometry.rs`'s `glyph_center_offset_from_item_left_points` reads
-/// `GLYPH_LEFT_INSET_POINTS` rather than assuming the glyph is the image's
-/// leftmost 18pt.
+/// Padding is not optional: it keeps the "panel open" highlight from
+/// hugging the ink, and keeps the glyph from shifting when the highlight
+/// toggles. See docs/status-item-rendering.md.
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
-/// Structural gap from the glyph's own bounding box to the first figure
-/// cell's own bounding box. Tuned so the ink-to-ink distance, the glyph's
-/// own ink margin plus this gap plus the first digit's own centering
-/// margin, lands near the target of 6 CSS-px.
+/// Gap from the glyph's bounding box to the first figure cell's bounding
+/// box, tuned so the ink-to-ink distance lands near a target of 6 CSS-px.
 const GLYPH_TO_CELL_GAP_PX: u32 = 2;
-/// The cell reserve. Never resize this per digit count, for every segment
-/// except the trailing one: a digit count change in an earlier segment
-/// must never move the beak, which tracks the glyph rather than the
-/// segments.
-///
-/// The trailing segment does not get this reserve. `render()` sizes its
-/// cell to that one segment's own measured width instead, since nothing
-/// sits to its right for it to shift.
+/// The cell reserve for every segment but the trailing one: a digit-count
+/// change in an earlier segment must never move the beak, which tracks
+/// the glyph. `render()` sizes the trailing cell to its own measured width.
 const CELL_WIDTH_PX: u32 = 60; // 30 CSS-px
 /// Between two adjacent-cell groups: gutter, hairline, gutter, 5 + 1 + 5
 /// CSS-px. The visible 19px across the hairline includes each side's own
@@ -90,45 +61,14 @@ pub struct StatusItemSegment {
     pub text: String,
     pub color: StatusItemColor,
     /// True for the first segment of a new subscription's group. `render`
-    /// draws the hairline immediately before any segment with this set,
-    /// never before the very first segment overall, even if the frontend
-    /// happened to set it there.
+    /// never draws the hairline before the very first segment overall,
+    /// even if the frontend set this there.
     pub group_start: bool,
 }
 
-/// Per-pixel alpha coverage, 0-255, row-major, for a `canvas_px` square,
-/// for the capacity-gauge mark. Drawn procedurally from its exact vector
-/// geometry, `src/design-system/assets/menubar-glyph.svg`: a faint
-/// full-circle track plus a bold, round-capped arc with a gap, rather than
-/// rasterized from a fixed-size source and scaled. Drawing the exact shape
-/// at the target resolution means there is no raster source to be too
-/// small or too soft, and the target ink size, `TARGET_INK_DIAMETER_CSS_PX`,
-/// is a direct, tunable parameter instead of whatever a fixed asset
-/// happened to contain.
-///
-/// The SVG's path, `M4.46 12.02 a5.4 5.4 0 1 1 7.08 0`, was converted to
-/// the two gap-endpoint angles below by hand: the vector from the center
-/// (8,8) to each endpoint, through `atan2`. Both are in this module's
-/// plain math convention, y-down, 0 at the +x axis, which already matches
-/// the SVG's own y-down convention with no flip needed, since this buffer
-/// is top-left-origin throughout. See `blend_pixel` and the `text` module.
-///
-/// The mark reads as a Q, not an O: a ring with a gap, plus a second
-/// stroke, the tail, through the gap's own diagonal, which is what a
-/// counter needs to read as a Q rather than a bare ring. The gap is 62
-/// degrees wide, centered at 45 degrees, lower-right, which is where the
-/// tail sits. The tail is a second capsule, radius 3.2 to 8.0 along that
-/// same 45-degree diagonal, same stroke weight as the arc, round caps,
-/// drawn unconditionally, even at 0% used, since the tail is what reads as
-/// a Q rather than an O regardless of fill state. Its own reach at 45
-/// degrees, outer radius plus half-stroke, projected onto either axis,
-/// stays just inside the ring's own axis-aligned reach, so it needs no
-/// separate accounting in `natural_outer_diameter` or `scale` below. The
-/// arc's own end angle is data, `used_fraction`, 0.0 to 1.0, clamped,
-/// rather than a constant 100%. It starts right where the gap ends,
-/// `ARC_GAP_HIGH_RAD`, and sweeps forward by `used_fraction` of the
-/// maximum possible sweep, `TAU` minus the gap's own width, landing
-/// exactly on the gap's other edge at 100%.
+/// Per-pixel alpha coverage for the capacity-gauge mark, drawn
+/// procedurally from its exact vector geometry rather than rasterized
+/// from a fixed-size source. See docs/status-item-rendering.md.
 fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     const TRACK_RADIUS_SVG: f64 = 5.4;
     const TRACK_STROKE_SVG: f64 = 1.4;
@@ -198,9 +138,8 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
                 (1.0 - (track_edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0) * TRACK_OPACITY;
 
             // Where along the swept arc this pixel's angle falls, measured
-            // forward from `arc_start` (0..TAU). The un-swept remainder of
-            // the fixed 62° gap band falls out of this automatically: it's
-            // exactly the tail end of this range, from `sweep` to `max_sweep`.
+            // forward from `arc_start`. The un-swept remainder of the fixed
+            // gap band falls out of this automatically as the tail end.
             let mut angle_rel = angle - arc_start;
             if angle_rel < 0.0 {
                 angle_rel += std::f64::consts::TAU;
@@ -212,9 +151,8 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
                 (1.0 - (edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
             } else {
                 // Round caps at the two ends of the current sweep, not the
-                // gap's own fixed edges, since the sweep is data now.
-                // Whichever endpoint is nearer, tested as a plain 2D
-                // distance so the cap is a true half-circle.
+                // gap's fixed edges, since the sweep is data. Nearer
+                // endpoint wins, by plain 2D distance for a true half-circle.
                 let d_start = ((ux - cap_start_x).powi(2) + (uy - cap_start_y).powi(2)).sqrt();
                 let d_end = ((ux - cap_end_x).powi(2) + (uy - cap_end_y).powi(2)).sqrt();
                 let d = d_start.min(d_end);
@@ -240,14 +178,9 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     cov
 }
 
-/// Read-only check of the current menu bar appearance. `defaults read` is a
-/// read of user preferences, not a write, so it changes nothing on the
-/// machine. Absence of the key, the default light-mode case, makes the
-/// command fail, which `unwrap_or(false)` correctly treats as "not dark".
-/// `render` takes the result as a parameter rather than calling this
-/// itself, so the pure layout and color math it does stays a subprocess
-/// away from the real menu bar appearance; `shell.rs` calls this once
-/// per repaint and passes the answer in.
+/// Read-only: `defaults read` only reads preferences, never writes. Absence
+/// of the key, the light-mode default, fails the command, which
+/// `unwrap_or(false)` correctly treats as not dark.
 pub(crate) fn is_dark_mode() -> bool {
     Command::new("defaults")
         .args(["read", "-g", "AppleInterfaceStyle"])
@@ -261,15 +194,9 @@ pub(crate) fn is_dark_mode() -> bool {
         .unwrap_or(false)
 }
 
-/// This buffer can carry two translucent layers, the "panel open"
-/// highlight and then the glyph or digits drawn over it, so a plain
-/// overwrite would discard whichever layer drew second wherever they
-/// overlap, losing the highlight everywhere the glyph or a digit covers
-/// it. This does standard "src-over" alpha compositing instead. On a
-/// fully-opaque `src` or a fully-transparent destination pixel this
-/// reduces to a plain overwrite, so a single-layer caller, such as glyph
-/// ink or digit text onto a blank buffer, is unaffected. Only a
-/// highlighted, multi-layer case actually exercises the blend math.
+/// The highlight and then the glyph or digits can land on the same pixel,
+/// so a plain overwrite would lose the highlight wherever they overlap.
+/// This does standard src-over alpha compositing instead.
 fn blend_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8, u8)) {
     if x >= w || y >= h {
         return;
@@ -305,14 +232,9 @@ fn blend_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8
     buf[idx + 3] = out_a as u8;
 }
 
-/// A system-style highlight behind the whole glyph and digits image while
-/// the panel is open: rgba(255,255,255,0.20) dark, rgba(0,0,0,0.14) light,
-/// radius 5 CSS-px. Drawn here as a standard rounded-box signed-distance
-/// field, the same antialiasing approach as `glyph_coverage`, rather than
-/// reached through any native `NSStatusItem` highlighted state, because
-/// the icon is already a custom composited bitmap and the design calls for
-/// these exact tokens, not whatever tint macOS's own default selection
-/// style would draw.
+/// The "panel open" highlight, drawn as a rounded-box signed-distance
+/// field rather than a native `NSStatusItem` highlighted state, since the
+/// icon is already a custom bitmap and the design calls for exact tokens.
 fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
     const RADIUS_PHYSICAL: f64 = 10.0; // 5 CSS-px, doubled for this buffer's usual 2x
     const AA_HALF_WIDTH_PX: f64 = 0.75;
@@ -340,13 +262,9 @@ fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
     }
 }
 
-/// The vertical rule that parts two pinned subscriptions' figure groups:
-/// an 11px hairline at white 34% in dark appearance, drawn
-/// `HAIRLINE_WIDTH_PX` wide and `HAIRLINE_HEIGHT_PX` tall, centered in the
-/// row. The light-appearance value mirrors `draw_highlight_background`'s
-/// own light-below-dark pattern. A black line reads at a slightly lower
-/// opacity than an equally-weighted white one, rather than inventing an
-/// unrelated number.
+/// Parts two pinned subscriptions' figure groups. The light-appearance
+/// opacity mirrors `draw_highlight_background`'s light-below-dark pattern,
+/// since a black line reads heavier than a white one at equal weight.
 fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
     let rgba = if dark {
         (0xffu8, 0xffu8, 0xffu8, (0.34f64 * 255.0).round() as u8)
@@ -361,15 +279,9 @@ fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
     }
 }
 
-/// Composites an 8-bit coverage mask, `mask`, `mask_w` wide by `buf_h`
-/// tall, row-major, one byte per pixel, onto `buf` at horizontal offset
-/// `x0`, using `rgba` as the solid color. Coverage modulates `rgba`'s own
-/// alpha, so `StatusItemColor::Neutral`'s sub-255 base alpha is preserved, and
-/// the RGB channels are always exactly `rgba`'s. The mask carries no color
-/// information of its own. Used by the non-macOS fallback text renderer
-/// below. The real macOS CoreText renderer draws already-colored RGBA
-/// straight from CoreGraphics instead. See its `draw_text_impl`'s doc
-/// comment for why a coverage-mask-only approach does not work for text.
+/// Composites an 8-bit coverage mask onto `buf` at `x0`, using `rgba` as
+/// the solid color; coverage modulates `rgba`'s own alpha. Used only by
+/// the non-macOS fallback text renderer; see docs/status-item-rendering.md.
 #[cfg(not(target_os = "macos"))]
 fn composite_mask(
     buf: &mut [u8],
@@ -402,12 +314,9 @@ fn composite_mask(
     }
 }
 
-/// Real system text rendering for the status item's percentage digits, through
-/// Core Text and CoreGraphics, reached through the `objc2` bindings Tauri
-/// already pulls in transitively. This is sharper than a hand-rolled
-/// bitmap font next to Apple's own menu-bar text. See the non-macOS
-/// fallback module below for the bitmap alternative this platform does
-/// not need.
+/// Real system text through Core Text and CoreGraphics, via the `objc2`
+/// bindings Tauri already pulls in, sharper than a hand-rolled bitmap
+/// font next to Apple's own menu-bar text. See docs/status-item-rendering.md.
 #[cfg(target_os = "macos")]
 mod text {
     use super::blend_pixel;
@@ -429,10 +338,9 @@ mod text {
 
     pub const FONT_FAMILY: &str = "MonoLisa";
 
-    /// Either the requested MonoLisa font, or, if it is not installed on
-    /// this machine, the system's own tabular-figure UI font. `NSFont` and
-    /// `CTFont` are toll-free bridged, the same underlying object, so both
-    /// variants expose an identical `&CTFont` for drawing.
+    /// Either the requested MonoLisa font or, if not installed, the
+    /// system's tabular-figure UI font. `NSFont` and `CTFont` are
+    /// toll-free bridged, so both expose an identical `&CTFont` for drawing.
     enum FontHandle {
         Mono(CFRetained<CTFont>),
         Fallback(Retained<NSFont>),
@@ -452,35 +360,25 @@ mod text {
         pub used_fallback: bool,
     }
 
-    /// `NSFontWeight` and `CTFontWeightTrait` share the same documented
-    /// -1.0..1.0 normalized scale, so Apple's own medium-weight constant is
-    /// reused for both the CoreText descriptor trait (MonoLisa path) and the
-    /// AppKit fallback call, rather than hand-picking a magic number for one
-    /// of the two.
+    /// `NSFontWeight` and `CTFontWeightTrait` share the same -1.0..1.0
+    /// normalized scale, so Apple's medium-weight constant is reused for
+    /// both the CoreText and AppKit paths, rather than a hand-picked number.
     fn medium_weight() -> f64 {
         unsafe { NSFontWeightMedium }
     }
 
-    /// A pure CoreText, thread-safe query. Unlike `NSFontManager`, whose
-    /// `sharedFontManager` requires a `MainThreadMarker` in these bindings
-    /// and is genuinely main-thread-restricted, `CTFontManagerCopy*` is a
-    /// plain C function with no such requirement. This matters here because
-    /// `set_status_item_state` runs inside a Tauri command handler with no
-    /// guarantee of being on the main thread.
+    /// A pure CoreText, thread-safe query, unlike `NSFontManager`, whose
+    /// `sharedFontManager` requires a `MainThreadMarker`. This matters since
+    /// `set_status_item_state` has no guarantee of running on the main thread.
     fn monolisa_family_available() -> bool {
         let names: CFRetained<CFArray<CFString>> =
             unsafe { CFRetained::cast_unchecked(CTFontManagerCopyAvailableFontFamilyNames()) };
         names.to_vec().iter().any(|n| n.to_string() == FONT_FAMILY)
     }
 
-    /// Builds a font descriptor for family "MonoLisa" at the medium weight
-    /// trait and resolves it to a concrete font.
-    /// `CTFontCreateWithFontDescriptor`, like `CTFontCreateWithName`, never
-    /// returns null. On a mismatch it silently substitutes a default font
-    /// instead, so availability is checked up front through
-    /// `CTFontManagerCopyAvailableFontFamilyNames`, and double-checked
-    /// after creation by comparing the resolved font's own family name, in
-    /// case of a fluke substitution.
+    /// `CTFontCreateWithFontDescriptor` never returns null; on a mismatch it
+    /// silently substitutes a default font instead, so this double-checks
+    /// the resolved font's own family name against a fluke substitution.
     fn try_load_monolisa(size_pt: f64) -> Option<CFRetained<CTFont>> {
         if !monolisa_family_available() {
             return None;
@@ -507,15 +405,9 @@ mod text {
         }
     }
 
-    /// Tries MonoLisa first. Falls back to the system's tabular-figure UI
-    /// font, `NSFont.monospacedDigitSystemFontOfSize:weight:`, if MonoLisa
-    /// is not installed. No caching across calls. Font matching here is
-    /// infrequent, once per status item repaint, at most once a minute, and cheap
-    /// enough that keeping this stateless sidesteps `CFRetained` and
-    /// `Retained` not being `Send + Sync`. Core Foundation and AppKit
-    /// object wrappers are not declared thread-safe for storage in a
-    /// shared `static`, even though the lookups themselves are safe to
-    /// call off the main thread.
+    /// Tries MonoLisa first, falls back to the system's tabular-figure UI
+    /// font. No caching across calls; see docs/status-item-rendering.md for
+    /// why staying stateless is the deliberate choice here.
     pub fn load_font(size_pt: f64) -> LoadedFont {
         if let Some(font) = try_load_monolisa(size_pt) {
             return LoadedFont {
@@ -530,34 +422,17 @@ mod text {
         }
     }
 
-    /// Builds a `CTLine` laying out `text` with `font` in color `rgba`.
-    /// `CTLineCreateWithAttributedString` plus `CTLineDraw` is CoreText's
-    /// own standard, documented path for drawing a short text run. Used
-    /// here instead of manually resolving glyph IDs and advances through
-    /// `CTFontGetGlyphsForCharacters`, `CTFontGetAdvancesForGlyphs`, and
-    /// `CTFontDrawGlyphs`: that lower-level path produces specific glyphs
-    /// with wrong or incomplete outlines on this font, OS, and binding
-    /// combination, for example a "7" missing its top bar while an "8"
-    /// right next to it, same font, same call sequence, renders perfectly.
-    /// The corruption is not a premultiply or coordinate-flip issue, since
-    /// it appears identically with the system fallback font and with a
-    /// straight RGBA context. `CTLine` goes through CoreText's normal text
-    /// layout and shaping engine instead of raw per-glyph plotting, which
-    /// is both simpler and correct here.
+    /// Builds a `CTLine` laying out `text` with `font` in color `rgba`,
+    /// CoreText's standard path for a short run. Not manual per-glyph
+    /// plotting: see docs/status-item-rendering.md for why that corrupts.
     fn make_line(font: &CTFont, text: &str, rgba: (u8, u8, u8, u8)) -> Option<CFRetained<CTLine>> {
         if text.is_empty() {
             return None;
         }
         let string = CFString::from_str(text);
-        // sRGB, not new_generic_rgb. Pairing a Generic-RGB fill color with
-        // a Device-RGB bitmap context, which do not share a gamma curve,
-        // shifts even fully-opaque glyph-interior pixels well off the
-        // requested color: a requested (229,100,106) can come back as
-        // (236,123,125), a shift of more than 20 on the green and blue
-        // channels, not just antialiasing fuzz. StatusItemColor::rgba's values
-        // are plain CSS hex tokens, already sRGB by convention, so both the
-        // fill color and the bitmap context below use sRGB explicitly and
-        // agree with each other.
+        // sRGB, not generic RGB: the two don't share a gamma curve, which
+        // shifts even opaque pixels off the requested color. See
+        // docs/status-item-rendering.md for the measured drift.
         let color = CGColor::new_srgb(
             rgba.0 as f64 / 255.0,
             rgba.1 as f64 / 255.0,
@@ -575,10 +450,8 @@ mod text {
         Some(unsafe { CTLine::with_attributed_string(&attr_string) })
     }
 
-    /// Renders `text` with `font` in color `rgba` and composites it onto
-    /// `buf`, of height `buf_h`, at horizontal offset `x0`. Returns the
-    /// pixel width it occupied so callers can lay out the next segment
-    /// after it.
+    /// Composites `text` onto `buf` at `x0`. Returns the pixel width it
+    /// occupied so callers can lay out the next segment after it.
     fn draw_text_impl(
         buf: &mut [u8],
         buf_w: u32,
@@ -615,10 +488,8 @@ mod text {
                 8,
                 (width * 4) as usize,
                 Some(&colorspace),
-                // An alpha-only context, CGImageAlphaInfo::Alpha or
-                // ::AlphaOnly, corrupts CoreText glyph shapes: CTLineDraw
-                // needs real RGB channels to rasterize into, even though
-                // only this alpha channel is read back afterward.
+                // An alpha-only context corrupts CoreText glyph shapes;
+                // see docs/platform-constraints.md.
                 CGImageAlphaInfo::PremultipliedLast.0,
                 None,
                 std::ptr::null_mut(),
@@ -628,21 +499,9 @@ mod text {
             return 0;
         };
 
-        // Deliberately not flipping the CTM here, the usual translate plus
-        // scale(1,-1) trick that turns a CGBitmapContext's bottom-left/y-up
-        // default into top-left/y-down. Doing so mirrors the glyphs
-        // themselves vertically, since CTLineDraw and CTFontDrawGlyphs
-        // orient glyph outlines relative to the CTM's handedness rather
-        // than compensating for it. The alternative fix would be to also
-        // set a flipped CGContextSetTextMatrix, but it is simpler to draw
-        // in the context's native, bottom-left/y-up, convention and
-        // account for that in baseline_native below.
-        // CGBitmapContextCreateWithData's backing memory is always laid
-        // out top-row-first regardless of the drawing CTM, a fixed
-        // property of the pixel buffer rather than of how it is drawn
-        // into, so the row-major copy loop further down needs no
-        // inversion either way. Only the baseline math needs to account
-        // for native y-up.
+        // Deliberately not flipping the CTM: that mirrors the glyphs
+        // themselves. Drawing stays in the context's native bottom-left/y-up
+        // convention instead; see docs/status-item-rendering.md.
         let ascent = unsafe { font.ascent() };
         let descent = unsafe { font.descent() };
         let baseline_native = ((buf_h as f64) + descent - ascent) / 2.0;
@@ -710,11 +569,9 @@ mod text {
     }
 }
 
-/// This crate only ever ships for macOS, as a menu bar app, but the
-/// CoreText bindings above are gated `target_os = "macos"` so that a
-/// non-mac `cargo check`, such as a contributor on Linux, still compiles.
-/// This is a hand-rolled bitmap font, restructured to produce a coverage
-/// mask so it shares `composite_mask` with the real implementation above.
+/// Lets a non-mac `cargo check` still compile despite the CoreText
+/// bindings above being macOS-only. A hand-rolled bitmap font, producing
+/// a coverage mask so it shares `composite_mask` with the real path above.
 #[cfg(not(target_os = "macos"))]
 mod text {
     use super::composite_mask;
@@ -824,9 +681,8 @@ fn text_font_size_pt() -> f64 {
 }
 
 /// Whether the last font lookup fell back to the system tabular-figure UI
-/// font instead of finding MonoLisa. Exposed so the caller can report
-/// which font actually rendered on a given machine. See the `text`
-/// submodule's `load_font` for the lookup-and-fallback logic itself.
+/// font instead of finding MonoLisa, so a caller can report which font
+/// actually rendered on a given machine.
 pub fn used_fallback_font() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -838,12 +694,9 @@ pub fn used_fallback_font() -> bool {
     }
 }
 
-/// `text::measure`'s widths are used only to center text inside each
-/// segment's own reserve, never to size it; see `CELL_WIDTH_PX`'s doc for
-/// why only the trailing segment's reserve tracks its own width. A
-/// `group_start` flag on the very first segment means nothing, since
-/// there is no prior group to part from, so it is excluded here the same
-/// way `render`'s draw loop excludes it.
+/// `text::measure`'s widths center text inside each segment's own reserve,
+/// never size it. A `group_start` flag on the very first segment is
+/// excluded, since there is no prior group for it to part from.
 fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
     if segments.is_empty() {
         return 0;
@@ -856,12 +709,8 @@ fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
 }
 
 /// Composites the glyph plus every segment's colored digits into one RGBA
-/// buffer. Returns `(rgba, width, height)`. An empty `segments` still
-/// draws the bare glyph, as a non-template colored image whenever
-/// `highlighted` is true, since a plain template image cannot carry a
-/// background tint of its own. A caller with truly nothing pinned and no
-/// highlight should prefer the cheaper template-icon path in `shell.rs`
-/// instead of calling this.
+/// buffer. An empty `segments` still draws the bare glyph as a non-template
+/// image when `highlighted`, since a template image carries no background tint.
 pub fn render(
     segments: &[StatusItemSegment],
     highlighted: bool,
@@ -930,18 +779,13 @@ pub fn render(
     (buf, total_w, total_h)
 }
 
-/// The bare glyph alone, no digits, for reverting to the quiet state, the
-/// most common state, so this path matters at least as much as `render()`'s
-/// embedded glyph. White RGB plus alpha, matching a template image's
-/// convention: macOS tints template images itself from alpha alone, per
-/// appearance.
+/// The bare glyph alone, no digits, for the quiet state. White RGB plus
+/// alpha, a template image's convention: macOS tints it from alpha alone.
 pub fn plain_glyph_rgba(worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
     let used_fraction = worst_used_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
-    // Padded identically to render's output. See SIDE_PAD_PX. The two
-    // paths swap places whenever the panel opens or a pin changes, and an
-    // image width that changed between them would move the glyph, and
-    // with it the beak, on every toggle.
+    // Padded identically to render's output: the two paths swap places on
+    // every panel toggle, and a width mismatch would move the beak.
     let total_w = SIDE_PAD_PX * 2 + GLYPH_PX;
     let mut rgba = vec![0u8; (total_w * GLYPH_PX * 4) as usize];
     for y in 0..GLYPH_PX {
@@ -1000,10 +844,9 @@ mod tests {
         );
     }
 
-    /// Measures the ink's own bounding box directly out of the composited
-    /// buffer, rather than trusting `TARGET_INK_DIAMETER_CSS_PX` alone,
-    /// since antialiasing and the round caps could push the real ink
-    /// bounds off from what was intended.
+    /// Measures the ink's bounding box out of the composited buffer rather
+    /// than trusting `TARGET_INK_DIAMETER_CSS_PX` alone, since antialiasing
+    /// and round caps could push the real bounds off from what's intended.
     #[test]
     fn glyph_ink_bounding_box_is_in_the_target_band() {
         let cov = glyph_coverage(GLYPH_PX, 1.0);
@@ -1049,10 +892,8 @@ mod tests {
         assert_eq!(plain_glyph_rgba(50).1, render(&[], true, 50, false).1);
     }
 
-    // shell::sync_status_item_length sets the status item's native length
-    // from this function's own returned width, so highlighted must never
-    // change that width, for a real segment set too, not just the bare
-    // glyph case above.
+    // shell::sync_status_item_length sets the item's native length from
+    // this function's returned width, so highlighted must never change it.
     #[test]
     fn click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned() {
         let segs = [

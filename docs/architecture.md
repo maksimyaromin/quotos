@@ -15,7 +15,7 @@ this page is the map between them.
 | `shell.rs` | The interactive shell: the status item's repaint pipeline and the panel's show, hide, dock, detach, and drag lifecycle. |
 | `geometry.rs` | Pure placement math and read-only screen queries. No module here moves a window; `shell.rs` does that with these numbers. |
 | `panel_window.rs` | Turns the panel into a non-activating `NSPanel`, the AppKit window class that can hold keyboard focus without activating its application. |
-| `status_item_render.rs` | Composites the status item's glyph and colored percentage digits into an RGBA bitmap, since `tray-icon` has no colored-title path. |
+| `status_item_render.rs` | Composites the status item's glyph and colored percentage digits into an RGBA bitmap, since `tray-icon` has no colored-title path. See [status-item-rendering.md](status-item-rendering.md). |
 | `accounts.rs` | The account-data plane: discovery, the one real fetch path, the shared per-account rate budget, the native refresh scheduler, and the IPC commands for the tracked list, statusline integration, and sign-in. |
 | `ratelimit.rs` | The sliding-window request budget one account's reads share with Claude Code itself. |
 | `scheduler.rs` | The native one-read-per-account-per-minute timer. |
