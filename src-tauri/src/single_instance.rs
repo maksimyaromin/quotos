@@ -1,8 +1,8 @@
 //! One running Quotos per machine, enforced with an OS file lock.
 //!
-//! The `/api/oauth/usage` allowance is 5 requests per 300 seconds per
-//! account, shared with Claude Code itself. `ratelimit.rs` owns that
-//! budget, but each running instance tracks it independently with no
+//! The shared per-account request budget, documented in
+//! claude-provider.md, has no cross-instance coordination: `ratelimit.rs`
+//! owns it, but each running instance tracks it independently with no
 //! knowledge of its siblings. Two live instances each believe the whole
 //! allowance is theirs and spend it at double speed until the provider
 //! answers 429. Double-clicking the bundle does not produce two instances,
