@@ -60,3 +60,10 @@ body {
   width: 0;
   height: 0;
 }
+
+/* RefreshIcon's spin, App.tsx's only consumer of this keyframe. */
+@keyframes quotos-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
