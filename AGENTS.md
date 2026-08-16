@@ -6,14 +6,15 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 ## What this is
 
-Tauri v2 + React/TS + Vite menu bar app in `quotos-app/`. See `RESULT.md` at
-the repo root for the state of the current build (what works, what doesn't,
-how to run/build/test) — read it before assuming a feature is done. It is
-rewritten each round, not appended to.
+Tauri v2 + React/TS + Vite menu bar app, rooted at the repository root (`npm`,
+`vitest`, `tsc`, and `tauri` all run from here). See `RESULT.md` at the repo
+root for the state of the current build (what works, what doesn't, how to
+run/build/test) — read it before assuming a feature is done. It is rewritten
+each round, not appended to.
 
 ## Sources of truth (don't duplicate, read these)
 
-- `design/brief.md` — product spec: entity model, every state, every surface.
+- `docs/design/brief.md` — product spec: entity model, every state, every surface.
   **Superseded wherever it disagrees** by the round-2 UI/UX handoff,
   `data/quotos-fixes-f2/design-notes/quotos-handoff.html` (firstmate data
   dir, not this repo) — the brief predates any build, the handoff was
@@ -22,11 +23,11 @@ rewritten each round, not appended to.
   prototype wins unless the handoff text says otherwise. Its own JS
   (`renderVals()`) is the authoritative source for exact row-state logic —
   read it directly rather than re-deriving from the prose.
-- `design/system/` — the design system (tokens, React components). Use it,
-  don't reinvent it; `design/system/readme.md` explains the visual language.
-  `quotos-app/src/design-system/` is a verbatim copy consumed by the app —
+- `docs/design/system/` — the design system (tokens, React components). Use
+  it, don't reinvent it; `docs/design/system/readme.md` explains the visual
+  language. `src/design-system/` is a verbatim copy consumed by the app —
   when you change a component, edit both copies identically (there is no
-  build step that syncs them; `quotos-app/src/design-system/sync.test.js`
+  build step that syncs them; `src/design-system/sync.test.js`
   fails the vitest suite if the copies ever diverge). Motion is token-driven:
   every `transition` takes its duration from `tokens/elevation.css`'s
   `--dur-*` tokens, and that same file's `prefers-reduced-motion` block is
@@ -42,8 +43,8 @@ rewritten each round, not appended to.
 
 ## Architecture
 
-- Provider adapter seam: `quotos-app/src/providers/registry.ts` (frontend)
-  and `quotos-app/src-tauri/src/providers/mod.rs` (backend). A second
+- Provider adapter seam: `src/providers/registry.ts` (frontend)
+  and `src-tauri/src/providers/mod.rs` (backend). A second
   provider is a new module on each side plus one registry entry — nothing
   else (panel, hooks, state machine) may reference a provider by name.
   Two things live behind this seam on purpose, both provider-owned rather
@@ -69,7 +70,7 @@ rewritten each round, not appended to.
   `set_title`** — verified by reading `platform_impl/macos/mod.rs` (same
   method that found the `set_title(None)` no-op below): it's a plain
   `NSString`, no attributed-string/color channel anywhere in the crate.
-  `quotos-app/src-tauri/src/tray_render.rs` composites glyph + colored
+  `src-tauri/src/tray_render.rs` composites glyph + colored
   digits into an RGBA bitmap instead (`set_icon`, `icon_as_template(false)`
   when anything is colored), with a tiny embedded 3x5 pixel font — no font
   library needed for digits and `%`/`!`. `set_icon_for_ns_status_item_button`
@@ -184,7 +185,7 @@ rewritten each round, not appended to.
   instead of prompting. `QUOTOS_DEBUG_READS=1` traces the credential/read
   decisions (never a token) to stderr.
 - **Sign-in recovery drives Claude Code's own login, never Quotos's own.**
-  `quotos-app/src-tauri/src/signin.rs` spawns `claude setup-token` (via
+  `src-tauri/src/signin.rs` spawns `claude setup-token` (via
   `providers::claude::cli_invocation`, see R3-4 above) attached to a real pty via
   `portable-pty` — plain pipes risk the CLI detecting a non-tty stdin and
   changing behavior, confirmed by one careful, throwaway-config-dir
@@ -202,7 +203,7 @@ rewritten each round, not appended to.
   points at the real account, and whether `setup-token`'s long-lived token
   lands in (or replaces) the same `claudeAiOauth` blob Quotos reads was
   never tested — completing a real login is the captain's own check.
-- **Refresh cadence lives natively, not in JS.** `quotos-app/src-tauri/src/scheduler.rs`
+- **Refresh cadence lives natively, not in JS.** `src-tauri/src/scheduler.rs`
   is the single scheduler: one automatic read per account per minute,
   anchored to the last attempt (manual or scheduled — both funnel through
   the same `fetch_snapshot` command, which is what makes "a manual refresh
@@ -235,7 +236,7 @@ rewritten each round, not appended to.
   not reintroduce a "remaining" field; the whole surface (headline, bars,
   tray) was deliberately inverted to one consistent meaning.
 - **I6: nothing is tracked by default, and the tracked list is now natively
-  owned.** `quotos-app/src-tauri/src/persistence.rs` writes a plain JSON
+  owned.** `src-tauri/src/persistence.rs` writes a plain JSON
   file (`tracked.json` in the app's config dir) via the shared
   `atomic_write` module (temp-file + `fsync` + atomic rename, unique temp
   name per writer — the same helper `statusline.rs` uses), not SQLite (the
@@ -245,7 +246,7 @@ rewritten each round, not appended to.
   whole write, not just the in-memory update after it — `save_tracked` is
   an async command fired on every membership/label/pin change, so saves
   overlap routinely, and a lock taken only at the end let disk and memory
-  finish in different orders (pinned by a concurrency test). `quotos-app/src/lib/persistence.ts`
+  finish in different orders (pinned by a concurrency test). `src/lib/persistence.ts`
   is the frontend seam: on the native path it's a thin wrapper over the
   `load_tracked`/`save_tracked` commands; the browser/mock harness (no Rust
   side to call) keeps using `localStorage` as a fallback. Discovery
@@ -309,7 +310,7 @@ rewritten each round, not appended to.
   a `Null` body reads downstream as a *healthy* "No limits reported yet" and
   silently wipes every window and tray digit. Only a non-200's body may be
   unreadable (its status alone classifies it; the body is never consumed).
-- `quotos-app/src/lib/tauriClient.ts` swaps between the real Tauri IPC client
+- `src/lib/tauriClient.ts` swaps between the real Tauri IPC client
   and `mockClient.ts` (browser-only demo data) based on
   `"__TAURI_INTERNALS__" in window`. The mock client exists purely so the UI
   states are reviewable from a plain browser (`npm run dev`) — never let it
@@ -379,9 +380,9 @@ rewritten each round, not appended to.
   establishes a containing block for fixed descendants: no `transform`,
   `filter`, `backdrop-filter`, `perspective`, `will-change` or `contain` on
   `Panel`'s wrappers (the blurred backdrop layer is a *sibling*). Deliberately
-  not a React portal — `design/system/`'s components are consumed through a
+  not a React portal — `docs/design/system/`'s components are consumed through a
   prebuilt `_ds_bundle.js`, and its generator
-  (`design/system/_build_bundle.mjs`, run `node` on it after any component
+  (`docs/design/system/_build_bundle.mjs`, run `node` on it after any component
   edit) only knows how to rewrite `react` imports against the page-global
   React — a `react-dom` import would need the generator taught about it
   first. The bundle feeds only the design card pages and
@@ -414,7 +415,7 @@ rewritten each round, not appended to.
   the prototype's.
 - **S2: the Claude Code statusline feed is a second, zero-cost usage
   source, opt-in per subscription, installed from the Subscriptions
-  screen.** `quotos-app/src-tauri/src/statusline.rs` owns install/status/
+  screen.** `src-tauri/src/statusline.rs` owns install/status/
   remove against a config dir's `settings.json` (read-merge-write, atomic
   temp+rename, refuses on unparseable JSON, backs up the previous file plus
   a small metadata record of the previous `statusLine` value under
@@ -495,7 +496,7 @@ rewritten each round, not appended to.
   a Rust struct mirrors it field-for-field (`grep` the Rust side for the old
   field name) — a mismatched Rust struct doesn't error, it just silently
   reshapes the JSON in transit.
-- **v4: the tray glyph is a Q now, not an O** (design/NOTES.md §3) —
+- **v4: the tray glyph is a Q now, not an O** (docs/design/NOTES.md §3) —
   `tray_render.rs`'s `glyph_coverage` moved the ring's gap from 82.75°
   centred at 90° (bottom) to 62° centred at 45° (lower-right), added a
   second capsule (the tail, r 3.2→8.0 along that same diagonal, same stroke
@@ -503,7 +504,7 @@ rewritten each round, not appended to.
   made the arc's own end angle a function of data (`used_fraction`) instead
   of an implicit constant 100%. The two gap-endpoint angles and the tail's
   exact start/end coordinates were cross-checked against
-  `design/assets/tray-glyph-*.svg` directly (vector coordinates, not
+  `docs/design/assets/tray-glyph-*.svg` directly (vector coordinates, not
   eyeballed) and match to 2 decimal places. The tail's own reach happens to
   stay just inside the ring's own axis-aligned bounding box at this specific
   geometry (checked by hand, not by construction) — `natural_outer_diameter`
@@ -511,7 +512,7 @@ rewritten each round, not appended to.
   sent on *every* `set_tray_status` call regardless of whether anything is
   pinned — the arc reflects the worst active limit across everything
   tracked whether the bar shows digits or not, not just in the empty state.
-- **v4: the figure layout's "ink-to-ink" numbers in design/NOTES.md §1 are
+- **v4: the figure layout's "ink-to-ink" numbers in docs/design/NOTES.md §1 are
   outcomes, not independent constants — measure them, don't derive them
   algebraically.** `tray_render.rs`'s actual structural constants
   (`SIDE_PAD_PX`, `GLYPH_TO_CELL_GAP_PX`, `CELL_WIDTH_PX`,
@@ -533,7 +534,7 @@ rewritten each round, not appended to.
 - **v4: no SVG-to-raster CLI tool exists on this machine** (`rsvg-convert`,
   `cairosvg`, `inkscape`, ImageMagick's `convert`/`magick` — none
   installed; `sips` doesn't rasterize SVG). The app icon
-  (`quotos-app/src-tauri/icons/icon.icns`, from `design/assets/app-icon.svg`)
+  (`src-tauri/icons/icon.icns`, from `docs/design/assets/app-icon.svg`)
   was exported by loading the inlined SVG into an `Image` inside an isolated
   headless Chrome page (via the Chrome DevTools MCP) and drawing it onto a
   same-sized `<canvas>` per target resolution (16/32/64/128/256/512/1024,
@@ -924,7 +925,7 @@ rewritten each round, not appended to.
 - **The tray glyph is drawn procedurally now, not from a raster asset —
   there is no `icons/tray/tray-icon.png` to update if the mark ever
   changes.** `tray_render.rs`'s `glyph_coverage` ports the exact geometry of
-  `design/system/assets/menubar-glyph.svg` (a 16×16-viewBox capacity-gauge
+  `docs/design/system/assets/menubar-glyph.svg` (a 16×16-viewBox capacity-gauge
   mark: a faint full-circle track, `r=5.4` stroke `1.4` opacity `0.28`, plus
   a bold round-capped arc on the same circle, stroke `1.9`, with a gap at
   the bottom — the gap's two angles were derived by hand from the SVG path's
@@ -1019,9 +1020,9 @@ rewritten each round, not appended to.
   hard-clipped by the window edge instead of fading, which reads as a dark
   halo band against a bright desktop rather than a soft shadow.
 - Side-by-side packaging (a second identity for the same product) is done
-  at packaging time via a config in `quotos-app/src-tauri/` merged with
+  at packaging time via a config in `src-tauri/` merged with
   `--config` (e.g. `npx tauri build --config src-tauri/tauri.v3.conf.json`
-  from `quotos-app/`) — see that file and `quotos-app/README.md`. Don't put
+  from the repo root) — see that file and `README.md`'s packaging sections. Don't put
   `--config` before the `build` subcommand; each subcommand defines its own
   flag. A distinct `identifier` is sufficient to diverge WKWebView storage
   (verified empirically: `~/Library/WebKit/<identifier>/` is a separate
