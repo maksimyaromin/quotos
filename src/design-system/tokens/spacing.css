@@ -3,7 +3,6 @@
    itself about 12px, chips about 4px. */
 
 :root {
-  /* spacing scale */
   --space-0: 0;
   --space-0-5: 2px;
   --space-1: 4px;
@@ -16,7 +15,6 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  /* radii */
   --radius-xs: 3px;
   --radius-sm: 5px;   /* buttons, inputs */
   --radius-md: 7px;   /* rows, small cards */
@@ -24,7 +22,6 @@
   --radius-xl: 12px;  /* the popover shell */
   --radius-pill: 999px;
 
-  /* fixed sizing */
   --panel-width: 332px;      /* the popover */
   --sheet-width: 360px;      /* add-subscription sheet */
   --row-min-height: 60px;
