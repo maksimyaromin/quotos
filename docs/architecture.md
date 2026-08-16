@@ -192,7 +192,13 @@ idle. An OS-level timer has no notion of "hidden" at all.
 scheduler's cadence assumes stays full; the request budget itself is
 reserved per real HTTP request, not per read attempt, since a read that
 quietly makes two requests would otherwise spend the shared allowance
-twice as fast as the limiter believes.
+twice as fast as the limiter believes. `RequestBudget::reserve` is
+passed into the provider rather than taken once by the caller, because
+only the provider knows how many requests one read actually costs: a
+single reservation per read attempt would undercount the 401
+refresh-and-retry path by a factor of two, leaving Quotos hard-throttled
+by the provider's own 429 while the limiter still believes it is under
+budget.
 
 Each account is due for an automatic read once a minute, anchored to
 its last attempt rather than a free-running timer: `mark_attempted`

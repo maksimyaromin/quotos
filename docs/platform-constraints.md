@@ -126,7 +126,28 @@ Accessibility API's size attribute goes straight to setting the window's
 frame, bypassing that flag entirely. `lib.rs`'s window-event handler
 snaps the size back to the fixed logical size whenever it drifts, in
 either the docked or detached state, fighting only a resize and never a
-move.
+move. The incoming `PhysicalSize` is compared and reasserted in logical
+units, the point size times the window's own scale factor, since
+converting with that same factor is the only comparison that means
+anything on a mixed-DPI setup.
+
+## Self-correcting the docked position
+
+Third-party relocation is not limited to resizes: `WindowEvent::Moved`
+nudges the window back to `AppState.docked_target` whenever AppKit
+relocates it away from where it should be docked, but only once
+relocating has gone quiet for `MOVE_SETTLE_MS`, not on every single
+`Moved` event. A generation counter tracks whether a given correction is
+still the most recently scheduled one, so a burst of AppKit-internal
+relocations finishes settling before anything reasserts. The comparison
+against the target uses `SETTLE_TOLERANCE_POINTS`, a tolerance rather
+than exact equality, since AppKit settles the window a point or so off
+whatever was requested, and correcting a sub-point gap produced an
+endless correct-drift-correct loop. `Moved` itself reports the frame
+origin in points multiplied by the window's current backing scale
+factor, undone before comparison so everything downstream compares in
+the one coordinate space that exists; see "Coordinate spaces and panel
+placement" in architecture.md.
 
 ## Packaging
 

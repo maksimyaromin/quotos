@@ -22,13 +22,9 @@ pub struct RawSnapshot {
     pub fetched_at: String,
     pub usage: serde_json::Value,
     pub profile: Option<serde_json::Value>,
-    /// The zero-cost Claude Code statusline feed's most recent reading for
-    /// this config dir, if any. `None` covers "never opted in", "no
-    /// interactive session has fed it yet", and "the feed file is stale or
-    /// unreadable" identically. See `statusline.rs`'s `read_feed`. The
-    /// frontend's provider adapter reconciles this against `usage` itself,
-    /// where the freshest reading wins. See
-    /// `providers/claude/statusline-merge.ts`.
+    /// The zero-cost Claude Code statusline feed's most recent reading
+    /// for this config dir, if any. See "The statusline feed" in
+    /// docs/claude-provider.md.
     pub statusline: Option<crate::statusline::StatuslineFeedDto>,
 }
 
@@ -66,12 +62,8 @@ pub enum FetchError {
 }
 
 /// One reservation against the account's shared request budget, per real
-/// HTTP request. Passed into the provider rather than taken once by the
-/// caller, because only the provider knows how many requests one read
-/// actually costs. A single reservation per read attempt would undercount
-/// the 401 refresh-and-retry path by a factor of two, leaving Quotos
-/// hard-throttled by the provider's own 429 while this limiter still
-/// believes it is under budget.
+/// HTTP request. See docs/architecture.md for why the provider, not the
+/// caller, reserves each one.
 pub trait RequestBudget: Send + Sync {
     /// `Ok(())` reserves one request. `Err(retry_after_secs)` means the
     /// account is at capacity and nothing was reserved.

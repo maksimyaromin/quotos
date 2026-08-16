@@ -1,8 +1,6 @@
-//! Launch at login, through `SMAppService`, available on macOS 13 and newer.
-//! The OS is the single owner of this state; Quotos stores nothing and
-//! reads it fresh on every call, so a registration the OS refused reads as
-//! still off instead of lying. `SMAppService` only registers `.app`
-//! bundles, so a bare `cargo` or dev binary can never register.
+//! Launch at login, through `SMAppService`, macOS 13 and newer. Reads the
+//! OS fresh on every call rather than storing state. `SMAppService` only
+//! registers `.app` bundles, so a bare `cargo` or dev binary never can.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoginItemStatus {

@@ -45,13 +45,11 @@ struct AppState {
     /// In-progress `claude setup-token` sessions, keyed by account id; see
     /// `signin.rs`.
     sign_in: signin::SignInRegistry,
-    /// The status item's own rect, updated on every status item event, not
-    /// just clicks: `set_detached`'s snap-back has no event of its own to
-    /// read from, so it needs this cached value to know where to re-dock.
+    /// The status item's own rect, updated on every status item event, so
+    /// `set_detached`'s snap-back can re-dock with no event of its own.
     /// `None` until the first such event arrives.
     last_status_item_rect: Mutex<Option<(f64, f64)>>,
-    /// The pixel width of the status item image last handed to `set_icon`,
-    /// always at the fixed "2x of an 18pt-tall image" convention.
+    /// The pixel width of the status item image last handed to `set_icon`.
     /// `compute_docked_layout` uses it to separate the item's own AppKit
     /// margin from the image itself.
     last_icon_width_px: Mutex<u32>,
@@ -70,20 +68,16 @@ struct AppState {
     /// `set_status_item_state`, cached the same way.
     last_status_item_tooltip: Mutex<String>,
     /// The layout the window is supposed to be at right now, while docked
-    /// and visible, in global points; see `DisplayPoints`. `None` whenever
-    /// hidden or detached, since dragging must never fight this. Read by
-    /// the debounced correction in the `WindowEvent::Moved` handler, which
-    /// undoes anything that relocates the window while it is supposed to
-    /// stay docked.
+    /// and visible. `None` whenever hidden or detached, since dragging
+    /// must never fight this. Read by the debounced `WindowEvent::Moved` correction.
     docked_target: Mutex<Option<DockedLayout>>,
     /// How many `WindowEvent::Moved` events have fired so far, bumped on
     /// every one and read back by a debounced correction task to tell
     /// whether it is still the last one scheduled.
     move_generation: Mutex<u64>,
-    /// The most recent position `WindowEvent::Moved` reported, converted
-    /// to global points, so the debounced correction compares against the
-    /// latest observed position after its delay, not a value captured at
-    /// scheduling time.
+    /// The most recent position `WindowEvent::Moved` reported, so the
+    /// debounced correction compares against the latest observed position
+    /// after its delay, not a value captured at scheduling time.
     last_known_position: Mutex<(f64, f64)>,
     /// Anchor for `drag_window_step`'s manual, frame-based detached-window
     /// drag. `None` whenever no manual drag is in progress.
@@ -125,10 +119,8 @@ pub fn run() {
             let app_support_dir = app.path().app_config_dir()?;
             claim_single_instance_or_exit(&app_support_dir);
             let tracked_path = app_support_dir.join("tracked.json");
-            // Computed here, rather than by the status item builder below,
-            // so AppState.last_icon_width_px starts at the exact width of
-            // the icon the builder actually sets; both reuse this one
-            // (rgba, w, h) rather than calling plain_glyph_rgba() twice.
+            // Computed here so AppState.last_icon_width_px starts at the
+            // exact width the builder below actually sets.
             let (initial_rgba, initial_w, initial_h) = status_item_render::plain_glyph_rgba(0);
             app.manage(initial_app_state(app_support_dir, tracked_path, initial_w));
             accounts::spawn_scheduler(app.handle().clone());
@@ -146,11 +138,8 @@ pub fn run() {
                 &menu,
                 launch_item,
             )?;
-            // Pins the item to a fixed length matching this initial image
-            // right away, so there is no window between launch and the
-            // first repaint where the item is still
-            // NSVariableStatusItemLength. See
-            // shell::sync_status_item_length's own doc comment.
+            // Pins the item to a fixed length right away, so there is no
+            // window before the first repaint where it is still variable-length.
             shell::sync_status_item_length(&status_item, initial_w);
             app.manage(status_item);
 
@@ -266,13 +255,7 @@ fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
             }
             tauri::WindowEvent::Resized(size) => {
                 // See "Third-party window managers can still resize this
-                // window" in platform-constraints.md.
-                //
-                // Compared and reasserted in logical units: the incoming
-                // PhysicalSize is the point size times the window's own
-                // scale factor, and converting with that same factor is
-                // the only comparison that means anything on a mixed-DPI
-                // setup.
+                // window" in docs/platform-constraints.md.
                 let scale = blur_window.scale_factor().unwrap_or(1.0);
                 let (w, h) = (size.width as f64 / scale, size.height as f64 / scale);
                 if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5
@@ -284,20 +267,10 @@ fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
                     ));
                 }
             }
-            // The self-correcting half of AppState.docked_target: whenever
-            // AppKit relocates the window away from where it should be
-            // docked, nudges it back, but only once relocating has gone
-            // quiet for MOVE_SETTLE_MS, not on every single Moved event.
-            // The generation counter tracks whether this is still the
-            // most recently scheduled correction, so a burst of
-            // AppKit-internal relocations finishes before anything
-            // reasserts.
+            // The self-correcting half of AppState.docked_target. See
+            // "Self-correcting the docked position" in docs/platform-constraints.md.
             tauri::WindowEvent::Moved(pos) => {
                 let state = blur_app.state::<AppState>();
-                // Moved reports the frame origin in points multiplied by
-                // the window's current backing scale factor, undone here
-                // so everything downstream compares in the one coordinate
-                // space that exists. See DisplayPoints.
                 let scale = blur_window.scale_factor().unwrap_or(1.0);
                 let observed = (pos.x as f64 / scale, pos.y as f64 / scale);
                 *state
@@ -343,10 +316,8 @@ fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
                             .last_known_position
                             .lock()
                             .expect("last_known_position mutex poisoned");
-                        // A tolerance, not exact equality: AppKit settles
-                        // the window a point or so off whatever was
-                        // requested, and correcting a sub-point gap
-                        // produced an endless correct-drift-correct loop.
+                        // A tolerance, not exact equality; see
+                        // docs/platform-constraints.md for why.
                         const SETTLE_TOLERANCE_POINTS: f64 = 2.0;
                         if (current.0 - target.x).abs() > SETTLE_TOLERANCE_POINTS
                             || (current.1 - target.y).abs() > SETTLE_TOLERANCE_POINTS
@@ -361,11 +332,9 @@ fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
     });
 }
 
-/// The status item's right-click menu. "Launch at Login" drives the OS's
-/// own login-item registry; see launch_at_login.rs. Returns the menu
-/// together with the launch-at-login item, since the status item's own
-/// `on_menu_event` handler needs it to update the checkmark after every
-/// toggle.
+/// The status item's right-click menu. Returns the launch-at-login item
+/// alongside the menu, since `on_menu_event` needs it to update the
+/// checkmark after every toggle.
 fn build_status_item_menu(
     app: &AppHandle,
 ) -> tauri::Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>)> {
@@ -389,10 +358,8 @@ fn build_status_item_menu(
     Ok((menu, launch_item))
 }
 
-/// Built from the same procedural glyph set_status_item_state uses, rather
-/// than a static bundled asset, so there is no window between launch and
-/// the first set_status_item_state call where a stale or blurry
-/// fixed-size icon could show.
+/// Built from the same procedural glyph `set_status_item_state` uses,
+/// so no stale or blurry fixed-size icon can show before the first call.
 fn build_status_item(
     app: &AppHandle,
     icon: (Vec<u8>, u32, u32),
@@ -411,10 +378,8 @@ fn build_status_item(
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "launch-at-login" => {
-                // Toggled relative to what the OS currently reports, then
-                // the checkmark is set from what the OS says afterwards,
-                // so a refused registration reads as still off rather
-                // than lying.
+                // The checkmark is set from what the OS reports afterward,
+                // so a refused registration reads as still off, not a lie.
                 let target = !launch_at_login::status().is_registered();
                 if let Err(message) = launch_at_login::set_registered(target) {
                     eprintln!("quotos: launch at login: {message}");
@@ -424,10 +389,8 @@ fn build_status_item(
             _ => {}
         })
         .on_tray_icon_event(|status_item, event| {
-            // Carried through raw, exactly as tray-icon reports it; the
-            // conversion into a coordinate space that actually means
-            // something happens once, in compute_docked_layout through
-            // resolve_status_item_point. See DisplayPoints.
+            // Carried through raw; the conversion to a real coordinate
+            // space happens once, in compute_docked_layout. See docs/architecture.md.
             let rect_position = match &event {
                 TrayIconEvent::Click { rect, .. }
                 | TrayIconEvent::DoubleClick { rect, .. }
