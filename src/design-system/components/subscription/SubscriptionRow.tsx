@@ -728,8 +728,8 @@ export function SubscriptionRow({
           display: "grid",
           gridTemplateRows: expanded && windows && windows.length > 0 ? "1fr" : "0fr",
           visibility: expanded && windows && windows.length > 0 ? "visible" : "hidden",
-          // biome-ignore format: reducedMotion.spec.tsx scans this line for a --dur token; keep it on one line.
-          transition: "grid-template-rows var(--dur-base) var(--ease-standard), visibility var(--dur-base) var(--ease-standard)",
+          transition:
+            "grid-template-rows var(--dur-base) var(--ease-standard), visibility var(--dur-base) var(--ease-standard)",
         }}
       >
         <div style={{ overflow: "hidden", minHeight: 0 }}>

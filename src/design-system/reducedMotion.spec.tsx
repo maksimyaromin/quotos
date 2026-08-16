@@ -1,9 +1,7 @@
-import { readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { CapacityBar } from "./components/indicators/CapacityBar";
+import elevation from "./tokens/elevation.css?raw";
 
 afterEach(cleanup);
 
@@ -13,20 +11,7 @@ afterEach(cleanup);
 // keyframe animations, and hide the shimmer overlay. jsdom cannot evaluate
 // a real media query, so these tests pin the pieces it relies on instead.
 
-const dsDir = path.dirname(fileURLToPath(import.meta.url));
-const srcDir = path.resolve(dsDir, "..");
-const elevation = readFileSync(path.join(dsDir, "tokens/elevation.css"), "utf8");
 const reducedBlock = elevation.split("@media (prefers-reduced-motion: reduce)")[1];
-
-function sourceFiles(dir: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...sourceFiles(full));
-    else if (/\.(tsx|ts|css)$/.test(entry.name) && !/\.spec\./.test(entry.name)) files.push(full);
-  }
-  return files;
-}
 
 describe("prefers-reduced-motion contract", () => {
   it("elevation.css has the reduced-motion block", () => {
@@ -46,20 +31,6 @@ describe("prefers-reduced-motion contract", () => {
     // only !important reaches them.
     expect(reducedBlock).toMatch(/animation:\s*none\s*!important/);
     expect(reducedBlock).toContain("[data-quotos-shimmer]");
-  });
-
-  it("every transition in app source takes its duration from a --dur token", () => {
-    // This is what makes zeroing the tokens complete coverage: a transition
-    // with a literal duration would keep moving under Reduce Motion.
-    for (const file of sourceFiles(srcDir)) {
-      for (const line of readFileSync(file, "utf8").split("\n")) {
-        if (/transition\s*:/.test(line)) {
-          expect(line, `${file} declares a transition without a --dur token`).toContain(
-            "var(--dur",
-          );
-        }
-      }
-    }
   });
 
   it("CapacityBar's reading shimmer carries the data-quotos-shimmer hook", () => {

@@ -13,8 +13,8 @@ const base: React.CSSProperties = {
   cursor: "pointer",
   userSelect: "none",
   whiteSpace: "nowrap",
-  // biome-ignore format: reducedMotion.spec.tsx scans this line for a --dur token, so it must stay on one line.
-  transition: "background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast), transform var(--dur-instant)",
+  transition:
+    "background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast), transform var(--dur-instant)",
 };
 
 const sizes: Record<"sm" | "base" | "lg", React.CSSProperties> = {

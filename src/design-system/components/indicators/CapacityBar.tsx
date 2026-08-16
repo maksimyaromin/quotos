@@ -65,8 +65,8 @@ export function CapacityBar({
           background: color,
           borderRadius: "var(--radius-pill)",
           opacity: stale ? 0.4 : 1,
-          // biome-ignore format: reducedMotion.spec.tsx scans this line for a --dur token, so it must stay on one line.
-          transition: "width var(--dur-slow) var(--ease-out), background var(--dur-base), opacity var(--dur-base)",
+          transition:
+            "width var(--dur-slow) var(--ease-out), background var(--dur-base), opacity var(--dur-base)",
         }}
       />
       {reading ? (

@@ -17,7 +17,6 @@
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
-    "typecheck:design-system": "tsc --noEmit -p src/design-system/tsconfig.json",
     "typecheck:tools": "tsc --noEmit -p tools/tsconfig.json",
     "check:hidden-characters": "node tools/checks/hiddenCharacters.ts",
     "check:spec-suffix": "node tools/checks/specFileSuffix.ts",

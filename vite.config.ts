@@ -15,6 +15,13 @@ export default defineConfig(async () => ({
 
   test: {
     environment: "jsdom",
+    // Vitest mocks every CSS import to an empty string by default, `?raw`
+    // requests included, since it normally cannot tell a style-injection
+    // import from a text one. Opting `?raw` in here is what lets a spec
+    // read a stylesheet's real text the way Vite already serves it.
+    css: {
+      include: [/\?raw$/],
+    },
   },
 
   // Tauri requires the dev server not to obscure Rust build errors and to

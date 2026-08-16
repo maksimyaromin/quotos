@@ -3,7 +3,6 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" },
-    { "path": "./tools/tsconfig.json" },
-    { "path": "./src/design-system/tsconfig.json" }
+    { "path": "./tools/tsconfig.json" }
   ]
 }

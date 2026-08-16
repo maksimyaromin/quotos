@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.app.json",
-  "compilerOptions": {
-    "types": ["node"]
-  },
-  "include": ["reducedMotion.spec.tsx"],
-  "exclude": []
-}
