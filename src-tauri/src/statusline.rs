@@ -26,9 +26,8 @@
 //!     timestamped reading for the frontend to reconcile, where the
 //!     freshest reading wins and the provider owns that reconciliation. See
 //!     `providers/claude/statuslineMerge.ts`. It never invents a window the
-//!     API did not already report, and a missing or stale feed is simply
-//!     `None`, so silent degradation to the API source needs no
-//!     special-casing anywhere.
+//!     API did not already report; see [`read_feed`]'s own doc comment for
+//!     what a missing or malformed feed degrades to.
 //!
 //! This is a scoped exception to the provider-adapter seam documented in
 //! docs/architecture.md. The feed's own vocabulary, `five_hour` and
@@ -240,23 +239,26 @@ fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, Statusline
             message: format!("Quotos couldn't copy its own helper binary ({e})."),
         })?;
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&tmp)
-                .map_err(|e| StatuslineError::HelperInstallFailed {
-                    message: e.to_string(),
-                })?
-                .permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&tmp, perms).map_err(|e| StatuslineError::HelperInstallFailed {
-                message: e.to_string(),
-            })?;
-        }
+        mark_executable(&tmp)?;
         fs::rename(&tmp, &target).map_err(|e| StatuslineError::HelperInstallFailed {
             message: e.to_string(),
         })?;
     }
     Ok(target)
+}
+
+#[cfg(unix)]
+fn mark_executable(path: &Path) -> Result<(), StatuslineError> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path)
+        .map_err(|e| StatuslineError::HelperInstallFailed {
+            message: e.to_string(),
+        })?
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).map_err(|e| StatuslineError::HelperInstallFailed {
+        message: e.to_string(),
+    })
 }
 
 /// Reads and parses `config_dir/settings.json`. A missing file reads as an
