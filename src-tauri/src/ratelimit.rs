@@ -25,9 +25,8 @@ pub struct RateLimitStatus {
     pub retry_after_secs: Option<u64>,
 }
 
-/// Tracks each account's standing in a sliding window against the
-/// measured provider limit of 5 requests per 300 seconds, shared with
-/// Claude Code's own client.
+/// Tracks each account's standing in a sliding window against
+/// `max_requests` per `window`.
 pub struct RateLimiter {
     windows: Mutex<HashMap<String, VecDeque<Instant>>>,
     max_requests: usize,
