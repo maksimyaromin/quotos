@@ -23,7 +23,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
+use portable_pty::{ChildKiller, CommandBuilder, PtySize, native_pty_system};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 

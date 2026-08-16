@@ -426,16 +426,15 @@ pub fn run() {
                         },
                         Some((item_x, item_y)),
                     ) = (&event, item_xy)
+                        && let Some(window) = app.get_webview_window("main")
                     {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let detached = app
-                                .state::<AppState>()
-                                .detached
-                                .lock()
-                                .map(|d| *d)
-                                .unwrap_or(false);
-                            shell::toggle_panel(app, &window, detached, item_x, item_y);
-                        }
+                        let detached = app
+                            .state::<AppState>()
+                            .detached
+                            .lock()
+                            .map(|d| *d)
+                            .unwrap_or(false);
+                        shell::toggle_panel(app, &window, detached, item_x, item_y);
                     }
                 })
                 .build(app)?;

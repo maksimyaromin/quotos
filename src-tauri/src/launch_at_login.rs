@@ -65,7 +65,7 @@ mod platform {
     use objc2_foundation::NSError;
 
     #[link(name = "ServiceManagement", kind = "framework")]
-    extern "C" {}
+    unsafe extern "C" {}
 
     /// Returns `None` on a macOS version old enough to lack `SMAppService`,
     /// meaning before macOS 13. The class lookup is the availability check

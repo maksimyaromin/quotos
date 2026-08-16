@@ -216,9 +216,12 @@ fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), Strin
 /// tens of megabytes, for a local desktop app, not correctness.
 fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, StatuslineError> {
     let target = helper_bin_path(app_support_dir);
-    let current_exe = std::env::current_exe().map_err(|e| StatuslineError::HelperInstallFailed {
-        message: format!("Quotos couldn't find its own executable to install as the statusline helper ({e})."),
-    })?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| StatuslineError::HelperInstallFailed {
+            message: format!(
+                "Quotos couldn't find its own executable to install as the statusline helper ({e})."
+            ),
+        })?;
 
     // A cheap, best-effort staleness check using size only, not a strict
     // integrity check, just enough to re-copy after an app update without
@@ -337,7 +340,7 @@ pub fn install(
         Err(e) => {
             return Err(StatuslineError::read(format!(
                 "Quotos couldn't read this account's settings.json ({e})."
-            )))
+            )));
         }
     };
     let mut settings = match &raw_existing {
@@ -357,15 +360,13 @@ pub fn install(
             replaced_existing: false,
         });
     }
-    if !force {
-        if let Some(existing) = &existing_status_line {
-            let existing_command = existing
-                .get("command")
-                .and_then(|c| c.as_str())
-                .map(str::to_string)
-                .unwrap_or_else(|| existing.to_string());
-            return Err(StatuslineError::Conflict { existing_command });
-        }
+    if !force && let Some(existing) = &existing_status_line {
+        let existing_command = existing
+            .get("command")
+            .and_then(|c| c.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| existing.to_string());
+        return Err(StatuslineError::Conflict { existing_command });
     }
 
     backup(
@@ -663,10 +664,12 @@ mod tests {
         assert!(outcome.replaced_existing);
 
         let settings: serde_json::Value = serde_json::from_str(&dirs.read_settings_raw()).unwrap();
-        assert!(settings["statusLine"]["command"]
-            .as_str()
-            .unwrap()
-            .contains(INGEST_FLAG));
+        assert!(
+            settings["statusLine"]["command"]
+                .as_str()
+                .unwrap()
+                .contains(INGEST_FLAG)
+        );
         assert_eq!(
             settings["keepMe"], 1,
             "unrelated keys must survive a forced replace too"

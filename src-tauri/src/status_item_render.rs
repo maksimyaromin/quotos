@@ -141,8 +141,8 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     const GAP_HALF_WIDTH_RAD: f64 = 31.0 * std::f64::consts::PI / 180.0;
     const ARC_GAP_LOW_RAD: f64 = GAP_CENTER_RAD - GAP_HALF_WIDTH_RAD; // ~14°
     const ARC_GAP_HIGH_RAD: f64 = GAP_CENTER_RAD + GAP_HALF_WIDTH_RAD; // ~76°
-                                                                       // The tail: same diagonal as the gap's own center, radius 3.2 to 8.0,
-                                                                       // same stroke weight as the arc.
+    // The tail: same diagonal as the gap's own center, radius 3.2 to 8.0,
+    // same stroke weight as the arc.
     const TAIL_ANGLE_RAD: f64 = GAP_CENTER_RAD;
     const TAIL_R_INNER_SVG: f64 = 3.2;
     const TAIL_R_OUTER_SVG: f64 = 8.0;
@@ -414,13 +414,13 @@ mod text {
         CFArray, CFAttributedString, CFDictionary, CFNumber, CFRetained, CFString, CFType,
     };
     use objc2_core_graphics::{
-        kCGColorSpaceSRGB, CGBitmapContextCreateWithData, CGColor, CGColorSpace, CGContext,
-        CGImageAlphaInfo,
+        CGBitmapContextCreateWithData, CGColor, CGColorSpace, CGContext, CGImageAlphaInfo,
+        kCGColorSpaceSRGB,
     };
     use objc2_core_text::{
+        CTFont, CTFontDescriptor, CTFontManagerCopyAvailableFontFamilyNames, CTLine,
         kCTFontAttributeName, kCTFontFamilyNameAttribute, kCTFontTraitsAttribute,
-        kCTFontWeightTrait, kCTForegroundColorAttributeName, CTFont, CTFontDescriptor,
-        CTFontManagerCopyAvailableFontFamilyNames, CTLine,
+        kCTFontWeightTrait, kCTForegroundColorAttributeName,
     };
     use std::ffi::c_void;
 
@@ -1165,8 +1165,8 @@ mod tests {
     }
 
     #[test]
-    fn click_highlight_and_panel_open_share_one_frame_width_even_as_the_trailing_digit_count_varies(
-    ) {
+    fn click_highlight_and_panel_open_share_one_frame_width_even_as_the_trailing_digit_count_varies()
+     {
         for text in ["0%", "9%", "42%", "100%"] {
             let segs = [
                 seg("51%", StatusItemColor::Neutral),

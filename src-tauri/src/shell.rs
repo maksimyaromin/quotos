@@ -15,10 +15,10 @@ use tauri::image::Image;
 use tauri::{Emitter, Manager};
 
 use crate::geometry::{
-    displays_in_points, docked_layout_in_points, drag_target_from_anchor,
-    resolve_status_item_point, DockedLayout, DragAnchor,
+    DockedLayout, DragAnchor, displays_in_points, docked_layout_in_points, drag_target_from_anchor,
+    resolve_status_item_point,
 };
-use crate::{panel_window, status_item_render, AppState};
+use crate::{AppState, panel_window, status_item_render};
 
 #[tauri::command]
 pub(crate) fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {

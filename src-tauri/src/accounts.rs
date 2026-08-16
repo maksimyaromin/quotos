@@ -12,11 +12,11 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
+use crate::AppState;
 use crate::persistence::TrackedAccount;
 use crate::providers::{self, AccountDescriptor, FetchError, RawSnapshot};
 use crate::ratelimit::{RateLimitStatus, RateLimiter};
 use crate::statusline;
-use crate::AppState;
 
 /// This command is `async` purely for its threading effect. It never
 /// awaits anything in its body. A `#[tauri::command]` without `async` runs

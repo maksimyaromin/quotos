@@ -348,12 +348,11 @@ fn claude_cli_path() -> Option<PathBuf> {
     static CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
 
-    if let Ok(guard) = cache.lock() {
-        if let Some(cached) = guard.as_ref() {
-            if is_executable_file(cached) {
-                return Some(cached.clone());
-            }
-        }
+    if let Ok(guard) = cache.lock()
+        && let Some(cached) = guard.as_ref()
+        && is_executable_file(cached)
+    {
+        return Some(cached.clone());
     }
 
     // Only successes are cached. A miss must stay re-checkable, so
@@ -654,7 +653,7 @@ async fn get_json(
         Err(e) if status == 200 => {
             return Err(FetchError::Network {
                 message: format!("The provider's answer couldn't be read: {e}"),
-            })
+            });
         }
         // A non-200 answer is classified by its status alone. Its body is
         // never consumed, so an unreadable one changes nothing.
@@ -759,7 +758,7 @@ pub async fn fetch_usage(
             return Ok(UsageRead {
                 body: first.body,
                 fetched_at: first.fetched_at,
-            })
+            });
         }
         429 => return Err(rate_limited(first.retry_after_secs)),
         401 => {}

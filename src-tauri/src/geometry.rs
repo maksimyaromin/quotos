@@ -371,7 +371,7 @@ mod tests {
     }
 
     mod docked_layout {
-        use super::super::{docked_layout_in_points, resolve_status_item_point, DisplayPoints};
+        use super::super::{DisplayPoints, docked_layout_in_points, resolve_status_item_point};
 
         // A two-display arrangement in the global point space macOS
         // actually uses: a Retina display at (0,0) 1728x1117 scale 2, and
@@ -716,7 +716,7 @@ mod tests {
     }
 
     mod manual_drag {
-        use super::super::{drag_target_from_anchor, DragAnchor};
+        use super::super::{DragAnchor, drag_target_from_anchor};
 
         #[test]
         fn the_target_preserves_the_grab_offset_across_a_move() {

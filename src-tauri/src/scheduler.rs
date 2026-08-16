@@ -16,8 +16,8 @@
 //! resets the minute automatically, with nothing extra to wire up.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Exactly one automatic read per account per minute, always. Not
