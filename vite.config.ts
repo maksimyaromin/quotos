@@ -6,6 +6,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  build: {
+    // This value matches `minimumSystemVersion` in src-tauri/tauri.conf.json.
+    // macOS 14.0 bundles Safari 17 as its WebKit engine. Vite's own default
+    // target floats forward over time, so pinning this explicitly keeps the
+    // bundle's actual engine floor from drifting away from the declared one.
+    target: "safari17",
+  },
+
   resolve: {
     // The single source of truth for path aliases is tsconfig.app.json's
     // own `paths`; Vite reads it natively rather than duplicating the

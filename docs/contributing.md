@@ -58,7 +58,7 @@ to exactly one of them; `tsc --showConfig -p <project>` answers, for any
 file, which project claims it and with which options:
 
 - `tsconfig.app.json` covers `src`: DOM libraries, no Node types, the
-  `@/*` path alias, target ES2021.
+  `@/*` path alias, target ES2023.
 - `tsconfig.node.json` covers `vite.config.ts`: Node types, bundler
   module resolution to match how Vite itself loads the file, target
   ES2023.
@@ -66,34 +66,33 @@ file, which project claims it and with which options:
   described below.
 
 `src`'s target follows the macOS floor the application supports:
-`src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 11, whose
-initial release shipped Safari 14.0.1. ES2021 is the highest level that
-version can run — caniuse.com lists Safari 14 as the first version
-supporting both ES2021 syntax such as the `||=`/`&&=`/`??=` logical
-assignment operators and ES2021 library additions such as `Promise.any`,
-while ES2022 additions such as `Array.prototype.at` need Safari 15.4.
+`src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 14, whose
+initial release shipped Safari 17.0. ES2023 is fully supported by that
+version — WebKit's own 16.4 release notes list class static
+initialization blocks, the last gap in ES2022, and every ES2023
+addition (Array find-from-last, the change-by-copy array methods,
+symbols as `WeakMap`/`WeakSet` keys, hashbang grammar) had already
+shipped by Safari 16.4 as well, so Safari 17 carries the complete set.
 Vite does not polyfill missing runtime APIs for an older engine, only
-lowers syntax, so a feature outside `lib` reaches that floor as a runtime
-crash, not a caught typecheck error.
+lowers syntax, so a feature outside `lib` reaches that floor as a
+runtime crash, not a caught typecheck error.
 
-`tools/` and `vite.config.ts` target ES2023 instead, matching the Node
-runtime that actually executes them — `package.json`'s `engines.node` is
-`>=24` — because Node's own capability is not bounded by Safari's, and
-holding the tooling back to the browser's ceiling would forbid real,
-currently-available Node APIs for no runtime reason. The two targets
-track two genuinely different runtimes rather than one drifting away
-from the other by accident.
+`tools/` and `vite.config.ts` target ES2023 too, but for a different
+reason: they match the Node runtime that actually executes them —
+`package.json`'s `engines.node` is `>=24` — not the macOS floor. The
+app project's target happens to land on the same spec year right now
+because Safari 17 fully supports it; a future macOS floor bump that
+lands on a different Safari's ceiling can move `tsconfig.app.json` again
+without touching the Node-facing projects, since the two track genuinely
+different runtimes.
 
 Vite's own production `build.target` is a separate setting from any of
-the above, currently left at Vite's default, `baseline-widely-available`,
-which resolves to Chrome 111, Edge 111, Firefox 114, Safari 16.4 and iOS
-16.4. That default is newer than the ES2021-era floor
-`src-tauri/tauri.conf.json` states, and Vite does the tree's only real
-emission, so a tsconfig `target` change cannot fix that gap on its own.
-Bringing them back into agreement is a product decision, either bumping
-`minimumSystemVersion` to match what the bundle already assumes or
-pinning `vite.config.ts`'s `build.target` down to the stated floor, and
-belongs to whoever owns that call.
+the above, pinned in `vite.config.ts` to `"safari17"` to match
+`minimumSystemVersion` exactly, rather than left at Vite's default,
+`baseline-widely-available`. That default tracks whatever the Baseline
+initiative currently calls widely available, which moves forward on its
+own schedule and would drift out of step with the declared floor again
+without a person deciding to move it.
 
 ## `tools/`
 
