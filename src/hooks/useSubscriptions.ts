@@ -154,9 +154,8 @@ export function useSubscriptions() {
   /** The exact JSON last handed to `saveTracked`. See the save effect. */
   const lastSavedRef = useRef<string | null>(null);
 
-  // An older tracked record's `pinned: true` becomes "that subscription's
-  // headline window is pinned", once a read reveals which window that is.
-  // Accounts still needing the one-shot migration wait here until then.
+  // Accounts still needing migrateLegacyTracked's one-shot migration wait
+  // here until a read reveals their headline window.
   const pendingPinMigrationRef = useRef<Set<string>>(new Set());
 
   // Loading the tracked list is an IPC round-trip, so it cannot be seeded
@@ -250,8 +249,6 @@ export function useSubscriptions() {
 
   const refreshOne = useCallback(
     async (account: AccountDescriptor) => {
-      // Captured before the optimistic patch below, so a rate-limited
-      // outcome restores the real prior diagnosis instead of this patch.
       const prior = capturePriorRead(subscriptionsRef.current.find((s) => s.id === account.id));
       patch(account.id, { state: prior.hadGoodRead ? "reading" : "connecting" });
 
