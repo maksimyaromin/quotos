@@ -1,21 +1,6 @@
-//! One running Quotos per machine, enforced with an OS file lock: the
-//! shared per-account request budget (`ratelimit.rs`, documented in
-//! claude-provider.md) has no cross-instance coordination, so two live
-//! instances would each spend the whole allowance at double speed until
-//! the provider answers 429.
-//!
-//! Double-clicking the bundle never produces two instances, since Launch
-//! Services activates the running copy instead. A dev run alongside an
-//! installed build, or a duplicated `.app`, does: both share one bundle
-//! identifier and therefore one config dir, which is where this lock lives.
-//!
-//! `File::try_lock` calls `flock`, which the kernel releases when the
-//! owning process exits however it exits, so there is no stale lock file
-//! to detect or repair and no pid to misread after reuse, unlike a pid
-//! file. The standard library has had file locking since Rust 1.89, so
-//! `tauri-plugin-single-instance`, built around forwarding argv to a
-//! window to focus, would be a dependency pulled in for one syscall this
-//! windowless app has no use for.
+//! One running Quotos per machine, enforced with an OS file lock, since
+//! the shared per-account request budget has no cross-instance
+//! coordination. See docs/architecture.md.
 
 use std::fs::{self, File, TryLockError};
 use std::io;

@@ -1,23 +1,6 @@
 //! Drives Claude Code's own sign-in for one account. See "Sign-in
-//! recovery" in claude-provider.md for the full argument: what Quotos does
-//! and does not touch, and why completion is detected by the process
-//! exiting rather than trusted from its exit status.
-//!
-//! `claude setup-token` opens a browser at the authorization URL itself,
-//! then waits for a pasted code on stdin, confirmed by reading `claude
-//! setup-token --help` and by observing its real behavior. So Quotos's job
-//! is only to start that process pointed at the right account's
-//! `CLAUDE_CONFIG_DIR`, relay a pasted code back into its stdin, and notice
-//! when it is done. It never parses the URL out and never opens a browser
-//! itself.
-//!
-//! The CLI renders an interactive, cursor-positioning prompt using ANSI
-//! cursor movement rather than plain line output, so it is spawned
-//! attached to a real pty through `portable-pty` rather than plain pipes.
-//! A plain pipe risks the CLI detecting a non-tty stdin and refusing or
-//! silently changing behavior. Quotos never reads or displays that output.
-//! It only needs the pty alive long enough for the CLI to behave as it
-//! does in a real terminal.
+//! recovery" in docs/claude-provider.md for what Quotos does and does not
+//! touch, and why the pty, not a plain pipe.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -76,10 +59,8 @@ impl SignInRegistry {
             })
             .map_err(|e| e.to_string())?;
 
-        // A Finder-launched .app inherits no PATH, so spawning "claude" by
-        // name would fail to find anything, and forcing CLAUDE_CONFIG_DIR
-        // for the default account would point Claude Code at a config it
-        // treats as signed out, writing a credential Quotos never reads.
+        // See "Finding the claude CLI" and "CLAUDE_CONFIG_DIR" in
+        // docs/claude-provider.md.
         let invocation = crate::providers::claude::cli_invocation(Path::new(&config_dir)).ok_or_else(|| {
             "Quotos couldn't find the Claude Code command on this Mac. Open Claude Code once, then try again."
                 .to_string()
@@ -164,11 +145,9 @@ fn spawn_output_drain(mut reader: Box<dyn Read + Send>) {
     });
 }
 
-/// This thread owns `child` for the rest of the session, and by extension
-/// `master`, since dropping the master before the child exits can tear
-/// down the pty out from under it. `killer`, cloned by the caller before
-/// this call, is the independent handle `cancel` uses, so cancel never
-/// contends with this thread's blocking wait.
+/// Owns `child` and `master` for the session; dropping `master` before
+/// `child` exits can tear down the pty. `killer` is `cancel`'s own
+/// independent handle, so cancel never contends with this thread's wait.
 fn spawn_wait_and_notify(
     app: AppHandle,
     account_id: String,

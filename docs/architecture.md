@@ -175,9 +175,22 @@ twice as fast as the limiter believes.
 
 Because that budget is shared per account and not per process,
 `single_instance.rs` keeps exactly one Quotos running per machine with an
-OS file lock. Every path that spends a real fetch on an account, a
-header refresh, a row's manual refresh, a launch read, or a newly added
-subscription's first read, funnels through `use-subscriptions.ts`'s
+OS file lock: two live instances would each spend the whole allowance at
+double speed until the provider answers 429. Double-clicking the bundle
+never produces two instances, since Launch Services activates the
+running copy instead; a dev run alongside an installed build, or a
+duplicated `.app`, does, since both share one bundle identifier and
+therefore one config dir, where the lock file lives. `File::try_lock`
+calls `flock`, which the kernel releases whenever the owning process
+exits, so there is no stale lock file to detect or repair and no pid to
+misread after reuse, unlike a pid file; the standard library has had
+file locking since Rust 1.89, so a dedicated single-instance plugin,
+built around forwarding argv to a window to focus, would be a dependency
+pulled in for one syscall this windowless app has no use for.
+
+Every path that spends a real fetch on an account, a header refresh, a
+row's manual refresh, a launch read, or a newly added subscription's
+first read, funnels through `use-subscriptions.ts`'s
 `refreshOneGuarded`, the one per-account in-flight guard, so a concurrent
 request joins the in-flight read instead of spending a second slot.
 

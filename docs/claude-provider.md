@@ -42,15 +42,19 @@ matter: a `PATH` set in a shell's interactive-only startup file, such as
 ## Sign-in recovery
 
 `signin.rs` drives Claude Code's own login rather than anything owned by
-Quotos: it spawns `claude setup-token` attached to a real pty, since
-plain pipes risk the CLI detecting a non-tty stdin and changing its
-prompt. The CLI opens the browser and prints its own authorization URL;
-Quotos never parses that output, never opens a browser, and never reads
-or writes a credential itself. It only starts the process and relays a
-pasted code, from the panel's own field, into the process's stdin.
-Completion is detected by the process exiting, at which point Quotos
-re-reads the account normally; the re-read, not the exit status, is what
-actually proves the sign-in worked.
+Quotos: it spawns `claude setup-token` attached to a real pty, since the
+CLI renders an interactive, cursor-positioning prompt using ANSI cursor
+movement rather than plain line output, and a plain pipe risks the CLI
+detecting a non-tty stdin and refusing or silently changing that
+prompt's behavior. The CLI opens the browser and prints its own
+authorization URL; Quotos never parses that output, never opens a
+browser, and never reads or writes a credential itself. It only starts
+the process pointed at the right account's `CLAUDE_CONFIG_DIR`, relays a
+pasted code from the panel's own field into the process's stdin, and
+notices when it is done; it never reads or displays the pty's own
+output. Completion is detected by the process exiting, at which point
+Quotos re-reads the account normally; the re-read, not the exit status,
+is what actually proves the sign-in worked.
 
 `FetchError::Unauthorized` means the sign-in itself has ended.
 `FetchError::CredentialStale` means the access token merely aged out and
