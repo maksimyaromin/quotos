@@ -1,49 +1,53 @@
-//! Launch at login, via `SMAppService` (macOS 13+) — the OS's own
-//! login-item registry, surfaced in System Settings → General → Login Items.
+//! Launch at login, through SMAppService, available on macOS 13 and newer.
+//! This is the OS's own login-item registry, surfaced in System Settings
+//! under General, then Login Items.
 //!
-//! The OS is the single owner of this state. Quotos stores nothing: the
+//! The OS is the single owner of this state. Quotos stores nothing. The
 //! menu checkbox is drawn from [`status`] at build time and re-read after
-//! every toggle, so a registration the OS refused (the realistic case is a
-//! bare `cargo`/dev binary that isn't an `.app` bundle — `SMAppService`
-//! registers bundles) reads as still-off instead of lying. Registration
-//! applies to the app bundle itself; the statusline helper copy
-//! (`statusline.rs`) is a different path on disk and is never registered.
+//! every toggle, so a registration the OS refused reads as still off
+//! instead of lying. The realistic way a registration gets refused is a
+//! bare `cargo` or dev binary that is not an `.app` bundle, since
+//! `SMAppService` only registers bundles. Registration applies to the app
+//! bundle itself. The statusline helper copy in `statusline.rs` lives at a
+//! different path on disk and is never registered.
 //!
 //! `ServiceManagement` is not linked by anything else in the dependency
-//! tree, so the `#[link]` block below is the entire link directive — the
-//! same zero-new-crates approach `tray_render`'s `text` module takes with
-//! Core Text.
+//! tree, so the `#[link]` block below is the entire link directive.
+//! `tray_render`'s `text` module takes the same zero-new-crates approach
+//! with Core Text.
 
 /// What the OS currently says about Quotos's login item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoginItemStatus {
-    /// Registered and active — Quotos starts at login.
+    /// Registered and active. Quotos starts at login.
     Enabled,
-    /// Registered, but waiting for the person's consent in System Settings
-    /// before macOS will honor it.
+    /// Registered, but macOS withholds it until the user approves it in
+    /// System Settings.
     RequiresApproval,
     /// Not registered.
     Disabled,
-    /// The OS cannot resolve this app as a registrable login item (an
-    /// unbundled dev binary, or a macOS too old to have `SMAppService`).
+    /// The OS cannot resolve this app as a registrable login item. This
+    /// happens for an unbundled dev binary, or on a macOS version too old
+    /// to have `SMAppService`.
     NotFound,
 }
 
 impl LoginItemStatus {
-    /// Whether the login item exists at all from the person's point of view
-    /// — what the menu checkbox shows. `RequiresApproval` counts: the item
-    /// is registered and visible in System Settings, merely awaiting
-    /// consent there, and unchecking the box on our side would misreport
-    /// what toggling it again would actually do (unregister, not register).
+    /// Whether the login item exists at all from the user's point of view,
+    /// which is what the menu checkbox shows. `RequiresApproval` counts:
+    /// the item is registered and visible in System Settings, merely
+    /// awaiting consent there. Unchecking the box for this state would
+    /// misreport what toggling it again actually does, which is
+    /// unregister rather than register.
     pub fn is_registered(self) -> bool {
         matches!(self, Self::Enabled | Self::RequiresApproval)
     }
 }
 
 /// `SMAppServiceStatus`'s raw values, per `ServiceManagement/SMAppService.h`.
-/// `0` is `notRegistered`; an unknown future value also degrades to
+/// `0` is `notRegistered`. An unknown future value also degrades to
 /// [`LoginItemStatus::Disabled`], so the checkbox reads unchecked and
-/// toggling it attempts a plain register — exactly what recovering wants.
+/// toggling it attempts a plain register, which is the correct recovery.
 fn status_from_raw(raw: isize) -> LoginItemStatus {
     match raw {
         1 => LoginItemStatus::Enabled,
@@ -63,9 +67,9 @@ mod platform {
     #[link(name = "ServiceManagement", kind = "framework")]
     extern "C" {}
 
-    /// `None` on a macOS old enough to lack `SMAppService` (pre-13) — the
-    /// class lookup is the availability check, so nothing here can panic on
-    /// an older system.
+    /// Returns `None` on a macOS version old enough to lack `SMAppService`,
+    /// meaning before macOS 13. The class lookup is the availability check
+    /// itself, so nothing here can panic on an older system.
     fn main_app_service() -> Option<Retained<AnyObject>> {
         let class = AnyClass::get(c"SMAppService")?;
         Some(unsafe { msg_send![class, mainAppService] })
@@ -91,7 +95,7 @@ mod platform {
     }
 }
 
-/// What the OS currently says — read fresh on every call, never cached.
+/// What the OS currently says. Read fresh on every call, never cached.
 pub fn status() -> LoginItemStatus {
     #[cfg(target_os = "macos")]
     {
@@ -103,9 +107,9 @@ pub fn status() -> LoginItemStatus {
     }
 }
 
-/// Register (or unregister) Quotos as a login item. On success the change
-/// is already durable in the OS's own registry; read [`status`] back for
-/// what to display rather than assuming the request took.
+/// Registers or unregisters Quotos as a login item. On success the change
+/// is already durable in the OS's own registry, so read [`status`] back
+/// for what to display rather than assuming the request took effect.
 pub fn set_registered(register: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -143,7 +147,7 @@ mod tests {
 
     /// Read-only smoke of the real ObjC path: proves `ServiceManagement`
     /// actually links and the selectors resolve at runtime. Deliberately
-    /// never calls `set_registered` — mutating the login items of whatever
+    /// never calls `set_registered`. Mutating the login items of whatever
     /// machine runs the tests is not a test's business.
     #[cfg(target_os = "macos")]
     #[test]
