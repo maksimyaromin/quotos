@@ -27,19 +27,14 @@ function patchWindow(
  * the raw `/api/oauth/usage` shape before it reaches `normalizeUsage`,
  * rather than merging the already-normalized window list, so every
  * downstream rule, headline selection, severity, window naming, stays
- * exactly as tested. A fresher statusline reading looks, to the rest of
- * the pipeline, exactly like a fresher API response would have.
+ * exactly as tested.
  *
- * Two things keep this from ever double-counting a window.
- *  - It only ever refreshes a window the API response already asserts
- *    exists, `five_hour`/`session` and `seven_day`/`weekly_all` are
- *    patched in place. It never synthesizes a window the API reported as
- *    absent or omitted. The statusline feed cannot tell Quotos a window
- *    exists that the account's own API read says it does not.
- *  - It is a no-op whenever the feed is not strictly newer than this API
- *    read, `feedTime <= apiTime`. An empty, stale or never-installed feed
- *    is indistinguishable from "not fresher", so this always returns
- *    `usageRaw` unchanged in that case, with no special-casing needed. */
+ * Never double-counts a window: it only refreshes a window the API
+ * response already asserts exists, `five_hour`/`session` and
+ * `seven_day`/`weekly_all` patched in place, never synthesizing one the
+ * API reported as absent. And it is a no-op whenever the feed is not
+ * strictly newer than this API read, `feedTime <= apiTime`, which an
+ * empty, stale, or never-installed feed always is. */
 export function reconcileWithStatusline(
   usageRaw: unknown,
   apiFetchedAtIso: string,
