@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import type * as React from "react";
 
 // Mirrors --panel-width in tokens/spacing.css, duplicated as a plain number
 // because the SVG path math below needs concrete units, not a CSS custom
@@ -29,7 +30,7 @@ export const NOTCH_RESERVE = 12;
  *  rect's own dimensions. The returned path is expressed in a coordinate
  *  space whose y=0 is `NOTCH_RESERVE` above the rect's top edge, matching
  *  how the caller positions this shape's own box. */
-export function buildPanelOutlinePath(width, height, beakLeft) {
+export function buildPanelOutlinePath(width: number, height: number, beakLeft: number | null) {
   const rectTop = NOTCH_RESERVE;
   const rectBottom = NOTCH_RESERVE + height;
 
@@ -86,26 +87,54 @@ export function buildPanelOutlinePath(width, height, beakLeft) {
   return segments.join(" ");
 }
 
-/** The popover shell: a floating macOS vibrancy surface with a top beak, a
- *  header, a scrollable body, and an optional footer. Depth is a single
- *  float: a soft shadow and hairline rim.
+export interface PanelProps {
+  /** Popover title. Defaults to "Quotos". */
+  title?: string;
+  /** Docked under the status item, showing the beak, or torn off into a free-floating window. */
+  docked?: boolean;
+  /** Left edge in pixels from the panel's own left edge of the beak's 12px-wide base. Tracks the status item glyph's center. */
+  beakLeft?: number;
+  /** True while the header is being dragged. */
+  dragging?: boolean;
+  /** Mousedown handler on the header, the drag and detach entry point. There is no detach button. */
+  onHeaderPointerDown?: (event: React.MouseEvent) => void;
+  /** Optional leading header node, such as the Subscriptions screen's back arrow. */
+  leading?: React.ReactNode;
+  /** Toolbar nodes on the right of the header. */
+  headerActions?: React.ReactNode;
+  /** Optional footer content. */
+  footer?: React.ReactNode;
+  /** Max scroll height of the body before it scrolls. Default 452. */
+  maxBodyHeight?: number;
+  /** Fixed screen position while detached, for browser-harness dragging. Native Tauri leaves this null: the OS window itself moves. */
+  position?: { x: number; y: number } | null;
+  /** The subscription rows. */
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
+/**
+ * The popover shell: a floating macOS vibrancy surface with a top beak, a
+ * header, a scrollable body, and an optional footer. Depth is a single
+ * float: a soft shadow and hairline rim.
  *
- *  The beak is pinned to the panel's left edge, not centered, since the
- *  panel opens rightward from the status item and `beakLeft` places the
- *  beak under wherever the glyph actually sits. Docked shows the beak.
- *  Detached hides it, and the header carries a snap-back affordance
- *  instead.
+ * The beak is pinned to the panel's left edge, not centered, since the
+ * panel opens rightward from the status item and `beakLeft` places the
+ * beak under wherever the glyph actually sits. Docked shows the beak.
+ * Detached hides it, and the header carries a snap-back affordance
+ * instead.
  *
- *  Docked, the beak is fused into the panel's own outline as one shape,
- *  not two stacked layers: two overlapping translucent fills would double
- *  the alpha and show a seam where they meet. One SVG path,
- *  `buildPanelOutlinePath`, is used both as a `clip-path` for the
- *  background layer and as the border stroke.
+ * Docked, the beak is fused into the panel's own outline as one shape,
+ * not two stacked layers: two overlapping translucent fills would double
+ * the alpha and show a seam where they meet. One SVG path,
+ * `buildPanelOutlinePath`, is used both as a `clip-path` for the
+ * background layer and as the border stroke.
  *
- *  The header is always grab or grabbing, since dragging it is how the
- *  panel detaches. There is no detach button. `onHeaderPointerDown` is
- *  wired by the caller, which owns the drag-versus-click distinction and
- *  the actual window move. */
+ * The header is always grab or grabbing, since dragging it is how the
+ * panel detaches. There is no detach button. `onHeaderPointerDown` is
+ * wired by the caller, which owns the drag-versus-click distinction and
+ * the actual window move.
+ */
 export function Panel({
   title = "Quotos",
   docked = true,
@@ -119,8 +148,8 @@ export function Panel({
   position = null,
   children,
   style,
-}) {
-  const detachedFixed =
+}: PanelProps) {
+  const detachedFixed: React.CSSProperties | null =
     !docked && position
       ? { position: "fixed", left: position.x, top: position.y, margin: 0 }
       : null;
@@ -129,7 +158,7 @@ export function Panel({
   // The SVG outline needs the content's real rendered height, and there is
   // no way to express that as a static path, so this measures it directly
   // instead of guessing or hardcoding a max.
-  const contentRef = useRef(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
   useLayoutEffect(() => {
     const el = contentRef.current;

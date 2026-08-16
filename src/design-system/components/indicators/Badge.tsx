@@ -1,4 +1,9 @@
-const TONES = {
+import type * as React from "react";
+
+const TONES: Record<
+  "neutral" | "accent" | "warn" | "danger" | "info",
+  { color: string; bg: string; border: string }
+> = {
   neutral: {
     color: "var(--text-tertiary)",
     bg: "var(--bg-elevated)",
@@ -10,9 +15,16 @@ const TONES = {
   info: { color: "var(--blue)", bg: "var(--blue-muted)", border: "transparent" },
 };
 
-/** A small pill for a short status word or a window scope tag, sentence-case. */
-export function Badge({ tone = "neutral", children, style }) {
-  const t = TONES[tone] || TONES.neutral;
+export interface BadgeProps {
+  /** Muted color family. `neutral` for scope tags, the semantic tones for states. */
+  tone?: "neutral" | "accent" | "warn" | "danger" | "info";
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
+/** A small pill for a status word such as "Behind" or "Broken", or a window scope tag such as "Opus". */
+export function Badge({ tone = "neutral", children, style }: BadgeProps) {
+  const t = TONES[tone];
   return (
     <span
       style={{

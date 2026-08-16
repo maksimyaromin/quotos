@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { Subscription } from "../types/entities";
+import type { Subscription } from "@/types/entities";
 import { presentRow } from "./rowPresentation";
 
 const NOW = new Date("2026-08-15T14:00:00Z").getTime();

@@ -1,49 +1,58 @@
-import React from "react";
-import { Badge } from "../indicators/Badge.jsx";
-import { CapacityBar } from "../indicators/CapacityBar.jsx";
-import { StatusDot } from "../indicators/StatusDot.jsx";
-import { LimitWindow } from "./LimitWindow.jsx";
+import * as React from "react";
+import type { SubscriptionState } from "../indicators/StatusDot";
+import { Badge } from "../indicators/Badge";
+import { CapacityBar } from "../indicators/CapacityBar";
+import { StatusDot } from "../indicators/StatusDot";
+import { LimitWindow, type LimitWindowProps } from "./LimitWindow";
 
 // Minimal default affordance glyphs: generic UI arrows and marks, not brand icons.
-const Chevron = ({ open }) => (
-  <svg
-    width="12"
-    height="12"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={{
-      transform: open ? "rotate(180deg)" : "none",
-      transition: "transform var(--dur-base) var(--ease-standard)",
-    }}
-  >
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-);
-const PinGlyph = ({ size = 12 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
-  </svg>
-);
-const MenuDotsGlyph = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="5" cy="12" r="1.6" />
-    <circle cx="12" cy="12" r="1.6" />
-    <circle cx="19" cy="12" r="1.6" />
-  </svg>
-);
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        transform: open ? "rotate(180deg)" : "none",
+        transition: "transform var(--dur-base) var(--ease-standard)",
+      }}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+function PinGlyph({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
+    </svg>
+  );
+}
+
+function MenuDotsGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
+    </svg>
+  );
+}
 
 // The row menu's geometry, in viewport coordinates. It is position: fixed
 // rather than absolute inside the row, deliberately, see the
@@ -52,7 +61,17 @@ const MENU_GAP = 4; // between the "…" button's bottom edge and the menu's top
 const MENU_VIEWPORT_MARGIN = 8; // never closer than this to the window's own edge
 const MENU_MIN_WIDTH = 168;
 
-function MenuItem({ danger, disabled, onClick, children }) {
+function MenuItem({
+  danger,
+  disabled,
+  onClick,
+  children,
+}: {
+  danger?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  children?: React.ReactNode;
+}) {
   const [hover, setHover] = React.useState(false);
   return (
     <button
@@ -82,14 +101,95 @@ function MenuItem({ danger, disabled, onClick, children }) {
   );
 }
 
-/** The core panel row: one subscription, scannable in a single pass. Header
- *  order is fixed: dot, name and subtitle, pin when pinned, state badge,
- *  then the always-visible "…" menu. Nothing shifts, appears, or
- *  disappears on hover. Clicking anywhere on the row expands it. An
- *  expanded or menu-open row keeps --bg-row-hover so it visibly reads as
- *  open. Renders a percent-used headline and capacity bar for data-bearing
- *  states, or a message otherwise. Mirrors docs/design/prototype.html's
- *  row logic. */
+export interface SubscriptionRowProps {
+  /** Renameable label from the provider. Two can look confusingly similar. */
+  label: string;
+  /** Who issued it, for example "Anthropic". */
+  provider?: string;
+  /** Account or plan qualifier shown beside the provider, for example "Personal · Max". */
+  account?: string;
+  state?: SubscriptionState;
+  /** Headline percent consumed: the account-wide weekly window, not
+   * simply the most-consumed one. Null for no-data states. */
+  used?: number | null;
+  /** Provider-computed from every window, not just the headline one.
+   * Colors the headline number and bar; a 20%-headline account with an
+   * 85%-used session still reads amber. */
+  severity?: "healthy" | "warn" | "critical";
+  /** Reset copy for the binding window, for example "Resets today at 4:05 PM". */
+  resetLabel?: string | null;
+  /** Relative age of the last successful read, for example "2 min ago". Always shown. */
+  lastRead?: string | null;
+  /** The variable detail list. Empty hides the expander. */
+  windows?: LimitWindowProps[];
+  /** Human reason for a no-data state such as broken, idle, or no limits yet. */
+  reason?: string | null;
+  /** State badge, classified by the caller: "Not current" for held-over
+   * numbers, "Needs sign-in" only when signing in is genuinely the answer. */
+  badge?: "Not current" | "Needs sign-in" | null;
+  /** How many of this subscription's windows are currently pinned. An
+   * indicator, not a control. Renders nothing at 0. */
+  pinnedCount?: number;
+  /** Whether the headline window specifically is pinned. Reflected and
+   * toggled, via `onTogglePin`, by the "…" menu's "Show/Hide in menu bar". */
+  headlinePinned?: boolean;
+  expanded?: boolean;
+  /** Whether this row's "…" menu is open. One row's menu open at a time, owned by the caller. */
+  menuOpen?: boolean;
+  /** Inline footer action label, for example "Try again" or "Open Claude Code". */
+  actionLabel?: string | null;
+  /** Visually inert but still labelled, for example mid rate-limit wait. */
+  actionDisabled?: boolean;
+  /** Overrides the computed "Read …" footer text, for example a rate-limit quiet note. */
+  footerNote?: string | null;
+  onAction?: () => void;
+  /** Toggles the headline window's pin. The "…" menu item only. */
+  onTogglePin?: () => void;
+  /** Toggles a specific window's pin, called with that window's `id`.
+   * Wired to each row in the expanded list's own pin button. */
+  onToggleWindowPin?: (id: string) => void;
+  onToggleExpand?: () => void;
+  onToggleMenu?: () => void;
+  /** Present enables the inline rename affordance from the "…" menu. Called with the new label, or `null` to clear back to the provider default. */
+  onRename?: (nextLabel: string | null) => void;
+  /** "Read now" menu item. An explicit one-off refresh, independent of the footer action. */
+  onReadNow?: () => void;
+  /** Whether "Move up" and "Move down" are possible for this row. An
+   * impossible direction renders disabled, never hidden. */
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  /** "Move up" and "Move down" menu items: reorder the panel's rows, and
+   * with them the status item's digit order. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  /** "Stop tracking" menu item. */
+  onStopTracking?: () => void;
+  /** A `claude setup-token` session is running for this account. Shows
+   * the paste-code field in place of the reason text and hides the
+   * caller's own action button. */
+  signInInProgress?: boolean;
+  /** Called with the pasted code on submit. */
+  onSubmitSignInCode?: (code: string) => void;
+  /** Cancels the in-progress sign-in. */
+  onCancelSignIn?: () => void;
+  style?: React.CSSProperties;
+}
+
+interface MenuPosition {
+  top: number;
+  left: number;
+}
+
+/**
+ * The core panel row: one subscription, scannable in a single pass. Header
+ * order is fixed: dot, name and subtitle, pin when pinned, state badge,
+ * then the always-visible "…" menu. Nothing shifts, appears, or
+ * disappears on hover. Clicking anywhere on the row expands it. An
+ * expanded or menu-open row keeps --bg-row-hover so it visibly reads as
+ * open. Renders a percent-used headline and capacity bar for data-bearing
+ * states, or a message otherwise. Mirrors docs/design/prototype.html's
+ * row logic.
+ */
 export function SubscriptionRow({
   label,
   provider,
@@ -101,14 +201,8 @@ export function SubscriptionRow({
   lastRead = null,
   windows = [],
   reason = null,
-  /** Classified by the caller, see lib/rowPresentation.ts, not inferred
-   *  from `state` here. */
   badge = null,
-  /** How many of this subscription's windows are currently pinned. An
-   * indicator, not a control. Renders nothing at 0. */
   pinnedCount = 0,
-  /** Whether the headline window specifically is pinned. The "…" menu's
-   * wording reflects this and toggles it via `onTogglePin`. */
   headlinePinned = false,
   expanded = false,
   menuOpen = false,
@@ -116,19 +210,12 @@ export function SubscriptionRow({
   actionDisabled = false,
   footerNote = null,
   onAction,
-  /** Toggles the headline window's pin. The "…" menu item only. */
   onTogglePin,
-  /** Toggles a specific window's pin, called with that window's `id`.
-   * Wired to each row in the expanded list's own pin button. */
   onToggleWindowPin,
   onToggleExpand,
   onToggleMenu,
   onRename,
   onReadNow,
-  /** Reordering via the "…" menu's Move up and Move down. Panel order
-   * drives the status item's digit order too. An edge row's impossible
-   * direction renders disabled rather than hidden, keeping the menu's one
-   * fixed set of items. */
   canMoveUp = false,
   canMoveDown = false,
   onMoveUp,
@@ -138,15 +225,15 @@ export function SubscriptionRow({
   onSubmitSignInCode,
   onCancelSignIn,
   style,
-}) {
+}: SubscriptionRowProps) {
   const [renaming, setRenaming] = React.useState(false);
   const [draft, setDraft] = React.useState(label);
-  const inputRef = React.useRef(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
   const [codeDraft, setCodeDraft] = React.useState("");
-  const codeInputRef = React.useRef(null);
-  const menuButtonRef = React.useRef(null);
-  const menuRef = React.useRef(null);
-  const [menuPos, setMenuPos] = React.useState(null);
+  const codeInputRef = React.useRef<HTMLInputElement>(null);
+  const menuButtonRef = React.useRef<HTMLButtonElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = React.useState<MenuPosition | null>(null);
 
   // Places the open menu in viewport coordinates, under its own "…" button.
   // Measured after mount rather than computed from constants, since
@@ -266,14 +353,14 @@ export function SubscriptionRow({
   // bubble through here. Dismissal is not handled here: Escape and
   // click-away stay with the window-level layering in App.tsx. The sign-in
   // code field is excluded so its caret keeps the arrow keys.
-  const handleMenuKeyDown = (e) => {
+  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!menuOpen || !menuRef.current) return;
-    if (e.target.tagName === "INPUT") return;
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
     const items = Array.from(menuRef.current.querySelectorAll("button")).filter((b) => !b.disabled);
     if (items.length === 0) return;
     e.preventDefault();
-    const current = items.indexOf(document.activeElement);
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
     const next =
       e.key === "Home"
         ? 0
@@ -641,7 +728,7 @@ export function SubscriptionRow({
           display: "grid",
           gridTemplateRows: expanded && windows && windows.length > 0 ? "1fr" : "0fr",
           visibility: expanded && windows && windows.length > 0 ? "visible" : "hidden",
-          // biome-ignore format: reducedMotion.spec.jsx scans this line for a --dur token; keep it on one line.
+          // biome-ignore format: reducedMotion.spec.tsx scans this line for a --dur token; keep it on one line.
           transition: "grid-template-rows var(--dur-base) var(--ease-standard), visibility var(--dur-base) var(--ease-standard)",
         }}
       >
@@ -663,7 +750,7 @@ export function SubscriptionRow({
                   style={
                     i < windows.length - 1
                       ? { borderBottom: "0.5px solid var(--border-subtle)" }
-                      : null
+                      : undefined
                   }
                 />
               ))}

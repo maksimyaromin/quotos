@@ -7,7 +7,7 @@ import type {
   SignInFinishedEvent,
   StatusItemSegment,
   StatuslineIntegrationStatus,
-} from "../types/entities";
+} from "@/types/entities";
 
 export async function listAccounts(): Promise<AccountDescriptor[]> {
   return invoke<AccountDescriptor[]>("list_accounts");

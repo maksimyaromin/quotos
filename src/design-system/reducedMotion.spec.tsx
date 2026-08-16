@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { CapacityBar } from "./components/indicators/CapacityBar.jsx";
+import { CapacityBar } from "./components/indicators/CapacityBar";
 
 afterEach(cleanup);
 
@@ -18,13 +18,12 @@ const srcDir = path.resolve(dsDir, "..");
 const elevation = readFileSync(path.join(dsDir, "tokens/elevation.css"), "utf8");
 const reducedBlock = elevation.split("@media (prefers-reduced-motion: reduce)")[1];
 
-function sourceFiles(dir) {
-  const files = [];
+function sourceFiles(dir: string): string[] {
+  const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) files.push(...sourceFiles(full));
-    else if (/\.(jsx|tsx|ts|css)$/.test(entry.name) && !/\.spec\./.test(entry.name))
-      files.push(full);
+    else if (/\.(tsx|ts|css)$/.test(entry.name) && !/\.spec\./.test(entry.name)) files.push(full);
   }
   return files;
 }
@@ -35,7 +34,7 @@ describe("prefers-reduced-motion contract", () => {
   });
 
   it("zeroes every --dur-* token the base block defines", () => {
-    const tokens = new Set(elevation.match(/--dur-[a-z]+(?=\s*:)/g));
+    const tokens = new Set(elevation.match(/--dur-[a-z]+(?=\s*:)/g) ?? []);
     expect(tokens.size).toBeGreaterThanOrEqual(4);
     for (const token of tokens) {
       expect(reducedBlock).toContain(`${token}: 0ms`);

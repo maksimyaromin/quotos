@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
+import { loadTracked, saveTracked, type TrackedAccount } from "@/lib/persistence";
 import {
   buildStatusItemSegments,
   buildStatusItemTooltip,
   computeWorstActiveLimitPercent,
-} from "../lib/statusItemSegments";
+} from "@/lib/statusItemSegments";
 import {
   cancelSignIn as cancelSignInIpc,
   fetchSnapshot,
@@ -15,16 +15,16 @@ import {
   renderStatusItem,
   startSignIn as startSignInIpc,
   submitSignInCode as submitSignInCodeIpc,
-} from "../lib/tauriClient";
-import { mapOutcomeFor, normalizeFor, resolveProviderDisplayName } from "../providers/registry";
+} from "@/lib/tauriClient";
+import { mapOutcomeFor, normalizeFor, resolveProviderDisplayName } from "@/providers/registry";
 import type {
   AccountDescriptor,
   FetchError,
   RawSnapshot,
   Subscription,
   SubscriptionState,
-} from "../types/entities";
-import { isFetchError } from "../types/entities";
+} from "@/types/entities";
+import { isFetchError } from "@/types/entities";
 
 /** Id-derived default label before any read or custom rename, shared with
  * the add-subscription flow. Title-cased so the same account never shows

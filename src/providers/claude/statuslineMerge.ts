@@ -1,4 +1,4 @@
-import type { StatuslineFeedWire, StatuslineWindowWire } from "../../types/entities";
+import type { StatuslineFeedWire, StatuslineWindowWire } from "@/types/entities";
 
 function isoFromEpochSeconds(sec: number | null | undefined): string | null {
   if (typeof sec !== "number" || !Number.isFinite(sec)) return null;

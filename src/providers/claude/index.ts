@@ -1,4 +1,4 @@
-import type { FetchError, NormalizedRead } from "../../types/entities";
+import type { FetchError, NormalizedRead } from "@/types/entities";
 import type { NormalizeContext, OutcomeResult, ReadOutcome } from "../registry";
 import { normalizeProfile } from "./normalizeProfile";
 import { normalizeUsage } from "./normalizeUsage";

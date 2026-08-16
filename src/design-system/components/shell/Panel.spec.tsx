@@ -7,7 +7,8 @@ import {
   NOTCH_RESERVE,
   PANEL_RADIUS,
   Panel,
-} from "./Panel.jsx";
+  type PanelProps,
+} from "./Panel";
 
 afterEach(() => {
   cleanup();
@@ -123,7 +124,7 @@ describe("Panel's docked beak rendering", () => {
       container.querySelector("path[fill='none']") ?? container.querySelector("path[fill=none]");
     expect(clipPath).toBeTruthy();
     expect(strokePath).toBeTruthy();
-    expect(clipPath.getAttribute("d")).toBe(strokePath.getAttribute("d"));
+    expect(clipPath!.getAttribute("d")).toBe(strokePath!.getAttribute("d"));
   });
 
   it("there is exactly one element carrying a background fill (no second translucent layer)", () => {
@@ -144,7 +145,7 @@ describe("Panel's docked beak rendering", () => {
   // testable, and what is pinned here, is the DOM contract that decides
   // it: the fill layer must ship with no backdrop filter under either
   // vendor spelling, docked or detached.
-  it.each([
+  it.each<[string, Pick<PanelProps, "docked" | "beakLeft">]>([
     ["docked", { docked: true, beakLeft: 24 }],
     ["detached", { docked: false }],
   ])("ships the fill layer with no backdrop filter (%s)", (_label, props) => {
@@ -159,7 +160,7 @@ describe("Panel's docked beak rendering", () => {
     );
     expect(filled).toHaveLength(1);
     expect(filled[0].style.backdropFilter).toBe("");
-    expect(filled[0].style.webkitBackdropFilter ?? "").toBe("");
+    expect(filled[0].style.getPropertyValue("-webkit-backdrop-filter")).toBe("");
     expect(filled[0].getAttribute("style")).not.toMatch(/backdrop-filter/i);
   });
 

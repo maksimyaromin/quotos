@@ -11,7 +11,7 @@ const cancelSignIn = vi.fn();
 const forgetSignIn = vi.fn();
 const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.resolve(() => {}));
 
-vi.mock("../lib/tauriClient", () => ({
+vi.mock("@/lib/tauriClient", () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
   renderStatusItem: (...args: unknown[]) => renderStatusItem(...args),
   onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
@@ -30,7 +30,7 @@ const TRACKED = [
 const loadTracked = vi.fn(() => Promise.resolve(TRACKED));
 const saveTracked = vi.fn();
 
-vi.mock("../lib/persistence", () => ({
+vi.mock("@/lib/persistence", () => ({
   loadTracked: () => loadTracked(),
   saveTracked: (...args: unknown[]) => saveTracked(...args),
 }));

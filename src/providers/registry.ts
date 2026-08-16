@@ -3,7 +3,7 @@ import type {
   NormalizedRead,
   StatuslineFeedWire,
   SubscriptionState,
-} from "../types/entities";
+} from "@/types/entities";
 import { mapOutcome as mapOutcomeClaude, normalize as normalizeClaude } from "./claude";
 
 /** Everything a provider's normalizer needs about this particular read

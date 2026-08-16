@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { LimitWindowEntity, Subscription } from "../types/entities";
+import type { LimitWindowEntity, Subscription } from "@/types/entities";
 import {
   buildStatusItemSegments,
   buildStatusItemTooltip,

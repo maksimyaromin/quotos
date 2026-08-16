@@ -1,4 +1,4 @@
-import type { Subscription } from "../types/entities";
+import type { Subscription } from "@/types/entities";
 import { formatClockTime } from "./time";
 
 /** What a subscription row shows besides its numbers: the badge, the one

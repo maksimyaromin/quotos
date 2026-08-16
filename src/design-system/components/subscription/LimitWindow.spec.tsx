@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { LimitWindow } from "./LimitWindow.jsx";
+import { LimitWindow } from "./LimitWindow";
 
 afterEach(cleanup);
 
@@ -14,7 +14,7 @@ describe("LimitWindow scope badge", () => {
     const { getByText } = render(
       <LimitWindow name="Weekly" used={45} scope="Fable" resetLabel="Resets Tue at 9:05 PM" />,
     );
-    const badge = getByText("Fable").parentElement;
+    const badge = getByText("Fable").parentElement!;
     expect(getComputedStyle(badge).display).toBe("inline-flex");
   });
 
@@ -31,7 +31,7 @@ describe("LimitWindow scope badge", () => {
     expect(style.whiteSpace).toBe("nowrap");
     // The badge itself must not reintroduce text-overflow: on a flex
     // container it silently hard-clips instead of ellipsizing.
-    const badgeStyle = getComputedStyle(inner.parentElement);
+    const badgeStyle = getComputedStyle(inner.parentElement!);
     expect(badgeStyle.display).toBe("inline-flex");
     expect(badgeStyle.textOverflow).not.toBe("ellipsis");
   });

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AccountDescriptor } from "../types/entities";
+import type { AccountDescriptor } from "@/types/entities";
 
 /** The user-owned list of tracked subscriptions. Nothing is added by
  * default, and discovery only ever feeds this list, never replaces it.

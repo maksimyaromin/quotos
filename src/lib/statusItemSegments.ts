@@ -1,4 +1,4 @@
-import type { StatusItemSegment, Subscription } from "../types/entities";
+import type { StatusItemSegment, Subscription } from "@/types/entities";
 
 /** Must match `LimitWindow.jsx`'s `numberColor` thresholds. */
 function pickBaseFigureColor(used: number): StatusItemSegment["color"] {

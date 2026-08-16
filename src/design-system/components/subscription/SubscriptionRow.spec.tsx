@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SubscriptionRow } from "./SubscriptionRow.jsx";
+import { SubscriptionRow } from "./SubscriptionRow";
 
 afterEach(() => {
   cleanup();
@@ -9,7 +9,7 @@ afterEach(() => {
 
 /** The panel's own window is 360x560 logical. jsdom's default viewport is
  *  not, and the flip-above branch only makes sense against a real one. */
-function useWindow(width, height) {
+function useWindow(width: number, height: number) {
   Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
   Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
 }
@@ -17,9 +17,9 @@ function useWindow(width, height) {
 /** jsdom reports every rect as zero, so the "…" button's position, the only
  *  input the placement math has, must be supplied. These tests assert the
  *  anchoring rules rather than exact pixel offsets. */
-function anchorButtonAt({ top, bottom, right }) {
+function anchorButtonAt({ top, bottom, right }: { top: number; bottom: number; right: number }) {
   const original = Element.prototype.getBoundingClientRect;
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function mocked() {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     if (this.getAttribute?.("aria-label") === "More") {
       return {
         top,
@@ -30,7 +30,8 @@ function anchorButtonAt({ top, bottom, right }) {
         height: bottom - top,
         x: right - 20,
         y: top,
-      };
+        toJSON() {},
+      } satisfies DOMRect;
     }
     return original.call(this);
   });
@@ -50,14 +51,18 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
   it("is positioned against the viewport, not against the scrolled row", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
-    const menu = screen.getByText("Stop tracking").closest("[data-quotos-menu-scope]");
+    const menu = screen
+      .getByText("Stop tracking")
+      .closest<HTMLElement>("[data-quotos-menu-scope]")!;
     expect(menu.style.position).toBe("fixed");
   });
 
   it("hangs below the '…' button it belongs to", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
-    const menu = screen.getByText("Stop tracking").closest("[data-quotos-menu-scope]");
+    const menu = screen
+      .getByText("Stop tracking")
+      .closest<HTMLElement>("[data-quotos-menu-scope]")!;
     // Below the button's bottom edge, by a small gap.
     expect(parseFloat(menu.style.top)).toBeGreaterThanOrEqual(120);
     expect(parseFloat(menu.style.top)).toBeLessThan(130);
@@ -70,7 +75,9 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(122);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(178);
     openMenu();
-    const menu = screen.getByText("Stop tracking").closest("[data-quotos-menu-scope]");
+    const menu = screen
+      .getByText("Stop tracking")
+      .closest<HTMLElement>("[data-quotos-menu-scope]")!;
     const top = parseFloat(menu.style.top);
     expect(top).toBeLessThan(520); // above the button
     expect(top).toBeGreaterThanOrEqual(8); // and still inside the window
@@ -81,7 +88,9 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(178);
     openMenu();
-    const menu = screen.getByText("Stop tracking").closest("[data-quotos-menu-scope]");
+    const menu = screen
+      .getByText("Stop tracking")
+      .closest<HTMLElement>("[data-quotos-menu-scope]")!;
     const left = parseFloat(menu.style.left);
     expect(left).toBeGreaterThanOrEqual(8);
     expect(left + 178).toBeLessThanOrEqual(360 - 8);
@@ -107,8 +116,8 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
 
 describe("the 'N limits' disclosure is a real, focusable control", () => {
   const windows = [
-    { id: "w1", label: "Session", used: 40 },
-    { id: "w2", label: "Weekly", used: 10 },
+    { id: "w1", name: "Session", used: 40 },
+    { id: "w2", name: "Weekly", used: 10 },
   ];
 
   it("is a button carrying aria-expanded", () => {
@@ -181,9 +190,9 @@ describe("the row menu's Move up and Move down", () => {
         onToggleMenu={onToggleMenu}
       />,
     );
-    const moveUp = screen.getByText("Move up");
+    const moveUp = screen.getByText<HTMLButtonElement>("Move up");
     expect(moveUp.disabled).toBe(true);
-    expect(screen.getByText("Move down").disabled).toBe(false);
+    expect(screen.getByText<HTMLButtonElement>("Move down").disabled).toBe(false);
     moveUp.click();
     expect(onMoveUp).not.toHaveBeenCalled();
     expect(onToggleMenu).not.toHaveBeenCalled();
@@ -191,8 +200,8 @@ describe("the row menu's Move up and Move down", () => {
 
   it("keeps both items in the menu even when neither direction is possible", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
-    expect(screen.getByText("Move up").disabled).toBe(true);
-    expect(screen.getByText("Move down").disabled).toBe(true);
+    expect(screen.getByText<HTMLButtonElement>("Move up").disabled).toBe(true);
+    expect(screen.getByText<HTMLButtonElement>("Move down").disabled).toBe(true);
   });
 });
 
@@ -200,11 +209,11 @@ describe("the row menu is keyboard-operable", () => {
   // Keydowns bubble from wherever focus is to the row div's own handler, so
   // firing on the trigger models "Enter opened the menu, focus still on the
   // '…' button".
-  const arrow = (key) =>
+  const arrow = (key: string) =>
     fireEvent.keyDown(
       document.activeElement === document.body
         ? screen.getByLabelText("More")
-        : document.activeElement,
+        : (document.activeElement ?? document.body),
       { key },
     );
 
@@ -229,10 +238,10 @@ describe("the row menu is keyboard-operable", () => {
     ];
     for (const label of expected) {
       arrow("ArrowDown");
-      expect(document.activeElement.textContent).toBe(label);
+      expect(document.activeElement?.textContent).toBe(label);
     }
     arrow("ArrowDown");
-    expect(document.activeElement.textContent).toBe("Read now");
+    expect(document.activeElement?.textContent).toBe("Read now");
   });
 
   it("ArrowUp enters at the last item and walks backwards", () => {
@@ -247,9 +256,9 @@ describe("the row menu is keyboard-operable", () => {
       />,
     );
     arrow("ArrowUp");
-    expect(document.activeElement.textContent).toBe("Stop tracking");
+    expect(document.activeElement?.textContent).toBe("Stop tracking");
     arrow("ArrowUp");
-    expect(document.activeElement.textContent).toBe("Move down");
+    expect(document.activeElement?.textContent).toBe("Move down");
   });
 
   it("skips disabled items, exactly as the pointer path does", () => {
@@ -258,7 +267,7 @@ describe("the row menu is keyboard-operable", () => {
     arrow("ArrowDown"); // Rename
     arrow("ArrowDown"); // Show in menu bar
     arrow("ArrowDown"); // Move up is disabled, so this lands on Move down.
-    expect(document.activeElement.textContent).toBe("Move down");
+    expect(document.activeElement?.textContent).toBe("Move down");
   });
 
   it("Home and End jump to the edges", () => {
@@ -273,9 +282,9 @@ describe("the row menu is keyboard-operable", () => {
       />,
     );
     arrow("End");
-    expect(document.activeElement.textContent).toBe("Stop tracking");
+    expect(document.activeElement?.textContent).toBe("Stop tracking");
     arrow("Home");
-    expect(document.activeElement.textContent).toBe("Read now");
+    expect(document.activeElement?.textContent).toBe("Read now");
   });
 
   it("leaves the arrow keys alone while the menu is closed", () => {
@@ -297,13 +306,13 @@ describe("the row menu is keyboard-operable", () => {
       <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />,
     );
     arrow("ArrowDown");
-    expect(document.activeElement.textContent).toBe("Read now");
+    expect(document.activeElement?.textContent).toBe("Read now");
     rerender(<SubscriptionRow label="Claude Max" state="working" used={40} />);
     expect(document.activeElement).toBe(screen.getByLabelText("More"));
   });
 
   it("does not steal focus when the close left it somewhere real", () => {
-    const windows = [{ id: "w1", label: "Session", used: 40 }];
+    const windows = [{ id: "w1", name: "Session", used: 40 }];
     const { rerender } = render(
       <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} menuOpen />,
     );
@@ -347,7 +356,7 @@ describe("the row menu exposes WAI-ARIA menu semantics", () => {
 });
 
 describe("committing a rename without editing keeps an existing custom name", () => {
-  function openRenameField(onRename) {
+  function openRenameField(onRename: (nextLabel: string | null) => void) {
     render(
       <SubscriptionRow
         label="My Max"
@@ -359,7 +368,7 @@ describe("committing a rename without editing keeps an existing custom name", ()
       />,
     );
     fireEvent.click(screen.getByText("Rename"));
-    return screen.getByRole("textbox");
+    return screen.getByRole<HTMLInputElement>("textbox");
   }
 
   it("Enter with an untouched draft is a no-op, not a clear", () => {
@@ -404,9 +413,9 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
     { id: "w2", name: "Weekly", used: 10 },
   ];
 
-  function detailContainer() {
+  function detailContainer(): HTMLElement {
     const [pin] = screen.getAllByLabelText("Show in menu bar");
-    return pin.closest("[aria-hidden]");
+    return pin.closest<HTMLElement>("[aria-hidden]")!;
   }
 
   it("hides the collapsed detail area with visibility, not just clipping", () => {

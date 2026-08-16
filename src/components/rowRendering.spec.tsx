@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { SubscriptionRow } from "../design-system/components/subscription/SubscriptionRow";
-import { presentRow } from "../lib/rowPresentation";
-import type { Subscription } from "../types/entities";
+import { SubscriptionRow } from "@design-system";
+import { presentRow } from "@/lib/rowPresentation";
+import type { Subscription } from "@/types/entities";
 
 const NOW = new Date("2026-08-15T14:00:00Z").getTime();
 const IN_AN_HOUR = new Date(NOW + 59 * 60 * 1000).toISOString();

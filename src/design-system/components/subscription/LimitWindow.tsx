@@ -1,14 +1,11 @@
-import { Badge } from "../indicators/Badge.jsx";
-import { CapacityBar } from "../indicators/CapacityBar.jsx";
+import type * as React from "react";
+import { Badge } from "../indicators/Badge";
+import { CapacityBar } from "../indicators/CapacityBar";
 
-/** One limit window inside a subscription's detail list. A window may lack
- *  a percentage or a reset time, and its name is the provider's own
- *  wording, rendered verbatim and possibly truncated. Percentages mean
- *  consumed, never remaining. */
 // Mirrors SubscriptionRow's headline-number rule: red from 90%, amber from
 // 75%, neutral below, evaluated on this window's own `used` since there is
 // no subscription-wide `severity` to read from here.
-function numberColor(used) {
+function numberColor(used: number): string {
   if (used >= 90) return "var(--red)";
   if (used >= 75) return "var(--amber)";
   return "var(--text-primary)";
@@ -17,21 +14,45 @@ function numberColor(used) {
 // Filled means pinned to the menu bar, ghost means not. Matches
 // SubscriptionRow's own PinGlyph exactly, kept local here since these two
 // files share no module of their own.
-const PinGlyph = () => (
-  <svg
-    width="12"
-    height="12"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
-  </svg>
-);
+function PinGlyph() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
+    </svg>
+  );
+}
 
+export interface LimitWindowProps {
+  /** Stable id for this window, see `LimitWindowEntity.id`. Passed back to `onTogglePin`. */
+  id?: string;
+  /** The provider's own wording for this window, rendered verbatim and truncated if long. */
+  name: string;
+  /** Percent consumed 0 to 100, or null when the provider reports no percentage. */
+  used?: number | null;
+  /** Exact reset copy, for example "Resets today at 4:05 PM", or null. */
+  resetLabel?: string | null;
+  /** Optional scope tag when the window applies to part of the subscription, for example "Opus 4". */
+  scope?: string | null;
+  /** Dim when the parent subscription is behind. */
+  stale?: boolean;
+  /** Whether this window's own figure is in the menu bar. Always renders
+   * its pin button, leading the row, regardless of this value. */
+  pinned?: boolean;
+  /** Called with this window's `id` when its pin button is clicked. */
+  onTogglePin?: (id: string) => void;
+  style?: React.CSSProperties;
+}
+
+/** One row in a subscription's variable detail list. Handles a missing percentage or reset time gracefully. */
 export function LimitWindow({
   id,
   name,
@@ -42,7 +63,7 @@ export function LimitWindow({
   pinned = false,
   onTogglePin,
   style,
-}) {
+}: LimitWindowProps) {
   const hasPct = typeof used === "number";
   return (
     <div
@@ -62,7 +83,7 @@ export function LimitWindow({
           aria-pressed={pinned}
           onClick={(e) => {
             e.stopPropagation();
-            onTogglePin?.(id);
+            if (id !== undefined) onTogglePin?.(id);
           }}
           style={{
             flex: "0 0 auto",

@@ -1,4 +1,4 @@
-import type { ScheduledRefreshEvent, StatusItemSegment } from "../types/entities";
+import type { ScheduledRefreshEvent, StatusItemSegment } from "@/types/entities";
 import * as live from "./liveClient";
 import * as mock from "./mockClient";
 

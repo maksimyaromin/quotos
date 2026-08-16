@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
-import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "./components/icons";
-import { SubscriptionsScreen } from "./components/SubscriptionsScreen";
-import { UndoRow } from "./components/UndoRow";
-import { Button } from "./design-system/components/controls/Button";
-import { IconButton } from "./design-system/components/controls/IconButton";
-import { Panel } from "./design-system/components/shell/Panel";
-import { SubscriptionRow } from "./design-system/components/subscription/SubscriptionRow";
-import { useSubscriptions } from "./hooks/useSubscriptions";
-import { presentRow } from "./lib/rowPresentation";
+import { Button, IconButton, Panel, SubscriptionRow } from "@design-system";
+import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "@/components/icons";
+import { SubscriptionsScreen } from "@/components/SubscriptionsScreen";
+import { UndoRow } from "@/components/UndoRow";
+import { useSubscriptions } from "@/hooks/useSubscriptions";
+import { presentRow } from "@/lib/rowPresentation";
 import {
   debugRateLimitSnapshot,
   dragWindowStep,
@@ -16,8 +13,8 @@ import {
   onPanelBeakOffset,
   onPanelVisibility,
   setDetached as setDetachedIpc,
-} from "./lib/tauriClient";
-import { formatClockTime, formatExactReset, formatRelativePast } from "./lib/time";
+} from "@/lib/tauriClient";
+import { formatClockTime, formatExactReset, formatRelativePast } from "@/lib/time";
 import "./app.css";
 
 const NOW_TICK_MS = 30_000;

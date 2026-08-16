@@ -1,4 +1,4 @@
-import type { LimitWindowEntity, Severity } from "../../types/entities";
+import type { LimitWindowEntity, Severity } from "@/types/entities";
 
 /** Friendly labels for the `limits[].kind` values seen in the wild.
  * Anything not listed here still renders, humanized from the kind string

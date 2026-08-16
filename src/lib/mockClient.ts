@@ -15,7 +15,7 @@ import type {
   RawSnapshot,
   SignInFinishedEvent,
   StatuslineIntegrationStatus,
-} from "../types/entities";
+} from "@/types/entities";
 
 const DELAY_MS = 500;
 const callCounts = new Map<string, number>();

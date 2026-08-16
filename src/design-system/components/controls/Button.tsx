@@ -1,6 +1,6 @@
-import React from "react";
+import * as React from "react";
 
-const base = {
+const base: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
@@ -13,11 +13,11 @@ const base = {
   cursor: "pointer",
   userSelect: "none",
   whiteSpace: "nowrap",
-  // biome-ignore format: reducedMotion.spec.jsx scans this line for a --dur token, so it must stay on one line.
+  // biome-ignore format: reducedMotion.spec.tsx scans this line for a --dur token, so it must stay on one line.
   transition: "background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast), transform var(--dur-instant)",
 };
 
-const sizes = {
+const sizes: Record<"sm" | "base" | "lg", React.CSSProperties> = {
   sm: { height: "22px", padding: "0 var(--space-2)", fontSize: "var(--text-sm)" },
   base: {
     height: "var(--control-height)",
@@ -31,7 +31,7 @@ const sizes = {
   },
 };
 
-const variants = {
+const variants: Record<"primary" | "secondary" | "ghost" | "danger", React.CSSProperties> = {
   primary: {
     background: "var(--teal)",
     color: "var(--text-on-accent)",
@@ -54,7 +54,28 @@ const variants = {
   },
 };
 
-/** A labeled action button using sentence-case, verb-first labels. */
+const hoverBackground: Record<"primary" | "secondary" | "ghost" | "danger", string> = {
+  primary: "var(--teal-bright)",
+  secondary: "var(--bg-row-hover)",
+  ghost: "var(--bg-row-hover)",
+  danger: "var(--red-muted)",
+};
+
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  /** Visual weight. `primary` for the one main action; `secondary` default; `ghost` for low-emphasis; `danger` for destructive. */
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  /** Control height. `base` = macOS small control (26px). */
+  size?: "sm" | "base" | "lg";
+  disabled?: boolean;
+  /** Stretch to the container width, used for the primary action in the add-subscription sheet. */
+  fullWidth?: boolean;
+  /** Optional 14px leading icon node, typically a Lucide SVG. */
+  icon?: React.ReactNode;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
+  children?: React.ReactNode;
+}
+
+/** The standard Quotos action button. Sentence-case, verb-first labels. */
 export function Button({
   variant = "secondary",
   size = "base",
@@ -65,22 +86,15 @@ export function Button({
   children,
   style,
   ...rest
-}) {
+}: ButtonProps) {
   const [hover, setHover] = React.useState(false);
   const [active, setActive] = React.useState(false);
 
-  const hoverBg = {
-    primary: "var(--teal-bright)",
-    secondary: "var(--bg-row-hover)",
-    ghost: "var(--bg-row-hover)",
-    danger: "var(--red-muted)",
-  }[variant];
-
-  const composed = {
+  const composed: React.CSSProperties = {
     ...base,
     ...sizes[size],
     ...variants[variant],
-    ...(hover && !disabled ? { background: hoverBg } : null),
+    ...(hover && !disabled ? { background: hoverBackground[variant] } : null),
     ...(active && !disabled ? { transform: "translateY(0.5px)", opacity: 0.9 } : null),
     ...(disabled ? { opacity: 0.4, cursor: "default" } : null),
     ...(fullWidth ? { width: "100%" } : null),

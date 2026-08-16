@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { StatuslineFeedWire } from "../../types/entities";
+import type { StatuslineFeedWire } from "@/types/entities";
 import { reconcileWithStatusline } from "./statuslineMerge";
 
 const API_FETCHED_AT = "2026-08-15T12:00:00.000Z";

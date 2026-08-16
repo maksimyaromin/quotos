@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Button } from "../design-system/components/controls/Button";
-import { statuslineInstall, statuslineRemove, statuslineStatus } from "../lib/tauriClient";
-import { isStatuslineError, type StatuslineIntegrationStatus } from "../types/entities";
+import { Button } from "@design-system";
+import { statuslineInstall, statuslineRemove, statuslineStatus } from "@/lib/tauriClient";
+import { isStatuslineError, type StatuslineIntegrationStatus } from "@/types/entities";
 
 function describeError(err: unknown): string {
   if (isStatuslineError(err) && err.kind !== "conflict" && "message" in err) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { NormalizedRead } from "../../types/entities";
+import type { NormalizedRead } from "@/types/entities";
 import { mapOutcome } from "./index";
 
 const OK_READ: NormalizedRead = {
