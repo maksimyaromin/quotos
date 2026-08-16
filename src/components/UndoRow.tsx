@@ -1,9 +1,8 @@
 import { Button } from "../design-system/components/controls/Button";
 
-/** Stand-in for a just-removed row for five seconds (App.tsx owns the
- * timer). The handoff's own recommendation, adopted in place of a
- * confirmation dialog: cheaper than a dialog, and nothing mutates under the
- * cursor the way the old trash-icon confirm-to-remove did. */
+/** Stand-in for a just-removed row for five seconds. App.tsx owns the
+ * timer. Adopted in place of a confirmation dialog: cheaper than a dialog,
+ * and nothing mutates under the cursor while it is showing. */
 export function UndoRow({ label, onUndo }: { label: string; onUndo: () => void }) {
   return (
     <div

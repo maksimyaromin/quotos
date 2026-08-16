@@ -1,6 +1,6 @@
-// Small line icons matching the design system's stroke conventions
-// (currentColor, 1.5–2.2px stroke). Kept local rather than pulled from a
-// CDN so the app has no network dependency for its own chrome.
+// Small line icons matching the design system's stroke conventions:
+// currentColor, 1.5 to 2.2px stroke. Kept local rather than pulled from a
+// CDN, so the app has no network dependency for its own chrome.
 
 export function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
   return (
@@ -39,7 +39,7 @@ export function PlusIcon() {
   );
 }
 
-/** Dev-only affordance (P7): dump the app's resolved state as JSON. */
+/** Dev-only affordance that dumps the app's resolved state as JSON. */
 export function DebugIcon() {
   return (
     <svg
@@ -57,10 +57,10 @@ export function DebugIcon() {
   );
 }
 
-/** Fold a detached window back under the tray icon — an upward arrow, "send
- * this back up to the menu bar". There is no detach button (dragging the
- * header is the only way to tear the panel off), so this is the only affordance
- * this pair needs. */
+/** Folds a detached window back under the tray icon: an upward arrow
+ * reading as "send this back up to the menu bar". There is no detach
+ * button, since dragging the header is the only way to tear the panel off,
+ * so this is the only affordance this pair needs. */
 export function SnapBackIcon() {
   return (
     <svg
@@ -78,8 +78,8 @@ export function SnapBackIcon() {
   );
 }
 
-/** The Subscriptions screen's header back arrow — the only way out, there is
- * no Done button. */
+/** The Subscriptions screen's header back arrow. The only way out, since
+ * there is no Done button. */
 export function BackIcon() {
   return (
     <svg

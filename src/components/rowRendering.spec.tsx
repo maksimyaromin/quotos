@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, test } from "vitest";
 import { SubscriptionRow } from "../design-system/components/subscription/SubscriptionRow";
 import { rowPresentation } from "../lib/rowPresentation";
 import type { Subscription } from "../types/entities";
@@ -55,18 +55,13 @@ function renderRow(s: Subscription) {
   );
 }
 
-/** Counts clock times ("4:59 PM") anywhere in the rendered row — the video-2
- * defect was the same instant printed twice, in two different sentences. */
+/** Counts clock times such as "4:59 PM" anywhere in the rendered row. */
 function clockTimesIn(container: HTMLElement): string[] {
   return container.textContent?.match(/\b\d{1,2}:\d{2}\s?(?:AM|PM)?/g) ?? [];
 }
 
-// R3-4: the row from the captain's second screencast, rebuilt and measured.
-// It read, all at once: badge "Needs sign-in", body "The sign-in expired…",
-// footer "Waiting for the rate budget — available 4:59 PM", and an action
-// button "Retry at 4:59 PM".
-describe("subscription row — the contradictory row cannot be rendered again", () => {
-  it("a sign-in row shows the sign-in story only, with no rate-budget wait and no clock time", () => {
+describe("subscription row never shows contradictory sign-in and rate-budget states", () => {
+  test("a sign-in row shows the sign-in story only, with no rate-budget wait and no clock time", () => {
     const { container } = renderRow(
       sub({
         state: "broken",
@@ -84,7 +79,7 @@ describe("subscription row — the contradictory row cannot be rendered again", 
     expect(clockTimesIn(container)).toHaveLength(0);
   });
 
-  it("a waiting row states the time exactly once", () => {
+  test("a waiting row states the time exactly once", () => {
     const { container } = renderRow(
       sub({
         state: "behind",
@@ -99,7 +94,7 @@ describe("subscription row — the contradictory row cannot be rendered again", 
     expect(container.textContent).not.toMatch(/Retry at/);
   });
 
-  it("a broken row that is not a sign-in problem never accuses the account of being signed out", () => {
+  test("a broken row that is not a sign-in problem never accuses the account of being signed out", () => {
     const { container } = renderRow(
       sub({
         state: "broken",
@@ -114,7 +109,7 @@ describe("subscription row — the contradictory row cannot be rendered again", 
     expect(screen.getByTitle("Try again")).toBeTruthy();
   });
 
-  it("a healthy row shows its number and nothing alarming", () => {
+  test("a healthy row shows its number and nothing alarming", () => {
     const { container } = renderRow(sub());
     expect(container.textContent).toMatch(/20/);
     expect(container.textContent).not.toMatch(/Needs sign-in/);

@@ -12,11 +12,11 @@ interface Row {
   account: AccountDescriptor;
 }
 
-/** The Subscriptions screen (replaces the old add-subscription sheet): one
- * list of every account Quotos can see on this Mac. Tracked ones sit
- * highlighted with a Remove button; the rest get an Add button — same size
- * and style, only the label color differs. There is no Done button; the
- * panel's header back-arrow (App.tsx) is the only way out. */
+/** The Subscriptions screen: one list of every account Quotos can see on
+ * this Mac. Tracked ones sit highlighted with a Remove button. The rest
+ * get an Add button of the same size and style, with only the label color
+ * differing. There is no Done button. The panel's header back arrow in
+ * App.tsx is the only way out. */
 export function SubscriptionsScreen({
   tracked,
   onAdd,
@@ -26,10 +26,10 @@ export function SubscriptionsScreen({
   tracked: Subscription[];
   onAdd: (account: AccountDescriptor) => void;
   onRemove: (id: string) => void;
-  /** R4-4: how to name an account this screen lists but the panel isn't
-   * showing. Supplied by `useSubscriptions` rather than derived here, so both
-   * halves of this list — and the panel — spell one account the same way; see
-   * that hook's `displayLabelFor`. */
+  /** How to name an account this screen lists but the panel is not
+   * showing. Supplied by `useSubscriptions` rather than derived here, so
+   * both halves of this list and the panel spell one account the same
+   * way. See that hook's `displayLabelFor`. */
   displayLabelFor: (account: AccountDescriptor) => string;
 }) {
   const [discovered, setDiscovered] = useState<AccountDescriptor[] | null>(null);
@@ -43,12 +43,12 @@ export function SubscriptionsScreen({
       });
     };
     scan();
-    // Signing in to a new account happens in a terminal, which blurs (and so
-    // hides) the panel — by the time it is back on screen, the new account is
-    // already discoverable, so a rescan on the hidden→visible transition
+    // Signing in to a new account happens in a terminal, which blurs and so
+    // hides the panel. By the time it is back on screen, the new account is
+    // already discoverable, so a rescan on the hidden-to-visible transition
     // makes it simply appear. The transition guard also keeps the browser
-    // harness's subscribe-time "visible" signal from double-scanning a fresh
-    // mount.
+    // harness's subscribe-time "visible" signal from double-scanning a
+    // fresh mount.
     let wasHidden = false;
     void onPanelVisibility((visible) => {
       if (!visible) {
@@ -157,9 +157,8 @@ export function SubscriptionsScreen({
               {r.tracked ? "Remove" : "Add"}
             </Button>
           </div>
-          {/* S2: the statusline opt-in offer — only for tracked accounts,
-              right where "Add subscription" already lives (the captain's
-              own example placement for the offer). */}
+          {/* The statusline opt-in offer, only for tracked accounts, right
+              where "Add subscription" already lives. */}
           {r.tracked ? <StatuslineControl configDir={r.path} /> : null}
         </div>
       ))}
@@ -172,10 +171,10 @@ export function SubscriptionsScreen({
           color: "var(--text-quaternary)",
         }}
       >
-        {/* Deviates from the handoff's string table on purpose: its "Quit and
-            reopen Quotos to pick it up" assumed launch-only discovery, but
-            discovery is a fresh scan on every mount (and on every panel
-            re-show, above) — the advice was simply false of this build. */}
+        {/* Deliberately does not say "Quit and reopen Quotos to pick it
+            up": discovery reruns on every mount and on every panel
+            re-show above, so quitting is not required to see a new
+            sign-in. */}
         Signed in to another account just now? Reopen this screen to pick it up.
       </div>
     </div>

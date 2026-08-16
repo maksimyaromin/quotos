@@ -17,11 +17,11 @@ const noteStyle: React.CSSProperties = {
   color: "var(--text-quaternary)",
 };
 
-/** S2: the in-app opt-in offer for Claude Code's zero-cost statusline feed —
- * one row per tracked subscription, right where "Add subscription" already
- * lives. Per the write-mechanism contract: never installs without this
- * explicit click, shows what's already configured before offering to
- * replace it, and "Turn off" restores exactly what was there before. */
+/** The in-app opt-in offer for Claude Code's zero-cost statusline feed, one
+ * row per tracked subscription, right where "Add subscription" already
+ * lives. Never installs without this explicit click, shows what is already
+ * configured before offering to replace it, and "Turn off" restores
+ * exactly what was there before. */
 export function StatuslineControl({ configDir }: { configDir: string }) {
   const [status, setStatus] = useState<StatuslineIntegrationStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,7 +71,7 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
     }
   };
 
-  // Still checking — render nothing rather than a flash of "not installed"
+  // Still checking. Render nothing rather than a flash of "not installed"
   // for an account that turns out to already have it.
   if (!status) return null;
 

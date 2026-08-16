@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountDescriptor } from "../types/entities";
 
 afterEach(cleanup);
@@ -15,8 +15,9 @@ const onPanelVisibility = vi.fn((callback: (visible: boolean) => void) => {
 vi.mock("../lib/tauriClient", () => ({
   listAccounts: () => listAccounts(),
   onPanelVisibility: (callback: (visible: boolean) => void) => onPanelVisibility(callback),
-  // StatuslineControl (rendered only for tracked rows — none in these tests)
-  // imports these by name, so the mocked module must still export them.
+  // StatuslineControl imports these by name, so the mocked module must
+  // still export them even though it renders only for tracked rows, none
+  // of which appear in these tests.
   statuslineStatus: () => Promise.resolve({ kind: "not_installed" }),
   statuslineInstall: () => Promise.resolve(),
   statuslineRemove: () => Promise.resolve(),
@@ -59,29 +60,30 @@ describe("SubscriptionsScreen discovery refresh", () => {
     visibilityCallback = null;
   });
 
-  it("scans on mount and lists what it finds", async () => {
+  test("scans on mount and lists what it finds", async () => {
     listAccounts.mockResolvedValue([ACCOUNT_A]);
     renderScreen();
     expect(await screen.findByText("/Users/x/.claude")).toBeTruthy();
     expect(listAccounts).toHaveBeenCalledTimes(1);
   });
 
-  it("rescans when the panel comes back on screen, so a fresh sign-in just appears", async () => {
+  test("rescans when the panel comes back on screen, so a fresh sign-in just appears", async () => {
     listAccounts.mockResolvedValueOnce([ACCOUNT_A]).mockResolvedValueOnce([ACCOUNT_A, ACCOUNT_B]);
     renderScreen();
     await screen.findByText("/Users/x/.claude");
     expect(screen.queryByText("/Users/x/.claude-work")).toBeNull();
 
-    // The panel hides (the terminal where the sign-in happens takes focus)…
+    // The panel hides because the terminal where the sign-in happens takes
+    // focus.
     act(() => visibilityCallback!(false));
-    // …and the new account is discoverable by the time the panel reopens.
+    // The new account is discoverable by the time the panel reopens.
     await act(async () => visibilityCallback!(true));
 
     expect(await screen.findByText("/Users/x/.claude-work")).toBeTruthy();
     expect(listAccounts).toHaveBeenCalledTimes(2);
   });
 
-  it("does not rescan on a visible signal with no hide before it (the mock harness's subscribe-time signal)", async () => {
+  test("does not rescan on a visible signal with no hide before it, the mock harness's subscribe-time signal", async () => {
     listAccounts.mockResolvedValue([ACCOUNT_A]);
     renderScreen();
     await screen.findByText("/Users/x/.claude");
@@ -91,7 +93,7 @@ describe("SubscriptionsScreen discovery refresh", () => {
     expect(listAccounts).toHaveBeenCalledTimes(1);
   });
 
-  it("stops listening on unmount", async () => {
+  test("stops listening on unmount", async () => {
     listAccounts.mockResolvedValue([]);
     const { unmount } = renderScreen();
     await flush();
