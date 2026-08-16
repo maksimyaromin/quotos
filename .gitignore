@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Also covered by src-tauri/.gitignore. Listed here too so a fresh clone's
 # status is clean regardless of which directory git runs from.

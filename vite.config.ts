@@ -1,11 +1,17 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
   plugins: [react()],
+
+  resolve: {
+    // The single source of truth for path aliases is tsconfig.json's own
+    // `paths`; Vite reads it natively rather than duplicating the mapping
+    // in a second `resolve.alias` block.
+    tsconfigPaths: true,
+  },
 
   test: {
     environment: "jsdom",
