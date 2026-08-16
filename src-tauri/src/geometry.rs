@@ -374,12 +374,10 @@ mod tests {
         use super::super::{DisplayPoints, docked_layout_in_points, resolve_status_item_point};
 
         // A two-display arrangement in the global point space macOS
-        // actually uses: a Retina display at (0,0) 1728x1117 scale 2, and
-        // an external display at (-2560,-908) 2560x2880 scale 1, with
-        // deliberately different menu bar heights, 33pt notched built-in
-        // versus 24pt unnotched external, since a single constant being
-        // wrong on one of them is exactly the bug this module exists to
-        // avoid.
+        // actually uses, with deliberately different menu bar heights on
+        // each: 33pt on the notched built-in, 24pt on the unnotched
+        // external. A single constant being wrong on one of them is
+        // exactly the bug this module exists to avoid.
         const BUILT_IN: DisplayPoints = DisplayPoints {
             origin: (0.0, 0.0),
             size: (1728.0, 1117.0),
@@ -453,8 +451,8 @@ mod tests {
         }
 
         // tip = y + (panel top inset 12 - beak height 10) lands the
-        // window's own top flush with the bar: 33 on the notched built-in,
-        // -825 on the external, whose bar bottom is -831.
+        // window's own top flush with the bar, at that display's own
+        // menu_bar_bottom plus BEAK_TIP_CLEARANCE.
         #[test]
         fn the_beaks_tip_sits_just_under_the_menu_bar_of_its_own_display() {
             let tip = |l: super::super::DockedLayout| l.y + (12.0 - 10.0);

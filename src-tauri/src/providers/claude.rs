@@ -217,7 +217,7 @@ struct StoredCredential {
 }
 
 impl StoredCredential {
-    /// Past its own stated expiry (with `margin_ms` of look-ahead). A
+    /// Past its own stated expiry, with `margin_ms` of look-ahead added. A
     /// credential that records no expiry is never assumed expired.
     fn access_expired(&self, now_ms: i64, margin_ms: i64) -> bool {
         self.expires_at_ms

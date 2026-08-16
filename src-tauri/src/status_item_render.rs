@@ -22,7 +22,7 @@ const GLYPH_PX: u32 = 36;
 /// All of the constants below are CSS-px values doubled for this buffer's
 /// fixed 2x-of-18pt convention, matching GLYPH_PX itself. 5 CSS-px of air
 /// sits at each end.
-const SIDE_PAD_PX: u32 = 10; // 5 CSS-px air each end
+const SIDE_PAD_PX: u32 = 10;
 /// Horizontal air on each side of the glyph and digits, inside the
 /// composited image. Two things need it, and one of them is not optional:
 ///
@@ -61,9 +61,8 @@ const GROUP_GUTTER_POST_PX: u32 = 10; // 5 CSS-px
 /// The hairline's own drawn length, 11 CSS-px tall, centered in the row.
 const HAIRLINE_HEIGHT_PX: u32 = 22;
 
-/// The design system specifies 12 CSS-px digits; this buffer is rendered at
-/// 2x for Retina throughout (see `GLYPH_PX`), so the actual CoreText point
-/// size used in this bitmap's coordinate space is doubled to match.
+/// The design system specifies 12 CSS-px digits, doubled to match this
+/// buffer's 2x-for-Retina convention; see `GLYPH_PX`.
 #[cfg(target_os = "macos")]
 const TEXT_FONT_SIZE_PT: f64 = 12.0 * 2.0;
 
@@ -151,13 +150,13 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
     // outer edge, its dominant visible silhouette, on the 18 CSS-px
     // canvas.
     const TARGET_INK_DIAMETER_CSS_PX: f64 = 15.0;
-    // Antialiasing transition half-width, in physical (canvas_px) pixels.
+    // Antialiasing transition half-width, in `canvas_px` physical pixels.
     // A soft coverage ramp across roughly 1.5 physical px either side of
     // each edge, rather than a hard-edged, jagged threshold.
     const AA_HALF_WIDTH_PX: f64 = 0.75;
 
     let natural_outer_diameter = (ARC_RADIUS_SVG + ARC_STROKE_SVG / 2.0) * 2.0;
-    // GLYPH_PX (canvas_px) is always 2x an 18-CSS-px canvas.
+    // GLYPH_PX, this function's own canvas_px, is always 2x an 18-CSS-px canvas.
     let px_per_css_px = canvas_px as f64 / 18.0;
     let scale = (TARGET_INK_DIAMETER_CSS_PX * px_per_css_px) / natural_outer_diameter;
     let center = canvas_px as f64 / 2.0;
@@ -315,7 +314,7 @@ fn blend_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8
 /// these exact tokens, not whatever tint macOS's own default selection
 /// style would draw.
 fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
-    const RADIUS_PHYSICAL: f64 = 10.0; // 5 CSS-px * 2 (this buffer's usual 2x)
+    const RADIUS_PHYSICAL: f64 = 10.0; // 5 CSS-px, doubled for this buffer's usual 2x
     const AA_HALF_WIDTH_PX: f64 = 0.75;
     let rgba = if dark {
         (0xffu8, 0xffu8, 0xffu8, (0.20f64 * 255.0).round() as u8)
@@ -577,8 +576,8 @@ mod text {
     }
 
     /// Renders `text` with `font` in color `rgba` and composites it onto
-    /// `buf` at horizontal offset `x0` (buffer height `buf_h`), returning
-    /// the pixel width it occupied so callers can lay out the next segment
+    /// `buf`, of height `buf_h`, at horizontal offset `x0`. Returns the
+    /// pixel width it occupied so callers can lay out the next segment
     /// after it.
     fn draw_text_impl(
         buf: &mut [u8],
@@ -680,8 +679,8 @@ mod text {
     }
 
     /// Renders `text` and composites it onto `buf` at horizontal offset
-    /// `x0`, returning the pixel width it occupied (so callers can lay out
-    /// the next segment after it).
+    /// `x0`. Returns the pixel width it occupied so callers can lay out
+    /// the next segment after it.
     pub fn draw_text(
         buf: &mut [u8],
         buf_w: u32,
@@ -694,8 +693,8 @@ mod text {
         draw_text_impl(buf, buf_w, buf_h, x0, font.handle.as_ct_font(), text, rgba)
     }
 
-    /// Measures `text` without drawing it (used by `render()` to lay out
-    /// segments before the final buffer is allocated).
+    /// Measures `text` without drawing it. `render()` uses this to lay out
+    /// segments before the final buffer is allocated.
     pub fn measure(font: &LoadedFont, text: &str) -> u32 {
         let Some(line) = make_line(font.handle.as_ct_font(), text, (0, 0, 0, 0)) else {
             return 0;
@@ -1025,8 +1024,8 @@ mod tests {
         let width = max_x - min_x as i64 + 1;
         let height = max_y - min_y as i64 + 1;
         // 14-16 CSS-pt at 2x = 28-32 physical px; a couple of px of slack
-        // either side for the antialiasing threshold this test uses (>32
-        // out of 255, not full opacity).
+        // either side for the antialiasing threshold this test uses,
+        // greater than 32 out of 255 rather than full opacity.
         assert!(
             (26..=34).contains(&width),
             "ink width {width}px should be roughly 28-32px (14-16pt @2x)"

@@ -323,8 +323,8 @@ pub(crate) fn submit_sign_in_code(
     state.sign_in.submit_code(&account_id, &code)
 }
 
-/// Cancels an in-progress sign-in. Called either as a panel action or as
-/// cleanup when the row is removed mid-flow.
+/// Called either as a panel action or as cleanup when the row is removed
+/// mid-flow.
 #[tauri::command]
 pub(crate) fn cancel_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
     state.sign_in.cancel(&account_id);

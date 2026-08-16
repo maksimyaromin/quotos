@@ -35,9 +35,8 @@ pub(crate) struct StatusItemSegmentDto {
     group_start: bool,
 }
 
-/// Sets what is shown beside the status item's glyph, the pinned-
-/// subscriptions feature. An empty `segments` clears it back to just the
-/// plain, theme-tinted glyph unless the panel is currently open. See
+/// An empty `segments` clears the status item back to just the plain,
+/// theme-tinted glyph unless the panel is currently open. See
 /// `repaint_status_item`. `worst_used_percent` is the bare glyph's own arc
 /// fill, sent on every call regardless of `segments` so the arc stays
 /// current whether or not anything is pinned.
@@ -93,7 +92,6 @@ fn record_if_changed(
     true
 }
 
-/// Flips the status item's "panel open" highlight on or off and repaints.
 /// Called from `show_panel`, `hide_panel`, and the click-away and hide
 /// branches, never from the frontend directly, since it is a pure
 /// reflection of native window visibility, not app data.
@@ -844,9 +842,8 @@ fn log_docked_placement(
 }
 
 /// The window's own frame, read back from AppKit in global points, not
-/// through `outer_position()`, which is both scale-factor-relative, see
-/// `DisplayPoints`, and was observed misreporting right after a first
-/// `show()`.
+/// through `outer_position()`, which is scale-factor-relative; see
+/// `DisplayPoints`.
 #[cfg(target_os = "macos")]
 fn window_frame_points(window: &tauri::WebviewWindow) -> Option<(f64, f64, f64, f64)> {
     use objc2_app_kit::{NSScreen, NSWindow};
