@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { LimitWindowEntity, Subscription } from "../types/entities";
 import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "./traySegments";
 
@@ -32,12 +32,12 @@ function subscription(overrides: Partial<Subscription> & { id: string }): Subscr
 }
 
 describe("buildTraySegments", () => {
-  it("emits nothing when nothing is pinned", () => {
+  test("emits nothing when nothing is pinned", () => {
     const subs = [subscription({ id: "a", windows: [window({ id: "session", used: 10 })] })];
     expect(buildTraySegments(subs)).toEqual([]);
   });
 
-  it("skips a pinned window with no numeric value yet — never '!' or '…'", () => {
+  test("skips a pinned window with no numeric value yet, never rendering '!' or '…'", () => {
     const subs = [
       subscription({
         id: "a",
@@ -48,7 +48,7 @@ describe("buildTraySegments", () => {
     expect(buildTraySegments(subs)).toEqual([]);
   });
 
-  it("skips a pinned id whose window no longer exists in the latest read", () => {
+  test("skips a pinned id whose window no longer exists in the latest read", () => {
     const subs = [
       subscription({
         id: "a",
@@ -59,7 +59,7 @@ describe("buildTraySegments", () => {
     expect(buildTraySegments(subs)).toEqual([]);
   });
 
-  it("orders figures in panel order then provider (window list) order, marking group starts", () => {
+  test("orders figures in panel order then provider (window list) order, marking group starts", () => {
     const subs = [
       subscription({
         id: "a",
@@ -79,9 +79,10 @@ describe("buildTraySegments", () => {
     ]);
   });
 
-  it("colors a figure from its own window's used%, not the subscription's aggregate severity", () => {
-    // The subscription is "warn" overall (some other window at 85%), but the
-    // pinned figure itself is a healthy 20% — it must read neutral, not amber.
+  test("colors a figure from its own window's used%, not the subscription's aggregate severity", () => {
+    // The subscription is "warn" overall because some other window sits at
+    // 85%, but the pinned figure itself is a healthy 20%. It must read
+    // neutral, not amber.
     const subs = [
       subscription({
         id: "a",
@@ -93,7 +94,7 @@ describe("buildTraySegments", () => {
     expect(buildTraySegments(subs)).toEqual([{ text: "20%", color: "neutral", groupStart: false }]);
   });
 
-  it("colors past 75 amber and past 90 red", () => {
+  test("colors past 75 amber and past 90 red", () => {
     const subs = [
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 80 })] }),
       subscription({ id: "b", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 95 })] }),
@@ -101,7 +102,7 @@ describe("buildTraySegments", () => {
     expect(buildTraySegments(subs).map((s) => s.color)).toEqual(["amber", "red"]);
   });
 
-  it("turns every contributing figure amber when any contributing subscription is stale", () => {
+  test("turns every contributing figure amber when any contributing subscription is stale", () => {
     const subs = [
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 10 })] }),
       subscription({
@@ -114,7 +115,7 @@ describe("buildTraySegments", () => {
     expect(buildTraySegments(subs).map((s) => s.color)).toEqual(["amber", "amber"]);
   });
 
-  it("a stale subscription with nothing pinned doesn't taint the bar", () => {
+  test("a stale subscription with nothing pinned doesn't taint the bar", () => {
     const subs = [
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 10 })] }),
       subscription({
@@ -129,10 +130,11 @@ describe("buildTraySegments", () => {
 });
 
 describe("buildTrayTooltip", () => {
-  it("is just the product name when nothing contributes a figure", () => {
+  test("is just the product name when nothing contributes a figure", () => {
     expect(buildTrayTooltip([])).toBe("Quotos");
-    // A pinned window with no number contributes no segment (never "!") and
-    // therefore no tooltip line either — the two surfaces must agree.
+    // A pinned window with no number contributes no segment and never a "!"
+    // placeholder, so it contributes no tooltip line either. The two
+    // surfaces must agree.
     const subs = [
       subscription({
         id: "a",
@@ -143,7 +145,7 @@ describe("buildTrayTooltip", () => {
     expect(buildTrayTooltip(subs)).toBe("Quotos");
   });
 
-  it("names each contributing figure, one line per subscription, in bar order", () => {
+  test("names each contributing figure, one line per subscription, in bar order", () => {
     const subs = [
       subscription({
         id: "a",
@@ -167,7 +169,7 @@ describe("buildTrayTooltip", () => {
     );
   });
 
-  it("prefers the user's rename over the provider label", () => {
+  test("prefers the user's rename over the provider label", () => {
     const subs = [
       subscription({
         id: "a",
@@ -180,7 +182,7 @@ describe("buildTrayTooltip", () => {
     expect(buildTrayTooltip(subs)).toBe("Quotos\nWork: Weekly 40%");
   });
 
-  it("marks only the stale subscription's own line, in the row badge's words", () => {
+  test("marks only the stale subscription's own line, in the row badge's words", () => {
     const subs = [
       subscription({
         id: "a",
@@ -203,12 +205,12 @@ describe("buildTrayTooltip", () => {
 });
 
 describe("worstActiveLimitPercent", () => {
-  it("is 0 when nothing tracked has any active numeric window", () => {
+  test("is 0 when nothing tracked has any active numeric window", () => {
     expect(worstActiveLimitPercent([])).toBe(0);
     expect(worstActiveLimitPercent([subscription({ id: "a" })])).toBe(0);
   });
 
-  it("is the max used% across every active window, pinned or not", () => {
+  test("is the max used% across every active window, pinned or not", () => {
     const subs = [
       subscription({ id: "a", windows: [window({ id: "w1", used: 61, isActive: true })] }),
       subscription({
