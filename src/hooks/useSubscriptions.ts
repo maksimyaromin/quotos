@@ -457,8 +457,10 @@ export function useSubscriptions() {
 
   // Loads the tracked list once at mount, then either subscribes to the
   // Rust scheduler's push on native, or does a one-time read itself in the
-  // browser harness, which has no scheduler to push from.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberately mount-once. Adding applyRefreshResult or refreshOneGuarded risks re-running the load on every render.
+  // browser harness, which has no scheduler to push from. Runs exactly
+  // once despite listing applyRefreshResult and refreshOneGuarded below:
+  // both bottom out at patch, whose own dependency array is empty, so
+  // neither ever gets a new identity across renders.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -530,7 +532,7 @@ export function useSubscriptions() {
       cancelled = true;
       unlisten?.();
     };
-  }, []);
+  }, [applyRefreshResult, refreshOneGuarded]);
 
   /** What "tracked" means everywhere except the panel's own row list. A
    * row inside its undo window survives only as a slot in `subscriptions`,
