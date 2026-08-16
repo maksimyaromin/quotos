@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The webview's entire ACL grant. The frontend reaches Rust only two ways: invoking this app's own #[tauri::command]s (never gated by the capability system) and `listen`/its returned unlisten (`@tauri-apps/api/event` in liveClient.ts) — so event listen/unlisten is the whole grant. Every window operation goes through custom commands (hide_panel, drag_window_step, ...), which is why no core:window permission is needed; core:default's menu/tray/app/path grants were equally unused.",
+  "description": "The webview's entire ACL grant. The frontend reaches Rust only two ways: invoking this app's own #[tauri::command]s, never gated by the capability system, and listen with its returned unlisten in src/lib/liveClient.ts, so event listen and unlisten is the whole grant. Every window operation goes through custom commands, so no core:window permission is needed, and core:default's menu, tray, app, and path grants are equally unused.",
   "windows": ["main"],
   "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

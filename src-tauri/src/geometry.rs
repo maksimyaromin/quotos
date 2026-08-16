@@ -5,7 +5,7 @@
 //! which keeps the placement rules unit-testable against real measured
 //! geometry.
 
-use crate::tray_render;
+use crate::status_item_render;
 
 /// The window's own fixed logical size, from `tauri.conf.json`'s `width`
 /// and `height`. Duplicated here rather than read back from the window,
@@ -17,7 +17,7 @@ pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 
 /// Returns the beak's horizontal offset in points, relative to the panel's
 /// own left edge, so the caller can tell the frontend where to draw it.
-/// The beak must stay centered under the tray glyph's own center, not the
+/// The beak must stay centered under the status item glyph's own center, not the
 /// whole button's center.
 ///
 /// `NSStatusItem` centers the whole composited image, glyph alone or glyph
@@ -26,21 +26,21 @@ pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 /// distance from the item's own left edge once digits are added, since
 /// digits only widen the image, not the glyph portion of it. So rather
 /// than hardcode a margin constant, this derives it fresh from two pieces
-/// of ground truth: the item's own current width, from `tray.rect()`,
+/// of ground truth: the item's own current width, from `status item.rect()`,
 /// queried by the caller so it is paired with the same call's position
 /// rather than a value cached at a different instant, and the composited
 /// image's own known width, from `AppState.last_icon_width_px`, set by
 /// `set_tray_status` right before `set_icon`, always at the fixed "2x of
 /// an 18pt-tall image" convention, so dividing by two gives its real width
 /// in points regardless of monitor scale. The glyph is always that image's
-/// leftmost 18pt, since `tray_render.rs`'s `render` draws digits only
+/// leftmost 18pt, since `status_item_render.rs`'s `render` draws digits only
 /// after it. Assuming `NSStatusItem` centers the image, half of whatever
 /// is left over after the image is the left margin, and the glyph's own
 /// center is 9 points further in from there. This holds for however many
 /// digits are pinned, not just the bare-glyph case, because it is computed
 /// from the actual numbers each time rather than assumed constant.
 ///
-/// If `tray.rect()` is unavailable, this falls back to treating the glyph
+/// If `status item.rect()` is unavailable, this falls back to treating the glyph
 /// as flush with the item's own left edge, no margin, rather than failing
 /// outright. That is a plausible worst-case position, not a crash.
 ///
@@ -53,7 +53,7 @@ fn glyph_center_offset_from_item_left_points(
     item_width_points: Option<f64>,
     icon_width_px: f64,
 ) -> f64 {
-    // tray_render's glyph is always drawn at this size.
+    // status_item_render's glyph is always drawn at this size.
     const GLYPH_WIDTH_POINTS: f64 = 18.0;
     // icon_width_px is a buffer width at the fixed "2x of an 18pt-tall
     // image" convention set_icon_for_ns_status_item_button imposes, so
@@ -63,10 +63,10 @@ fn glyph_center_offset_from_item_left_points(
         .map(|w| ((w - image_width_points) / 2.0).max(0.0))
         .unwrap_or(0.0);
     // The glyph is not the image's leftmost pixel. The image carries its
-    // own side padding so the tray highlight has horizontal air. That
-    // inset comes from tray_render, which owns it, rather than being
+    // own side padding so the status item highlight has horizontal air. That
+    // inset comes from status_item_render, which owns it, rather than being
     // duplicated as a number here.
-    margin_points + tray_render::GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0
+    margin_points + status_item_render::GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0
 }
 
 /// The coordinate space this whole module speaks, and why.
@@ -84,13 +84,13 @@ fn glyph_center_offset_from_item_left_points(
 ///
 /// | source | value | scale used |
 /// |---|---|---|
-/// | `TrayIconEvent`'s `rect` (`tray-icon` 0.24.2 `get_tray_rect`) | tray item frame | the menu bar display's `backingScaleFactor` |
+/// | `TrayIconEvent`'s `rect` (`tray-icon` 0.24.2 `get_tray_rect`) | status item frame | the menu bar display's `backingScaleFactor` |
 /// | `Monitor::position()`/`size()` (`tao` 0.35.3 `monitor.rs`) | `CGDisplayBounds` / `CGDisplayPixelsWide` | that monitor's own scale factor |
 /// | `set_position(Physical)` / `WindowEvent::Moved` (`tao` `window.rs`, `window_delegate.rs`) | window frame | the window's current `backingScaleFactor` |
 ///
 /// On a single-display machine all three coincide and any mismatch is
 /// invisible. On a machine with displays at different scale factors they
-/// diverge. A tray click at point x=1183 on a scale-2 display arrives here
+/// diverge. A status item click at point x=1183 on a scale-2 display arrives here
 /// as physical x=2366. Dividing that by the wrong display's scale, for
 /// example 1 instead of 2, places a window at point x=2366, off the right
 /// edge of every real display: the window is revealed at its stale
@@ -101,7 +101,7 @@ fn glyph_center_offset_from_item_left_points(
 ///
 /// So the fix is not another retry or another delay. It is to stop
 /// speaking a unit that does not exist. Everything below converts to
-/// points at the edges, `DisplayPoints` and `resolve_tray_point`, and
+/// points at the edges, `DisplayPoints` and `resolve_status_item_point`, and
 /// never leaves them. `apply_docked_position` places the window with a
 /// `LogicalPosition`, which `tao`'s `Position::to_logical` passes through
 /// untouched, so no scale factor is ever consulted on the way out either.
@@ -112,7 +112,7 @@ pub(crate) struct DisplayPoints {
     /// Size in points.
     pub(crate) size: (f64, f64),
     /// This display's own backing scale factor. Needed only to undo the
-    /// multiplication `tray-icon` applied to the tray rect.
+    /// multiplication `tray-icon` applied to the status item rect.
     pub(crate) scale: f64,
     /// Global-point y of the bottom edge of this display's own menu bar,
     /// read live from `NSScreen.visibleFrame`. `None` on a display that
@@ -151,17 +151,17 @@ impl DisplayPoints {
 /// inside that display. Where an unusual arrangement could make two
 /// candidates both land in bounds, the tie-break is the one property a
 /// menu bar always has: it hugs its own display's top edge.
-pub(crate) fn resolve_tray_point(
+pub(crate) fn resolve_status_item_point(
     displays: &[DisplayPoints],
-    tray_x: f64,
-    tray_y: f64,
+    item_x: f64,
+    item_y: f64,
 ) -> Option<(usize, f64, f64)> {
     let mut best: Option<(usize, f64, f64, f64)> = None; // (index, x, y, distance below that display's top)
     for (index, display) in displays.iter().enumerate() {
         if display.scale <= 0.0 {
             continue;
         }
-        let (x, y) = (tray_x / display.scale, tray_y / display.scale);
+        let (x, y) = (item_x / display.scale, item_y / display.scale);
         if !display.contains(x, y) {
             continue;
         }
@@ -259,9 +259,9 @@ pub(crate) struct DockedLayout {
 /// geometry instead of only on a live screen.
 pub(crate) fn docked_layout_in_points(
     display: DisplayPoints,
-    tray_left: f64,
-    tray_top: f64,
-    tray_bottom: f64,
+    item_left: f64,
+    item_top: f64,
+    item_bottom: f64,
     item_width_points: Option<f64>,
     icon_width_px: f64,
 ) -> DockedLayout {
@@ -280,7 +280,7 @@ pub(crate) fn docked_layout_in_points(
     // on the glyph's center, so the only way to also move the beak away
     // from the corner is to move the whole panel further left. Deriving x
     // from the beak's wanted position makes both hold by construction, at
-    // whatever glyph offset the tray happens to report, rather than by a
+    // whatever glyph offset the status item happens to report, rather than by a
     // second constant that would have to be retuned every time the first
     // one moves.
     const BEAK_BASE_WIDTH: f64 = 20.0; // BEAK_BASE_HALF * 2 in Panel.jsx
@@ -299,7 +299,7 @@ pub(crate) fn docked_layout_in_points(
     const PANEL_INSET_TOP: f64 = 12.0; // app.css's body { padding-top }, Panel.jsx's NOTCH_RESERVE
 
     let glyph_center =
-        tray_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
+        item_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
 
     // Places the window so the beak lands at its wanted inset with its
     // center on the glyph's center, then clamps to the display. The beak
@@ -317,18 +317,18 @@ pub(crate) fn docked_layout_in_points(
     // where it exists, but it does not exist inside a full-screen Space:
     // the menu bar is auto-hidden there, visibleFrame equals frame, and
     // there is no bar height to read even while the bar sits revealed on
-    // screen under the cursor. The tray item is still there and still
+    // screen under the cursor. The status item is still there and still
     // measured, though, and macOS centers a status item vertically in its
     // bar, so the bar's bottom is the item's bottom plus the same inset
     // that sits above it. Derived either way, constant neither way.
-    let inset_above_item = (tray_top - display.origin.1).max(0.0);
+    let inset_above_item = (item_top - display.origin.1).max(0.0);
     // NEG_INFINITY, not 0. A display left of the primary has negative
     // coordinates, where 0 is not a neutral floor but a point far below
     // it.
     let menu_bar_bottom = display
         .menu_bar_bottom
         .unwrap_or(f64::NEG_INFINITY)
-        .max(tray_bottom + inset_above_item);
+        .max(item_bottom + inset_above_item);
     // Solves for the window top from where the beak's tip should end up:
     // tip = y + PANEL_INSET_TOP - BEAK_HEIGHT, and tip should be
     // BEAK_TIP_CLEARANCE below the bar.
@@ -397,7 +397,7 @@ mod tests {
             );
         }
 
-        // The offset is a property of the tray item and its own composited
+        // The offset is a property of the status item and its own composited
         // image, both of which are already in points. No display scale factor
         // may enter into it. Two displays of different scale must give the
         // same answer for the same item.
@@ -419,7 +419,7 @@ mod tests {
     }
 
     mod docked_layout {
-        use super::super::{docked_layout_in_points, resolve_tray_point, DisplayPoints};
+        use super::super::{docked_layout_in_points, resolve_status_item_point, DisplayPoints};
 
         // A two-display arrangement in the global point space macOS actually
         // uses, NSScreen.frame or CGDisplayBounds: a Retina display at (0,0)
@@ -443,16 +443,16 @@ mod tests {
             menu_bar_bottom: Some(-831.0),
         };
 
-        // A tray item as macOS lays one out: a 24pt-tall button centered in
+        // A status item as macOS lays one out: a 24pt-tall button centered in
         // whatever menu bar it is in, so it can never extend below that bar.
-        // A bare tray item as it really measures: the 18pt glyph padded to a
-        // 30pt image, tray_render's SIDE_PAD_PX, inside an NSStatusItem 8pt
+        // A bare status item as it really measures: the 18pt glyph padded to a
+        // 30pt image, status_item_render's SIDE_PAD_PX, inside an NSStatusItem 8pt
         // wider on each side again.
         const ITEM_W: f64 = 46.0;
         const ICON_PX: f64 = 60.0; // that 30pt image at the fixed 2x convention
 
-        fn glyph_centre(tray_left: f64, item_w: f64, icon_px: f64) -> f64 {
-            tray_left
+        fn glyph_center(item_left: f64, item_w: f64, icon_px: f64) -> f64 {
+            item_left
                 + super::super::glyph_center_offset_from_item_left_points(Some(item_w), icon_px)
         }
 
@@ -472,15 +472,15 @@ mod tests {
             vec![BUILT_IN, EXTERNAL]
         }
 
-        // tray-icon multiplies the tray item's true point position, 1183 here,
+        // tray-icon multiplies the status item's true point position, 1183 here,
         // by the menu bar display's scale factor, so the value arriving here
         // is 2366, which is not a coordinate in any real space. Dividing by
         // the built-in's own scale recovers 1183. Dividing by the external's
         // leaves 2366, off every display.
         #[test]
-        fn a_tray_rect_from_the_retina_built_in_resolves_to_that_display_in_points() {
-            let (index, x, y) = resolve_tray_point(&displays(), 2366.0, 0.0)
-                .expect("built-in tray point must resolve");
+        fn a_status_item_rect_from_the_retina_built_in_resolves_to_that_display_in_points() {
+            let (index, x, y) = resolve_status_item_point(&displays(), 2366.0, 0.0)
+                .expect("built-in status item point must resolve");
             assert_eq!(index, 0);
             assert!((x - 1183.0).abs() < 0.01, "got {x}");
             assert!(y.abs() < 0.01, "got {y}");
@@ -492,17 +492,17 @@ mod tests {
         // only if the external display's scale is the one used to undo it.
         // Halving it, the built-in's scale, lands somewhere else entirely.
         #[test]
-        fn a_tray_rect_from_the_1x_external_display_resolves_to_that_display_in_points() {
-            let (index, x, y) = resolve_tray_point(&displays(), -400.0, -855.0)
-                .expect("external tray point must resolve");
+        fn a_status_item_rect_from_the_1x_external_display_resolves_to_that_display_in_points() {
+            let (index, x, y) = resolve_status_item_point(&displays(), -400.0, -855.0)
+                .expect("external status item point must resolve");
             assert_eq!(index, 1);
             assert!((x + 400.0).abs() < 0.01, "got {x}");
             assert!((y + 855.0).abs() < 0.01, "got {y}");
         }
 
         #[test]
-        fn a_tray_rect_matching_no_display_resolves_to_nothing_rather_than_a_guess() {
-            assert!(resolve_tray_point(&displays(), 90_000.0, 90_000.0).is_none());
+        fn a_status_item_rect_matching_no_display_resolves_to_nothing_rather_than_a_guess() {
+            assert!(resolve_status_item_point(&displays(), 90_000.0, 90_000.0).is_none());
         }
 
         // The beak's tip sits BEAK_TIP_CLEARANCE below the menu bar of the
@@ -584,12 +584,12 @@ mod tests {
 
         // Inside a full-screen Space the menu bar is auto-hidden and
         // visibleFrame reports no bar at all, even while the bar is sitting
-        // revealed under the cursor. The tray item is still measured, and
+        // revealed under the cursor. The status item is still measured, and
         // reconstructing the bar from it, since a status item is centered in
         // its bar, must land on the same answer as reading the bar directly,
         // not on some degraded approximation.
         #[test]
-        fn a_hidden_menu_bar_is_reconstructed_from_the_tray_item_to_the_same_answer() {
+        fn a_hidden_menu_bar_is_reconstructed_from_the_status_item_to_the_same_answer() {
             let hidden_bar = DisplayPoints {
                 menu_bar_bottom: None,
                 ..BUILT_IN
@@ -664,14 +664,14 @@ mod tests {
             // Well clear of the 12pt corner radius.
             assert!(layout.beak_left > 12.0);
             // Still exactly on the glyph.
-            let beak_centre = layout.x + 14.0 + layout.beak_left + 10.0;
+            let beak_center = layout.x + 14.0 + layout.beak_left + 10.0;
             assert!(
-                (beak_centre - glyph_centre(1183.0, ITEM_W, ICON_PX)).abs() < 0.01,
-                "got {beak_centre}"
+                (beak_center - glyph_center(1183.0, ITEM_W, ICON_PX)).abs() < 0.01,
+                "got {beak_center}"
             );
         }
 
-        // Pinning digits widens the tray item, and macOS lays status items
+        // Pinning digits widens the status item, and macOS lays status items
         // out right-to-left, so the item's own left edge moves left, carrying
         // the glyph with it, since NSStatusItem centers the whole composited
         // image and the glyph is that image's leftmost 18pt. Nothing can hold
@@ -679,10 +679,10 @@ mod tests {
         // What must hold is that the beak lands on the glyph's real center in
         // both states, with the panel tracking the item the same way in both.
         #[test]
-        fn the_beak_lands_on_the_glyph_centre_both_before_and_after_pinning() {
-            // The absolute on-screen centre of the notch = window x + the 14pt
+        fn the_beak_lands_on_the_glyph_center_both_before_and_after_pinning() {
+            // The absolute on-screen center of the notch = window x + the 14pt
             // shadow-blur inset + beak_left + half the 12pt notch.
-            let beak_centre = |l: super::super::DockedLayout| l.x + 14.0 + l.beak_left + 10.0;
+            let beak_center = |l: super::super::DockedLayout| l.x + 14.0 + l.beak_left + 10.0;
 
             let bare = docked_layout_in_points(
                 BUILT_IN,
@@ -692,14 +692,14 @@ mod tests {
                 Some(ITEM_W),
                 ICON_PX,
             );
-            let bare_glyph_centre: f64 = glyph_centre(1183.0, ITEM_W, ICON_PX);
+            let bare_glyph_center: f64 = glyph_center(1183.0, ITEM_W, ICON_PX);
             assert!(
-                (beak_centre(bare) - bare_glyph_centre).abs() < 0.01,
+                (beak_center(bare) - bare_glyph_center).abs() < 0.01,
                 "bare: {}",
-                beak_centre(bare)
+                beak_center(bare)
             );
             assert!(
-                (bare.x - (bare_glyph_centre - 44.0)).abs() < 0.01,
+                (bare.x - (bare_glyph_center - 44.0)).abs() < 0.01,
                 "bare panel: {}",
                 bare.x
             );
@@ -715,14 +715,14 @@ mod tests {
                 Some(74.0),
                 58.0 * 2.0,
             );
-            let pinned_glyph_centre = glyph_centre(1155.0, 74.0, 58.0 * 2.0);
+            let pinned_glyph_center = glyph_center(1155.0, 74.0, 58.0 * 2.0);
             assert!(
-                (beak_centre(pinned) - pinned_glyph_centre).abs() < 0.01,
+                (beak_center(pinned) - pinned_glyph_center).abs() < 0.01,
                 "pinned: {}",
-                beak_centre(pinned)
+                beak_center(pinned)
             );
             assert!(
-                (pinned.x - (pinned_glyph_centre - 44.0)).abs() < 0.01,
+                (pinned.x - (pinned_glyph_center - 44.0)).abs() < 0.01,
                 "pinned panel: {}",
                 pinned.x
             );
@@ -746,10 +746,10 @@ mod tests {
         #[test]
         fn at_the_right_screen_edge_the_panel_stops_and_the_beak_keeps_tracking() {
             // Icon hard against the built-in's right edge.
-            let tray_left = 1728.0 - 40.0;
+            let item_left = 1728.0 - 40.0;
             let layout = docked_layout_in_points(
                 BUILT_IN,
-                tray_left,
+                item_left,
                 item_top(BUILT_IN),
                 item_bottom(BUILT_IN),
                 Some(ITEM_W),
@@ -760,20 +760,20 @@ mod tests {
                 "panel must clamp, got {}",
                 layout.x
             );
-            let beak_centre = layout.x + 14.0 + layout.beak_left + 10.0;
+            let beak_center = layout.x + 14.0 + layout.beak_left + 10.0;
             assert!(
-                (beak_centre - glyph_centre(tray_left, ITEM_W, ICON_PX)).abs() < 0.01,
-                "beak must still track the glyph, got {beak_centre}"
+                (beak_center - glyph_center(item_left, ITEM_W, ICON_PX)).abs() < 0.01,
+                "beak must still track the glyph, got {beak_center}"
             );
         }
 
         // The notch can never leave the panel, however extreme the geometry.
         #[test]
         fn the_beak_stays_within_the_panel() {
-            for tray_left in [-3000.0f64, -2560.0, 0.0, 900.0, 1727.0, 5000.0] {
+            for item_left in [-3000.0f64, -2560.0, 0.0, 900.0, 1727.0, 5000.0] {
                 let layout = docked_layout_in_points(
                     BUILT_IN,
-                    tray_left,
+                    item_left,
                     item_top(BUILT_IN),
                     item_bottom(BUILT_IN),
                     Some(ITEM_W),
@@ -781,7 +781,7 @@ mod tests {
                 );
                 assert!(
                     layout.beak_left >= 0.0 && layout.beak_left <= 332.0 - 20.0,
-                    "tray_left={tray_left} gave {}",
+                    "item_left={item_left} gave {}",
                     layout.beak_left
                 );
             }

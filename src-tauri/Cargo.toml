@@ -1,7 +1,7 @@
 [package]
 name = "quotos-app"
 version = "0.5.1"
-description = "Quotos — menu bar quota tracker for AI subscriptions"
+description = "Quotos: menu bar quota tracker for AI subscriptions"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -27,27 +27,26 @@ chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1", features = ["time"] }
 portable-pty = "0.9"
 
-# R2-T1: real system text (Core Text) for the tray's colored percentage
-# digits, replacing the hand-rolled bitmap font in tray_render.rs. macOS-only
-# because the whole crate only ever runs on macOS (menu bar app); pinned to
-# exactly what's already resolved in Cargo.lock (via tauri's own transitive
-# use of the objc2 family) so `cargo check` doesn't need network access to
-# add new crate versions.
+# Real system text through Core Text for the status item's colored
+# percentage digits. macOS-only, since the whole crate only ever runs on
+# macOS as a menu bar app. Pinned to exactly what tauri's own transitive
+# use of the objc2 family already resolves in Cargo.lock, so `cargo check`
+# needs no network access to add new crate versions.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-# Default features pull in objc2-core-video, which isn't resolved in
-# Cargo.lock and would need network access to add; NSFont/NSFontDescriptor
-# lookups don't need it.
+# Default features pull in objc2-core-video, which is not resolved in
+# Cargo.lock and would need network access to add. NSFont and
+# NSFontDescriptor lookups do not need it.
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
     "NSEvent",
     "NSFont",
     "NSFontDescriptor",
     "NSWindow",
-    # Tray frame unification (quotos-tray-frame-t1): `NSStatusItem.setLength`,
-    # reached via `tray_icon::TrayIcon::ns_status_item()`. Already resolved
-    # in Cargo.lock — the `tray-icon` crate itself requests these same three
-    # for the same objc2-app-kit version, so this adds no new resolution.
+    # NSStatusItem.setLength, reached through tray_icon::TrayIcon::ns_status_item().
+    # Already resolved in Cargo.lock: the tray-icon crate itself requests
+    # these same three for the same objc2-app-kit version, so this adds no
+    # new resolution.
     "NSStatusBar",
     "NSStatusBarButton",
     "NSStatusItem",
@@ -57,12 +56,11 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 objc2-foundation = "0.3.2"
 objc2-core-foundation = "0.3.2"
 objc2-core-text = "0.3.2"
-# Default features on objc2-core-graphics pull in objc2-metal, which isn't
-# resolved in Cargo.lock (nothing else in the tree needs it) and would
-# require network access to add. Request only what CGBitmapContext-based
-# text rendering actually needs; CTFont/CTFontDrawGlyphs pull in their own
-# narrower objc2-core-graphics feature set (CGContext/CGFont/CGImage/CGPath)
-# which Cargo unions with this crate's request automatically.
+# Default features on objc2-core-graphics pull in objc2-metal, which is not
+# resolved in Cargo.lock and would require network access to add. This
+# requests only what CGBitmapContext-based text rendering actually needs.
+# CTFont and CTFontDrawGlyphs pull in their own narrower objc2-core-graphics
+# feature set, which Cargo unions with this crate's request automatically.
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = [
     "std",
     "objc2",
