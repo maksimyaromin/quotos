@@ -15,15 +15,9 @@ use crate::providers::{self, AccountDescriptor, FetchError, RawSnapshot};
 use crate::ratelimit::{RateLimitStatus, RateLimiter};
 use crate::statusline;
 
-/// This command is `async` purely for its threading effect; it never
-/// awaits anything in its body. It forks a `security(1)` process per
-/// candidate config dir (see `providers/claude.rs`), and a synchronous
-/// command would run that on the main thread inline with the IPC call
-/// (see "Tauri commands and the main thread" in platform-constraints.md),
-/// stalling the UI for however long the Keychain takes, which lands
-/// exactly when the user opens the Subscriptions screen. The same
-/// reasoning makes the two `tracked_store` commands below `async` as well,
-/// since one of them calls `fsync`.
+/// `async` purely for its threading effect; it never awaits anything in
+/// its body. Forks a `security(1)` process per candidate config dir; see
+/// "Tauri commands and the main thread" in docs/platform-constraints.md.
 #[tauri::command(async)]
 pub(crate) fn list_accounts() -> Vec<AccountDescriptor> {
     providers::claude::discover_accounts()
@@ -43,12 +37,9 @@ impl providers::RequestBudget for AccountBudget<'_> {
     }
 }
 
-/// The one real place a network attempt happens. The `fetch_snapshot`
-/// command for a manual refresh and the scheduler loop for an automatic
-/// refresh both call this, so both go through the same rate-limit
-/// reservation and profile cache. `scheduler.rs`'s module doc explains why
-/// that sharing is also what makes a manual refresh reset the account's
-/// one-minute clock, with no separate wiring needed.
+/// The one real place a network attempt happens, called by both a manual
+/// refresh and the scheduler loop. See "From a read to a rendered row"
+/// in docs/architecture.md.
 async fn perform_fetch(
     state: &AppState,
     account_id: &str,
@@ -71,10 +62,8 @@ async fn perform_fetch(
     let usage = providers::claude::fetch_usage(&state.http, &path, &budget).await?;
     let profile = cached_profile(state, account_id, &path).await;
 
-    // Read after the usage fetch, deliberately: a feed line written while
-    // that fetch was in flight is newer than usage.fetched_at and can win
-    // the frontend's freshest-wins reconciliation. See
-    // `statusline::read_feed`'s doc comment for what `None` covers.
+    // Read after the usage fetch, deliberately: a feed line written mid-fetch
+    // is newer than usage.fetched_at and can win freshest-wins reconciliation.
     let statusline = statusline::read_feed(&state.statusline_root, &path);
 
     Ok(RawSnapshot {
@@ -146,14 +135,9 @@ pub(crate) fn load_tracked(state: tauri::State<'_, AppState>) -> Vec<TrackedAcco
     state.tracked_store.list()
 }
 
-/// This command runs off the main thread. See `list_accounts` for why.
-/// That matters most here: `Store::save` is a temp-file write, an `fsync`,
-/// and a rename, deliberate for durability. See `persistence.rs`. An
-/// `fsync` on the main thread stalls the webview's own rendering for as
-/// long as the filesystem takes. The frontend calls this on every
-/// membership, label, or pin change; `persistence.ts` compares against the
-/// last saved value first, so an unrelated state patch does not trigger a
-/// redundant write.
+/// Runs off the main thread, since `Store::save`'s `fsync` would stall
+/// the webview's own rendering otherwise. See `list_accounts` and
+/// docs/platform-constraints.md.
 #[tauri::command(async)]
 pub(crate) fn save_tracked(
     state: tauri::State<'_, AppState>,
@@ -162,12 +146,9 @@ pub(crate) fn save_tracked(
     state.tracked_store.save(tracked)
 }
 
-/// Reports what is currently configured for this account's statusline.
-/// The in-app opt-in offer checks this before it shows anything, so a row
-/// never claims "not installed" for an account someone already pointed
-/// `statusLine` at some other way. Runs off the main thread because it
-/// touches the filesystem, the same reasoning as `list_accounts` and
-/// `load_tracked` above.
+/// Reports what is currently configured for this account's statusline,
+/// so a row never claims "not installed" for one already pointed
+/// `statusLine` at some other way. Runs off the main thread; see `list_accounts`.
 #[tauri::command(async)]
 pub(crate) fn statusline_status(
     state: tauri::State<'_, AppState>,
@@ -249,19 +230,9 @@ async fn run_due_pass(app: &tauri::AppHandle) {
     }
 }
 
-/// The single native scheduler. It ticks every 5 seconds, which is cheap
-/// because each tick is just a due-time comparison per tracked account
-/// with no network call unless something is actually due. It runs for the
-/// app's lifetime regardless of panel visibility, because a native
-/// OS-level timer has no notion of a hidden webview to be throttled by.
-///
-/// The first periodic tick is deliberately delayed by 5 seconds instead of
-/// firing immediately: every tracked account is due the moment the app
-/// starts, and an immediate tick could fire and emit before the frontend
-/// has mounted and subscribed to `quota-refresh`, silently losing that
-/// first read because events are not queued for late subscribers.
-/// `kick_scheduler` covers the real read-at-launch case; this loop's own
-/// first tick is only a safety net for if that kick is somehow skipped.
+/// The single native scheduler, ticking every 5 seconds. See "Refresh
+/// scheduling" in docs/architecture.md for why its first tick is delayed
+/// rather than immediate.
 pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval_at(
@@ -275,23 +246,17 @@ pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     });
 }
 
-/// Called once, right after the frontend has subscribed to
-/// `quota-refresh`, so the initial read at launch is still near-instant
-/// rather than waiting on `spawn_scheduler`'s delayed first tick. This
-/// goes through the exact same `is_due` and `mark_attempted` bookkeeping
-/// as the periodic loop, so it is a nudge to run the one scheduler sooner
-/// rather than a second scheduler: whichever of this call or the loop's
-/// own tick reaches a given account first makes the other a no-op.
+/// Called once the frontend has subscribed to `quota-refresh`, so launch
+/// stays near-instant rather than waiting on the delayed first tick. Not
+/// a second scheduler: see docs/architecture.md.
 #[tauri::command]
 pub(crate) async fn kick_scheduler(app: tauri::AppHandle) {
     run_due_pass(&app).await;
 }
 
 /// Read-only introspection of the shared rate budget, for the frontend's
-/// developer-only state dump. app.tsx gates the dump on
-/// `import.meta.env.DEV`, so it never ships in a production build's UI.
-/// The command itself is harmless either way, since it is read-only and
-/// touches no credentials.
+/// developer-only state dump gated on `import.meta.env.DEV`. Harmless
+/// either way, since it touches no credentials.
 #[tauri::command]
 pub(crate) fn debug_rate_limit_snapshot(
     state: tauri::State<'_, AppState>,

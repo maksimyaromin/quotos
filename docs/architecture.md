@@ -215,6 +215,21 @@ fetch it twice, spending two slots of the shared budget on one read;
 outright, since whatever is due is already the running pass's job and
 anything that becomes due later is at most one tick away.
 
+`spawn_scheduler`'s native timer ticks every 5 seconds, cheap since each
+tick is just a due-time comparison per tracked account with no network
+call unless something is actually due, and runs for the app's lifetime
+regardless of panel visibility. Its first periodic tick is deliberately
+delayed by those same 5 seconds rather than firing immediately: every
+tracked account is due the moment the app starts, and an immediate tick
+could fire and emit before the frontend has mounted and subscribed to
+`quota-refresh`, silently losing that first read, since events are not
+queued for late subscribers. `kick_scheduler`, called once the frontend
+has actually subscribed, covers the real read-at-launch case; the
+loop's own first tick is only a safety net for if that kick is somehow
+skipped, and both go through the same `is_due` and `mark_attempted`
+bookkeeping, so whichever reaches a given account first makes the other
+a no-op rather than a second scheduler.
+
 Because that budget is shared per account and not per process,
 `single_instance.rs` keeps exactly one Quotos running per machine with an
 OS file lock: two live instances would each spend the whole allowance at
