@@ -1,36 +1,6 @@
-//! Claude Code's own statusline feed, a zero-cost second usage source; see
-//! "The statusline feed" in claude-provider.md for why it exists and how
-//! the frontend reconciles it. The write mechanism here follows six rules:
-//!  1. Only written on an explicit in-app opt-in per subscription, never
-//!     automatic. Only the Tauri commands in `accounts.rs` invoke
-//!     [`install`] and [`remove`], and only in response to a click.
-//!  2. Read-merge-write. Parse first, refuse and change nothing if it does
-//!     not parse, preserve every other key, and write atomically through a
-//!     temp file and rename in the same directory.
-//!  3. A `statusLine` that is already configured and different is never
-//!     clobbered. [`install`] returns [`StatuslineError::Conflict`] unless
-//!     `force` is set.
-//!  4. A timestamped backup of the previous file, plus a small metadata
-//!     record of the previous `statusLine` value or its absence, that
-//!     [`remove`] restores exactly.
-//!  5. The installed command points at a small helper copied into Quotos's
-//!     own Application Support directory. See [`ensure_helper_installed`]'s
-//!     doc comment for why that copy is the running app's own executable
-//!     rather than a purpose-built sidecar binary.
-//!  6. This is a second source. [`read_feed`] only ever hands back a
-//!     timestamped reading for the frontend to reconcile, where the
-//!     freshest reading wins and the provider owns that reconciliation. See
-//!     `providers/claude/statusline-merge.ts`. It never invents a window the
-//!     API did not already report; see [`read_feed`]'s own doc comment for
-//!     what a missing or malformed feed degrades to.
-//!
-//! This is a scoped exception to the provider-adapter seam documented in
-//! docs/architecture.md. The feed's own vocabulary, `five_hour` and
-//! `seven_day`, is Claude Code CLI vocabulary, not a generic shape, but the
-//! install, backup, restore, and read plumbing here is per-config-dir
-//! infrastructure with nothing Claude-specific in how it works. This puts
-//! it in the same category as `persistence.rs` and `scheduler.rs`, which
-//! are shell-owned even though Claude is their only current caller.
+//! Claude Code's own statusline feed, a zero-cost second usage source. See
+//! "The statusline feed" in docs/claude-provider.md for why it exists, the
+//! six rules the write path follows, and how the frontend reconciles it.
 
 use std::fs;
 use std::io::Read;
@@ -46,9 +16,8 @@ use crate::atomic_write::write_string as atomic_write_string;
 /// same executable as the GUI app rather than a separate binary.
 pub const INGEST_FLAG: &str = "--quotos-statusline-ingest";
 
-/// Hard ceiling on how much of the statusline hook's stdin payload is
-/// read. The documented payload is a small, flat JSON object. This exists
-/// only so a misbehaving caller can never make the ingest path buffer
+/// Ceiling on the statusline hook's stdin payload, a small flat JSON
+/// object, so a misbehaving caller can never make the ingest path buffer
 /// unbounded memory.
 const MAX_STDIN_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -117,10 +86,9 @@ pub struct StatuslineRateLimitsDto {
     pub seven_day: Option<StatuslineWindowDto>,
 }
 
-/// What [`read_feed`] hands back to a caller, and what the ingest path
-/// writes. One reading, timestamped by when the helper actually saw it,
-/// not when Quotos later reads the file. That is what makes freshest wins
-/// in the frontend's reconciliation a plain timestamp comparison.
+/// One reading, timestamped by when the helper actually saw it, not when
+/// Quotos later reads the file, so freshest-wins reconciliation is a
+/// plain timestamp comparison.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StatuslineFeedDto {
     pub written_at: String,
@@ -138,10 +106,9 @@ struct BackupRecord {
     previous_status_line: Option<serde_json::Value>,
 }
 
-/// A stable, filesystem-safe identifier for a config dir. The same "hash
-/// the absolute path" shape `providers/claude.rs` uses for Keychain
-/// service names, reused here so two different accounts never collide on a
-/// feed or backup filename.
+/// A stable, filesystem-safe identifier for a config dir, the same
+/// hash-the-absolute-path shape `providers/claude.rs` uses for Keychain
+/// service names, so two accounts never collide on a filename.
 fn slug_for(tag: &str) -> String {
     let digest = Sha256::digest(tag.as_bytes());
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
@@ -172,7 +139,6 @@ fn settings_path(config_dir: &Path) -> PathBuf {
 }
 
 /// Single-quotes a path for the shell `statusLine.command` runs under.
-/// Claude Code's own docs state that the command field runs in a shell.
 /// Handles the one case that matters for a filesystem path, an embedded
 /// single quote, since macOS home directories can contain spaces.
 fn shell_quote(s: &str) -> String {
@@ -194,18 +160,9 @@ fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), Strin
     atomic_write_string(path, &json)
 }
 
-/// Copies Quotos's own currently-running executable to a stable path
-/// inside Application Support, so the installed `statusLine.command` keeps
-/// working even after the app itself moves or is renamed.
-///
-/// This reuses the whole GUI binary rather than building a separate,
-/// smaller sidecar. A purpose-built helper would need Tauri's `externalBin`
-/// sidecar bundling, meaning target-triple-suffixed binaries staged into a
-/// `binaries/` folder before `tauri build`. `main.rs` intercepts
-/// [`INGEST_FLAG`] before any Tauri or GUI code runs at all, so invoking
-/// the copy costs a process spawn and a JSON parse. No window, no status item,
-/// and no webview ever initializes on this path. The tradeoff is disk,
-/// tens of megabytes, for a local desktop app, not correctness.
+/// Copies Quotos's own running executable to a stable path in Application
+/// Support, so `statusLine.command` keeps working after the app moves.
+/// See docs/claude-provider.md for why this reuses the GUI binary.
 fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, StatuslineError> {
     let target = helper_bin_path(app_support_dir);
     let current_exe =
@@ -310,14 +267,9 @@ pub fn status(
     }
 }
 
-/// Installs the helper if needed and points `config_dir/settings.json`'s
-/// `statusLine` at it. Idempotent when already installed by Quotos, a
-/// no-op with no new backup. Refuses a different existing `statusLine`
-/// with [`StatuslineError::Conflict`] unless `force` is set, and always
-/// re-derives that conflict from a fresh read right before writing, never
-/// from an earlier, possibly-stale `status()` call, so a settings.json
-/// edited between the user seeing a conflict and pressing "Replace" is
-/// still caught.
+/// Installs the helper if needed and points `settings.json`'s `statusLine`
+/// at it. Idempotent when already installed. Refuses a different existing
+/// `statusLine` unless `force`, re-derived from a fresh read, not `status()`.
 pub fn install(
     app_support_dir: &Path,
     config_dir: &Path,
@@ -379,10 +331,9 @@ pub fn install(
     })
 }
 
-/// A timestamped backup of the whole previous file, when one existed,
-/// plus a small metadata record of the previous `statusLine` value
-/// specifically. [`remove`] actually restores from the metadata record.
-/// The whole-file backup is kept purely as an inspectable safety net.
+/// A timestamped backup of the whole previous file, plus a metadata
+/// record of the previous `statusLine` value that [`remove`] actually
+/// restores from; the whole-file backup is an inspectable safety net.
 fn backup(
     app_support_dir: &Path,
     config_dir: &Path,
@@ -414,11 +365,9 @@ fn backup(
     Ok(())
 }
 
-/// Restores exactly the previous `statusLine` state, or removes the key if
-/// none existed, read-merge-write the same way [`install`] writes, and
-/// clears the backup metadata once restored. A second `remove()` with
-/// nothing left to restore just clears the key, which is the correct
-/// behavior when Quotos has no record of installing here.
+/// Restores exactly the previous `statusLine` state, or removes the key
+/// if none existed, and clears the backup metadata. A second `remove()`
+/// with nothing left to restore just clears the key.
 pub fn remove(app_support_dir: &Path, config_dir: &Path) -> Result<(), StatuslineError> {
     let slug = slug_for(&config_dir.to_string_lossy());
     let meta_file = meta_path(app_support_dir, &slug);
@@ -445,11 +394,9 @@ pub fn remove(app_support_dir: &Path, config_dir: &Path) -> Result<(), Statuslin
     Ok(())
 }
 
-/// A best-effort read of whatever the helper most recently wrote for this
-/// account. `None` covers "never installed", "no session has fed it yet",
-/// and "the file is unreadable or malformed" identically. Every one of
-/// those degrades silently to the API source, so none of them are worth
-/// distinguishing to the caller.
+/// A best-effort read of the helper's last write for this account. `None`
+/// covers never-installed, never-fed, and unreadable identically, since
+/// all three degrade silently to the API source for the caller.
 pub fn read_feed(app_support_dir: &Path, config_dir: &Path) -> Option<StatuslineFeedDto> {
     let slug = slug_for(&config_dir.to_string_lossy());
     let path = feed_dir(app_support_dir).join(format!("{slug}.json"));
@@ -479,14 +426,8 @@ fn extract_rate_limits(v: &serde_json::Value) -> Option<StatuslineRateLimitsDto>
 }
 
 /// The helper's entire job, run from `main.rs` before any Tauri or GUI
-/// code. See [`ensure_helper_installed`]'s doc comment for why this same
-/// binary is both the app and the helper. Reads the statusline hook's JSON
-/// payload from stdin, writes nothing to stdout, since an empty statusline
-/// output is documented, ordinary behavior and Claude Code just shows a
-/// blank row, and always returns 0. Claude Code's own docs state that a
-/// script exiting with a non-zero code or producing no output only makes
-/// the statusline go blank, so a swallowed error here must never make
-/// Claude Code itself look broken to the user.
+/// code. Always returns 0 and writes nothing on failure, since Claude
+/// Code's own docs say that just blanks the statusline row, never an error.
 pub fn run_ingest_from_stdin(config_dir_tag: &str, feed_dir_arg: &str) -> i32 {
     let mut buf = String::new();
     if std::io::stdin()
@@ -920,13 +861,9 @@ mod tests {
         assert_eq!(read_back, feed);
     }
 
-    /// The ingest helper runs as one process per statusline render, so two
-    /// live Claude Code sessions on the same account write the same feed
-    /// file concurrently. With a shared temp name, one writer's
-    /// `File::create` could truncate another writer's temp file between
-    /// its write and its rename, leaving the renamed-in feed intermittently
-    /// empty or spliced. Every observed final state must be one writer's
-    /// intact payload, and no writer may strand its temp file.
+    /// Two live sessions on the same account can write the same feed file
+    /// concurrently. A shared temp name would let one writer's
+    /// `File::create` truncate another's mid-rename, splicing the result.
     #[test]
     fn overlapping_writers_leave_one_intact_payload_and_no_temp_files() {
         let dirs = TempDirs::new();

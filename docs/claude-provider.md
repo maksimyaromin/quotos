@@ -73,7 +73,34 @@ and backing up whatever `statusLine` value was there before.
 The installed helper is a copy of Quotos's own executable, not a
 separate binary: `main.rs` intercepts an ingest flag as `argv[1]` before
 touching Tauri at all, so the copy Claude Code's hook invokes, possibly
-many times a minute, never starts a second GUI instance.
+many times a minute, never starts a second GUI instance. Reusing the
+whole GUI binary avoids Tauri's `externalBin` sidecar bundling, target-
+triple-suffixed binaries staged into a `binaries/` folder before `tauri
+build`, for a purpose-built helper that would only ever need to spawn,
+parse one JSON payload, and exit; the tradeoff is tens of extra megabytes
+on disk, not correctness, for a local desktop app.
+
+Writing `settings.json` follows six rules: only on an explicit in-app
+opt-in per subscription, never automatic; read-merge-write, refusing and
+changing nothing on a parse failure, preserving every other key, and
+writing atomically through a temp file and rename in the same directory;
+never clobbering a `statusLine` that is already configured and
+different, unless the caller forces a replace; a timestamped backup of
+the previous file plus a small metadata record of the previous
+`statusLine` value, which removal restores exactly; the installed
+command points at the copied helper described above; and the feed is
+always a second source; the frontend's reconciliation, not the Rust
+side, decides which reading wins. `statusline.rs` never invents a window
+the API did not already report.
+
+This is a scoped exception to the provider-adapter seam in
+[architecture.md](architecture.md): the feed's own vocabulary,
+`five_hour` and `seven_day`, is Claude Code CLI vocabulary, not a
+generic shape, but the install, backup, restore, and read plumbing is
+per-config-dir infrastructure with nothing Claude-specific in how it
+works. This puts it in the same category as `persistence.rs` and
+`scheduler.rs`, which are shell-owned even though Claude is their only
+current caller.
 
 On the frontend, `statusline-merge.ts`'s `reconcileWithStatusline` patches
 the raw usage shape before `normalizeUsage` ever sees it, so headline
