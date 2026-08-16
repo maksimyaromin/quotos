@@ -165,9 +165,9 @@ describe("Panel's docked beak rendering", () => {
     expect(filled[0].getAttribute("style")).not.toMatch(/backdrop-filter/i);
   });
 
-  // A non-none backdrop-filter anywhere in the subtree makes that element a
-  // containing block for fixed-position descendants, which is exactly what
-  // SubscriptionRow's fixed "…" dropdown relies on no ancestor doing.
+  // Widens the two tests above from just the fill layer to the whole
+  // subtree; see Panel.tsx's own comment for why backdrop-filter is
+  // banned here at all.
   test("no element anywhere in the panel carries a backdrop filter", () => {
     const { container } = render(
       <Panel docked beakLeft={24}>
