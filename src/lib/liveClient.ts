@@ -57,7 +57,7 @@ export async function renderStatusItem(
   worstUsedPercent: number,
   tooltip: string,
 ): Promise<void> {
-  return invoke("set_tray_status", { segments, worstUsedPercent, tooltip });
+  return invoke("set_status_item_state", { segments, worstUsedPercent, tooltip });
 }
 
 export async function setDetached(detached: boolean): Promise<void> {

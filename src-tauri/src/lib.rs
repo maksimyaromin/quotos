@@ -59,15 +59,15 @@ struct AppState {
     /// "panel open" highlight not already known at repaint time from
     /// segments alone. Flipped by `set_status_item_highlighted`.
     status_item_highlighted: Mutex<bool>,
-    /// The segments `set_tray_status` last received, cached so toggling
+    /// The segments `set_status_item_state` last received, cached so toggling
     /// `status_item_highlighted` can repaint with the same digits without
     /// the frontend resending them.
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
-    /// The glyph's own arc fill last set by `set_tray_status`, 0 to 100,
+    /// The glyph's own arc fill last set by `set_status_item_state`, 0 to 100,
     /// cached for the same reason as `last_status_item_segments`.
     last_status_item_worst_used_percent: Mutex<u8>,
     /// The status item's hover and VoiceOver text last set by
-    /// `set_tray_status`, cached the same way. Starts as the plain product
+    /// `set_status_item_state`, cached the same way. Starts as the plain product
     /// name, matching the builder's own pre-any-data baseline.
     last_status_item_tooltip: Mutex<String>,
     /// The layout the window is supposed to be at right now, while docked
@@ -101,7 +101,7 @@ pub fn run() {
             accounts::save_tracked,
             accounts::kick_scheduler,
             shell::hide_panel,
-            shell::set_tray_status,
+            shell::set_status_item_state,
             shell::set_detached,
             shell::drag_window_step,
             shell::end_window_drag,
@@ -360,9 +360,9 @@ pub fn run() {
                 ],
             )?;
 
-            // Built from the same procedural glyph set_tray_status uses,
+            // Built from the same procedural glyph set_status_item_state uses,
             // rather than a static bundled asset, so there is no window
-            // between launch and the first set_tray_status call where a
+            // between launch and the first set_status_item_state call where a
             // stale or blurry fixed-size icon could show.
             let status_item = TrayIconBuilder::with_id("main-status-item")
                 .icon(Image::new_owned(initial_rgba, initial_w, initial_h))
@@ -370,7 +370,7 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 // The composited glyph and digits image carries no text
-                // VoiceOver can read; set_tray_status keeps this current
+                // VoiceOver can read; set_status_item_state keeps this current
                 // as pinned digits change, and this is just the
                 // pre-any-data baseline.
                 .tooltip("Quotos")

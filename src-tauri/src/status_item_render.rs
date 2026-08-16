@@ -462,7 +462,7 @@ mod text {
     /// `sharedFontManager` requires a `MainThreadMarker` in these bindings
     /// and is genuinely main-thread-restricted, `CTFontManagerCopy*` is a
     /// plain C function with no such requirement. This matters here because
-    /// `set_tray_status` runs inside a Tauri command handler with no
+    /// `set_status_item_state` runs inside a Tauri command handler with no
     /// guarantee of being on the main thread.
     fn monolisa_family_available() -> bool {
         let names: CFRetained<CFArray<CFString>> =

@@ -43,7 +43,7 @@ pub(crate) struct StatusItemSegmentDto {
 /// fill, sent on every call regardless of `segments` so the arc stays
 /// current whether or not anything is pinned.
 #[tauri::command]
-pub(crate) fn set_tray_status(
+pub(crate) fn set_status_item_state(
     app: tauri::AppHandle,
     segments: Vec<StatusItemSegmentDto>,
     worst_used_percent: u8,
@@ -102,7 +102,7 @@ pub(crate) fn set_status_item_highlighted(app: &tauri::AppHandle, highlighted: b
 
 /// The one place the status item icon actually gets redrawn, shared by
 /// both of its independent inputs: the pinned-subscription digits, from
-/// `set_tray_status`, and the "panel open" highlight, from
+/// `set_status_item_state`, and the "panel open" highlight, from
 /// `set_status_item_highlighted`. Neither knows the other's current value,
 /// so this always reads both fresh from `AppState` rather than taking
 /// either as a parameter.

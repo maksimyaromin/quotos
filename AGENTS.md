@@ -32,7 +32,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   that no build ever consumed — all removed along with the duplicate. The two
   build inputs that tree did carry — `assets/app-icon.svg` and
   `assets/menubar-glyph.svg`, the source vectors behind the app icon and the
-  tray glyph's procedural geometry (see `tray_render.rs`'s `glyph_coverage`
+  tray glyph's procedural geometry (see `status_item_render.rs`'s `glyph_coverage`
   below) — moved into `src/design-system/assets/` and stay there; there is no
   automated pipeline that regenerates icons from them; the icon export
   process (see the SVG-to-raster entry under Sharp edges) is manual. Motion is
@@ -78,7 +78,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   `set_title`** — verified by reading `platform_impl/macos/mod.rs` (same
   method that found the `set_title(None)` no-op below): it's a plain
   `NSString`, no attributed-string/color channel anywhere in the crate.
-  `src-tauri/src/tray_render.rs` composites glyph + colored
+  `src-tauri/src/status_item_render.rs` composites glyph + colored
   digits into an RGBA bitmap instead (`set_icon`, `icon_as_template(false)`
   when anything is colored), with a tiny embedded 3x5 pixel font — no font
   library needed for digits and `%`/`!`. `set_icon_for_ns_status_item_button`
@@ -91,8 +91,8 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   tooltip names those bare digits ("Claude Max: Weekly 40% · Session 70%",
   one line per subscription, a stale line marked "— not current") — composed
   entirely by `lib/traySegments.ts`'s `buildTrayTooltip` and passed through
-  `set_tray_status`, which the Rust side applies verbatim (never composes).
-  The tooltip participates in `set_tray_status`'s skip-identical guard
+  `set_status_item_state`, which the Rust side applies verbatim (never composes).
+  The tooltip participates in `set_status_item_state`'s skip-identical guard
   because it can change alone: a rename rewrites its line while every digit
   stays byte-identical.
 - **R3-4: `CLAUDE_CONFIG_DIR=~/.claude` is NOT the same as leaving it
@@ -159,7 +159,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   menu's check item drives `SMAppService.mainAppService` (macOS 13+) via raw
   `objc2` `msg_send!` plus an empty `#[link(name = "ServiceManagement",
   kind = "framework")]` extern block (the same zero-new-crates
-  framework-linking trick `tray_render`'s `text` module uses for Core Text).
+  framework-linking trick `status_item_render`'s `text` module uses for Core Text).
   The checkmark is always re-read from the OS's `status` after a toggle,
   never assumed from the click, so a refused registration reads as
   still-off. An unbundled binary (cargo test, bare `cargo build`) gets
@@ -511,7 +511,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   field name) — a mismatched Rust struct doesn't error, it just silently
   reshapes the JSON in transit.
 - **v4: the tray glyph is a Q now, not an O** (docs/design/NOTES.md §3) —
-  `tray_render.rs`'s `glyph_coverage` moved the ring's gap from 82.75°
+  `status_item_render.rs`'s `glyph_coverage` moved the ring's gap from 82.75°
   centred at 90° (bottom) to 62° centred at 45° (lower-right), added a
   second capsule (the tail, r 3.2→8.0 along that same diagonal, same stroke
   weight, always drawn even at 0% used — "empty quota, empty letter"), and
@@ -523,12 +523,12 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   stay just inside the ring's own axis-aligned bounding box at this specific
   geometry (checked by hand, not by construction) — `natural_outer_diameter`
   needed no change. `render()`'s glyph fill (`worst_used_percent`, 0-100) is
-  sent on *every* `set_tray_status` call regardless of whether anything is
+  sent on *every* `set_status_item_state` call regardless of whether anything is
   pinned — the arc reflects the worst active limit across everything
   tracked whether the bar shows digits or not, not just in the empty state.
 - **v4: the figure layout's "ink-to-ink" numbers in docs/design/NOTES.md §1 are
   outcomes, not independent constants — measure them, don't derive them
-  algebraically.** `tray_render.rs`'s actual structural constants
+  algebraically.** `status_item_render.rs`'s actual structural constants
   (`SIDE_PAD_PX`, `GLYPH_TO_CELL_GAP_PX`, `CELL_WIDTH_PX`,
   `GROUP_GUTTER_PRE_PX`/`HAIRLINE_WIDTH_PX`/`GROUP_GUTTER_POST_PX`) are
   box-model gaps between fixed-width cells; the *ink*-to-ink distances the
@@ -578,7 +578,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   commands here forked processes or `fsync`'d on that thread before R4-2
   (`list_accounts`, `load_tracked`, `save_tracked` — all `(async)` now). The
   same reasoning applies to how often the main-thread ones are *called*:
-  `set_tray_status` compares its segments and returns early when nothing
+  `set_status_item_state` compares its segments and returns early when nothing
   changed, and only re-docks the open panel when the composited icon's width
   actually changed, because it is driven by an effect keyed on the whole
   subscription list.
@@ -671,18 +671,18 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   image. `compute_docked_layout` now derives that margin fresh every call
   from two things Quotos actually knows — the item's *current* measured
   width (`tray.rect()`) and the composited image's own known width
-  (`AppState.last_icon_width_px`, set by `set_tray_status` right before
+  (`AppState.last_icon_width_px`, set by `set_status_item_state` right before
   `set_icon`, always at the buffer's fixed "2x of an 18pt image" convention
   so `/2` gives real points regardless of monitor scale) — via
   `glyph_center_offset_from_item_left_points` (points, not pixels — see
   the coordinate-space entry below), rather than trusting any
-  single constant again. Second: `set_tray_status` (pin/unpin) never
+  single constant again. Second: `set_status_item_state` (pin/unpin) never
   re-docked the panel at all — no `TrayIconEvent` fires for a same-app icon
   resize, so the position captured at the last real tray click just went
   stale the instant the item's width (and therefore its on-screen left
   edge — status items lay out right-to-left, confirmed live: 36pt→64pt
   after pinning one segment, right edge unchanged) changed. Fixed by
-  re-querying and re-docking on every `set_tray_status` call
+  re-querying and re-docking on every `set_status_item_state` call
   (`schedule_resync_after_icon_change`), but a *single* synchronous
   `tray.rect()` call made immediately after `set_icon()` was itself found
   to read a stale rect (AppKit's own layout pass for the new width hadn't
@@ -771,13 +771,13 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   distinguishing the two states needs a bright, detailed backdrop *behind
   the window*, and what is behind the window on this machine is not
   something an agent may rearrange.
-- **The tray image carries fixed side padding, always.** `tray_render`'s
+- **The status item image carries fixed side padding, always.** `status_item_render`'s
   `SIDE_PAD_PX` (6pt per side) exists so A11's "panel open" highlight reads as
   a pressed menu bar button rather than a box hugging the ink, and it is
   applied whether highlighted or not so the glyph — and therefore the beak —
   cannot shift when the highlight toggles. `plain_glyph_rgba` and `render`
   must keep producing the same width (there's a test). `geometry.rs` reads
-  `GLYPH_LEFT_INSET_POINTS` from `tray_render` rather than assuming the glyph
+  `GLYPH_LEFT_INSET_POINTS` from `status_item_render` rather than assuming the glyph
   is the image's leftmost 18pt.
 - **quotos-tray-frame-t1: `tray-icon` v0.24.2 never touches the status
   item's length after creating it with `NSVariableStatusItemLength`, and a
@@ -817,7 +817,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   button-edge-to-neighbour component measured 17.5-18.5pt on its own,
   already at or under the 19-21pt baseline gap between two *unrelated*
   neighbours measured on the same bar). What the followup then traced the
-  *rest* of the 32pt to was real content layout: `tray_render`'s own
+  *rest* of the 32pt to was real content layout: `status_item_render`'s own
   `CELL_WIDTH_PX` reserve on the trailing segment's cell, leaving ~8.5pt of
   unused space after a short string like "0%" out of its 30pt reserve. The
   followup explicitly lifted the content-layout freeze for exactly that one
@@ -1012,7 +1012,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   and output of the placement arithmetic plus `isOnActiveSpace`. All opt-in,
   all silent by default.
 - **Drawing real text (Core Text) into an offscreen `CGBitmapContext` has two
-  non-obvious failure modes, both found by rendering `tray_render.rs`'s
+  non-obvious failure modes, both found by rendering `status_item_render.rs`'s
   actual `render()` output to PNG and inspecting it directly (screenshotting
   the live tray/panel doesn't work here — see above), not by trusting
   passing unit tests (the original tests only checked "a pixel of
@@ -1033,7 +1033,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   compensating for it — the textbook fix is to *also* set a matching
   flipped `CGContextSetTextMatrix`, but it's simpler to just draw in the
   context's native (unflipped) convention and adjust the baseline-position
-  formula to account for that instead (`tray_render.rs`'s `draw_text_impl`
+  formula to account for that instead (`status_item_render.rs`'s `draw_text_impl`
   does this — see its comment for the exact math). A third, unrelated bug
   found the same way: pairing a `CGColorCreateGenericRGB` fill color with a
   `CGColorSpaceCreateDeviceRGB` bitmap context shifts even fully-opaque
@@ -1044,7 +1044,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   colors are plain CSS hex values, i.e. already sRGB by convention.
 - **The tray glyph is drawn procedurally now, not from a raster asset —
   there is no `icons/tray/tray-icon.png` to update if the mark ever
-  changes.** `tray_render.rs`'s `glyph_coverage` ports the exact geometry of
+  changes.** `status_item_render.rs`'s `glyph_coverage` ports the exact geometry of
   `src/design-system/assets/menubar-glyph.svg` (a 16×16-viewBox capacity-gauge
   mark: a faint full-circle track, `r=5.4` stroke `1.4` opacity `0.28`, plus
   a bold round-capped arc on the same circle, stroke `1.9`, with a gap at
@@ -1065,7 +1065,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   composited output rather than trusting the constant alone.
 - **A11 (tray "panel open" highlight) is drawn into the same composited
   bitmap as the glyph/digits, not reached via any native `NSStatusItem`
-  highlighted state** — `tray_render.rs`'s `draw_highlight_background`
+  highlighted state** — `status_item_render.rs`'s `draw_highlight_background`
   paints the handoff's exact translucent rounded rect
   (`rgba(255,255,255,0.20)` dark / `rgba(0,0,0,0.14)` light) behind
   everything else, composited with real "src-over" alpha blending
@@ -1077,7 +1077,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   never from the frontend) plus a cached `AppState.last_tray_segments` (so
   toggling the highlight alone, with no new pinned data, can still repaint
   with the *same* digits) — both read fresh by `repaint_tray_icon`, the one
-  place `set_icon` is actually called now, shared by `set_tray_status` and
+  place `set_icon` is actually called now, shared by `set_status_item_state` and
   `set_tray_highlighted`. Verified live by pixel-diffing the same tray icon
   closed vs. open (`fm-quotos-click.sh peek`): zero difference anywhere
   except an 18×18 region exactly over the glyph.
