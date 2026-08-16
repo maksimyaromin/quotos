@@ -1,32 +1,22 @@
 import { Badge } from "../indicators/Badge.jsx";
 import { CapacityBar } from "../indicators/CapacityBar.jsx";
 
-/** One limit window inside a subscription's detail list. The list is variable:
- *  a window may lack a percentage or a reset time, and its name is the
- *  provider's own wording (rendered verbatim, possibly truncated). Renders
- *  gracefully whether there are 1 or 8 of these. Consumed, not remaining (I2). */
-// D7/D8: "Bar/number colour: <75% healthy, 75%+ warn, 90%+ critical — the
-// number itself is only tinted from 75% up, below that it's neutral." The
-// bar (CapacityBar, below) already applied this per-window via its own
-// `capacityColor`; the adjacent percent number didn't (CLAUDE.md's own note
-// only covers the bar) and was always `--text-primary` regardless of value
-// — this mirrors SubscriptionRow's identical headline-number rule (`amber`
-// from warn, `red` from critical, neutral text below that) for this
-// per-window case, where there's no subscription-wide `severity` to read
-// from, only this window's own `used`.
+/** One limit window inside a subscription's detail list. A window may lack
+ *  a percentage or a reset time, and its name is the provider's own
+ *  wording, rendered verbatim and possibly truncated. Percentages mean
+ *  consumed, never remaining. */
+// Mirrors SubscriptionRow's headline-number rule: red from 90%, amber from
+// 75%, neutral below, evaluated on this window's own `used` since there is
+// no subscription-wide `severity` to read from here.
 function numberColor(used) {
   if (used >= 90) return "var(--red)";
   if (used >= 75) return "var(--amber)";
   return "var(--text-primary)";
 }
 
-// v4 docs/design/NOTES.md §2/§4: each window gets its own leading pin button —
-// same 12x12-in-20x20 glyph/button the row header used to show only when
-// pinned, now always present so nothing appears or shifts on hover (the
-// existing SubscriptionRow rule). Filled (teal) = in the menu bar; ghost
-// (quaternary) = not. Matches the row header's own PinGlyph exactly — kept
-// local here (not imported) since these two files have no shared module of
-// their own and each is a design-system leaf.
+// Filled means pinned to the menu bar, ghost means not. Matches
+// SubscriptionRow's own PinGlyph exactly, kept local here since these two
+// files share no module of their own.
 const PinGlyph = () => (
   <svg
     width="12"
@@ -106,11 +96,10 @@ export function LimitWindow({
           {name}
         </span>
         {scope ? (
-          // `text-overflow` only applies to block containers, and the Badge is
-          // itself a flex container — on it, overflow:hidden hard-clips the tag
-          // mid-character with no "…" ever drawn (verified live; R3-2's note
-          // claiming otherwise mistook the clip for an ellipsis). So the badge
-          // keeps only the layout constraints and an inner block span owns the
+          // text-overflow only applies to block containers, and Badge is
+          // itself a flex container, so overflow:hidden on it hard-clips
+          // the tag mid-character with no ellipsis. The badge keeps only
+          // the layout constraints, and an inner block span owns the
           // truncation.
           <Badge tone="neutral" style={{ flex: "0 1 auto", minWidth: 0, maxWidth: 120 }}>
             <span

@@ -7,17 +7,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** The panel's own window is 360x560 logical; jsdom's default viewport is not,
- *  and the flip-above branch only makes sense against a real one. */
+/** The panel's own window is 360x560 logical. jsdom's default viewport is
+ *  not, and the flip-above branch only makes sense against a real one. */
 function useWindow(width, height) {
   Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
   Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
 }
 
-/** jsdom reports every rect as zero, so the "…" button's position — the only
- *  input the placement math has — has to be supplied. Everything else keeps
- *  jsdom's zeros, including the menu's own measured size, which is why these
- *  tests assert the *anchoring* rules rather than exact pixel offsets. */
+/** jsdom reports every rect as zero, so the "…" button's position, the only
+ *  input the placement math has, must be supplied. These tests assert the
+ *  anchoring rules rather than exact pixel offsets. */
 function anchorButtonAt({ top, bottom, right }) {
   const original = Element.prototype.getBoundingClientRect;
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function mocked() {
@@ -43,13 +42,9 @@ function openMenu() {
   );
 }
 
-// R4-5: the captain's 2026-08-15 screencast — opening the bottom row's "…"
-// menu drew it inside the panel body's `overflow-y: auto` box, so "Stop
-// tracking" was cut in half by the panel's bottom edge and the two-row panel
-// suddenly scrolled. Both consequences come from one property: an absolutely
-// positioned element is clipped by, and counts toward the scroll extent of, its
-// scroll-container ancestor. A fixed one is neither.
-describe("SubscriptionRow's row menu overlays the panel instead of living inside its scroll box (R4-5)", () => {
+// An absolutely positioned element is clipped by, and counts toward the
+// scroll extent of, its scroll-container ancestor. A fixed one is neither.
+describe("SubscriptionRow's row menu overlays the panel instead of living inside its scroll box", () => {
   beforeEach(() => useWindow(360, 560));
 
   it("is positioned against the viewport, not against the scrolled row", () => {
@@ -93,9 +88,8 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
   });
 
   // App.tsx's click-away handler recognises "inside the menu" by this
-  // attribute alone (`closest("[data-quotos-menu-scope]")`), on both the
-  // dropdown and its trigger — moving the dropdown out of the row's own box
-  // must not cost it that.
+  // attribute alone on both the dropdown and its trigger. Moving the
+  // dropdown out of the row's own box must not cost it that.
   it("keeps the menu-scope marker the click-away handler matches on", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
@@ -111,10 +105,7 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
   });
 });
 
-// R6: expanding a row used to be pointer-only — the row div's onClick was the
-// sole expand path, and the "N limits" affordance it pointed at was an inert
-// span, unreachable by keyboard and invisible to the accessibility tree.
-describe("the 'N limits' disclosure is a real, focusable control (R6)", () => {
+describe("the 'N limits' disclosure is a real, focusable control", () => {
   const windows = [
     { id: "w1", label: "Session", used: 40 },
     { id: "w2", label: "Weekly", used: 10 },
@@ -155,10 +146,7 @@ describe("the 'N limits' disclosure is a real, focusable control (R6)", () => {
   });
 });
 
-// v5: "Move up"/"Move down" reorder the panel's rows (and with them the
-// tray's digit order). The menu keeps its one fixed set of items — an edge
-// row's impossible direction renders disabled, macOS-style, never hidden.
-describe("the row menu's Move up / Move down (v5)", () => {
+describe("the row menu's Move up and Move down", () => {
   it("fires the move callback and closes the menu, once each", () => {
     const onMoveDown = vi.fn();
     const onToggleMenu = vi.fn();
@@ -208,11 +196,7 @@ describe("the row menu's Move up / Move down (v5)", () => {
   });
 });
 
-// v6: before this, the open menu's items were reachable by keyboard only by
-// tabbing through the row's other controls in between, arrows did nothing,
-// and closing the menu (Escape, or activating an item) unmounted the focused
-// button — dropping focus to <body> and stranding a keyboard user mid-panel.
-describe("the row menu is keyboard-operable (v6)", () => {
+describe("the row menu is keyboard-operable", () => {
   // Keydowns bubble from wherever focus is to the row div's own handler, so
   // firing on the trigger models "Enter opened the menu, focus still on the
   // '…' button".
@@ -273,7 +257,7 @@ describe("the row menu is keyboard-operable (v6)", () => {
     arrow("ArrowDown"); // Read now
     arrow("ArrowDown"); // Rename
     arrow("ArrowDown"); // Show in menu bar
-    arrow("ArrowDown"); // Move up is disabled — lands on Move down
+    arrow("ArrowDown"); // Move up is disabled, so this lands on Move down.
     expect(document.activeElement.textContent).toBe("Move down");
   });
 
@@ -330,13 +314,7 @@ describe("the row menu is keyboard-operable (v6)", () => {
   });
 });
 
-// v7: the "…" dropdown carries the standard WAI-ARIA menu semantics. Before
-// this, a screen reader saw "More, button, expanded" and then six unrelated
-// buttons in the document — nothing announced that a menu had opened, how many
-// items it holds, or where it ends. The keyboard behavior (arrows wrap,
-// disabled items skipped — v6) already matched the ARIA menu pattern; these
-// roles make the markup say what the interaction already does.
-describe("the row menu exposes WAI-ARIA menu semantics (v7)", () => {
+describe("the row menu exposes WAI-ARIA menu semantics", () => {
   it("the trigger declares it opens a menu", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} />);
     expect(screen.getByLabelText("More").getAttribute("aria-haspopup")).toBe("menu");
@@ -368,12 +346,7 @@ describe("the row menu exposes WAI-ARIA menu semantics (v7)", () => {
   });
 });
 
-// F1: the rename field shows the *composed* label — the custom override when
-// one exists — and commit used to send null ("clear the custom name") whenever
-// the draft equaled it. So confirming without editing, or just opening Rename
-// and clicking away (blur commits), silently deleted an existing custom name.
-// Unchanged must be a no-op; only an explicitly emptied field clears.
-describe("committing a rename without editing keeps an existing custom name (F1)", () => {
+describe("committing a rename without editing keeps an existing custom name", () => {
   function openRenameField(onRename) {
     render(
       <SubscriptionRow
@@ -422,14 +395,10 @@ describe("committing a rename without editing keeps an existing custom name (F1)
   });
 });
 
-// F2: the collapsed detail area is always mounted (the I4 animation needs it)
-// and used to hide via grid-template-rows: 0fr + overflow: hidden alone —
-// which clips the per-window pin buttons but leaves them focusable, so Tab
-// disappeared into the closed row and Enter toggled a tray digit with nothing
-// visible. visibility: hidden is what actually removes clipped content from
-// the tab order; jsdom computes no focusability from style, so these pin the
-// style itself rather than simulating Tab.
-describe("a collapsed row's pin buttons are out of reach, not just out of sight (F2)", () => {
+// visibility: hidden is what removes clipped content from the tab order.
+// jsdom computes no focusability from style, so these pin the style itself
+// rather than simulating Tab.
+describe("a collapsed row's pin buttons are out of reach, not just out of sight", () => {
   const windows = [
     { id: "w1", name: "Session", used: 40 },
     { id: "w2", name: "Weekly", used: 10 },
@@ -457,8 +426,6 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight 
   });
 
   it("transitions visibility on the duration token, so content stays visible while the row closes", () => {
-    // Without this, the windows vanish the instant a collapse starts and the
-    // I4 animation closes an already-empty box.
     render(
       <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
     );

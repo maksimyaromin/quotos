@@ -8,24 +8,24 @@ export interface PinnedFigure {
 }
 
 /**
- * The tray icon + pinned figures. Monochrome by convention; a figure only tints when it needs attention.
- * @startingPoint section="Shell" subtitle="Menu-bar tray icon with pinned figures" viewport="360x60"
+ * The status item glyph plus pinned figures. Monochrome by convention; a figure only tints when it needs attention.
+ * @startingPoint section="Shell" subtitle="Menu-bar status item with pinned figures" viewport="360x60"
  */
 export interface MenuBarTileProps {
-  /** The pinned subscriptions shown beside the glyph (typically 0–2). */
+  /** The pinned subscriptions shown beside the glyph, typically 0 to 2. */
   pins?: PinnedFigure[];
   /** Click opens the panel. */
   onClick?: () => void;
-  /** Render on a mock menu-bar strip (default) or bare (false) for embedding. */
+  /** Render on a mock menu-bar strip by default, or bare when false, for embedding. */
   showStrip?: boolean;
   style?: React.CSSProperties;
 }
 
 /**
- * The tray icon + pinned figures. Monochrome by convention; a figure only tints
- * (amber/red) when it needs attention.
+ * The status item glyph plus pinned figures. Monochrome by convention; a
+ * figure only tints, amber or red, when it needs attention.
  */
 export function MenuBarTile(props: MenuBarTileProps): React.ReactElement;
 
-/** The placeholder quota-ring glyph (not a logo). Monochrome, currentColor. */
+/** The placeholder quota-ring glyph. Not a logo. Monochrome, currentColor. */
 export function QuotaGlyph(props: { size?: number }): React.ReactElement;

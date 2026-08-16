@@ -1,25 +1,21 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 
-// Mirrors --panel-width/--radius-xl (tokens/spacing.css). Duplicated as a
-// plain number, the same way the native side duplicates it
-// (PANEL_WIDTH in src-tauri/src/geometry.rs's docked_layout_in_points) — the SVG path math below
-// needs concrete units, not a CSS custom property string.
+// Mirrors --panel-width in tokens/spacing.css, duplicated as a plain number
+// because the SVG path math below needs concrete units, not a CSS custom
+// property string.
 const PANEL_WIDTH = 332;
 export const PANEL_RADIUS = 12;
 
-// The beak's shape. R3-10: the handoff's "12×12" is **superseded by the
-// captain's own instruction** after he saw it at real size — *"он во первых
-// маленький"*. These numbers are a plain authored shape, free to retune
-// visually, but three things elsewhere are keyed to them and must move
-// together (there is no build step that syncs them):
-//   - BEAK_BASE_HALF * 2 must equal `BEAK_BASE_WIDTH` in
-//     src-tauri/src/geometry.rs's `docked_layout_in_points`, which converts a
-//     glyph centre into this component's `beakLeft`;
-//   - BEAK_HEIGHT is what that same function subtracts to put the beak's
-//     *tip* just under the menu bar rather than the panel's top edge;
-//   - NOTCH_RESERVE must be at least BEAK_HEIGHT plus half the 0.5px stroke,
-//     and equal to app.css's `padding-top`, which is what actually keeps the
-//     beak inside the transparent window instead of clipped by its edge.
+// A plain authored shape. Three things elsewhere are keyed to these numbers
+// and must move together, since nothing syncs them automatically:
+//   - BEAK_BASE_HALF * 2 must equal BEAK_BASE_WIDTH in
+//     src-tauri/src/geometry.rs's docked_layout_in_points, which converts a
+//     glyph center into this component's beakLeft.
+//   - BEAK_HEIGHT is what that function subtracts to put the beak's tip
+//     just under the menu bar rather than the panel's top edge.
+//   - NOTCH_RESERVE must be at least BEAK_HEIGHT plus half the 0.5px
+//     stroke, and equal app.css's padding-top, which keeps the beak inside
+//     the transparent window instead of clipped by its edge.
 export const BEAK_BASE_HALF = 10;
 export const BEAK_HEIGHT = 10;
 const BEAK_TIP_ROUND = 3;
@@ -28,32 +24,19 @@ const BEAK_TIP_ROUND = 3;
 export const NOTCH_RESERVE = 12;
 
 /** Builds one clockwise SVG path for the panel's full outline: a rounded
- *  rect, with the beak (if `beakLeft` is given) fused into the top edge as
- *  a single continuous boundary — no separate shape, no seam. `width`/
- *  `height` are the rounded rect's own dimensions; the returned path is
- *  expressed in a coordinate space whose y=0 is `NOTCH_RESERVE` above the
- *  rect's top edge, matching how the caller positions this shape's own box
- *  (see `Panel`'s `beakBox` style). Coordinates are used directly as SVG
- *  path commands, so this has no other dependencies. */
+ *  rect, with the beak fused into the top edge as a single continuous
+ *  boundary when `beakLeft` is given. `width` and `height` are the rounded
+ *  rect's own dimensions. The returned path is expressed in a coordinate
+ *  space whose y=0 is `NOTCH_RESERVE` above the rect's top edge, matching
+ *  how the caller positions this shape's own box. */
 export function buildPanelOutlinePath(width, height, beakLeft) {
   const rectTop = NOTCH_RESERVE;
   const rectBottom = NOTCH_RESERVE + height;
 
-  // The glyph the beak tracks sits close to the panel's own left edge by
-  // design (handoff: "клюв прижат к левому краю") — close enough, in this
-  // panel's actual geometry, that the notch's natural base can fall
-  // *inside* the top-left corner's own 12px radius zone (confirmed live:
-  // the correct, glyph-derived `beakLeft` came out to 3px, well under the
-  // corner radius). An earlier version of this function assumed the notch
-  // and both top corners were always cleanly separated and would have
-  // needed the *caller* to keep them apart — which meant clamping the beak
-  // away from its true position to protect the path, moving it visibly off
-  // the glyph (a real regression the captain caught live: "центровки снова
-  // нет"). Fixed here instead: each of the two top corners' own radius
-  // shrinks just enough to stay clear of the notch actually being placed,
-  // so the *notch* always gets its true, glyph-correct position and the
-  // corner adapts, not the other way around. Only the top-left/top-right
-  // corners can ever be affected (the notch never reaches the bottom ones).
+  // The beak's glyph anchor can sit close enough to the panel's left edge
+  // that the notch falls inside a top corner's own radius zone, so each top
+  // corner's radius shrinks to stay clear of the notch's actual position.
+  // Only the top corners are ever affected.
   let leftRadius = PANEL_RADIUS;
   let rightRadius = PANEL_RADIUS;
   if (beakLeft != null) {
@@ -69,12 +52,10 @@ export function buildPanelOutlinePath(width, height, beakLeft) {
     const apexX = beakLeft + BEAK_BASE_HALF;
     const apexY = rectTop - BEAK_HEIGHT;
 
-    // Tip rounding: a quadratic Bezier with its control point *at* the
-    // sharp apex pulls the curve toward that point without reaching it —
-    // the standard way to round a corner without computing a true arc's
-    // tangent geometry by hand. `p1`/`p2` are the points, pulled back
-    // BEAK_TIP_ROUND along each edge from the apex, where the curve starts
-    // and ends.
+    // A quadratic Bezier with its control point at the sharp apex rounds
+    // the tip without computing an arc's tangent geometry directly. p1 and
+    // p2 are the curve's start and end points, pulled back BEAK_TIP_ROUND
+    // along each edge from the apex.
     const leftLen = Math.hypot(baseLeftX - apexX, rectTop - apexY);
     const p1x = apexX + ((baseLeftX - apexX) / leftLen) * BEAK_TIP_ROUND;
     const p1y = apexY + ((rectTop - apexY) / leftLen) * BEAK_TIP_ROUND;
@@ -106,35 +87,25 @@ export function buildPanelOutlinePath(width, height, beakLeft) {
 }
 
 /** The popover shell: a floating macOS vibrancy surface with a top beak, a
- *  header (title + toolbar actions), a scrollable body, and an optional footer.
- *  Depth is a single float — a soft shadow + hairline rim.
+ *  header, a scrollable body, and an optional footer. Depth is a single
+ *  float: a soft shadow and hairline rim.
  *
- *  The beak is pinned to the panel's left edge, not centered — the panel
- *  opens rightward from the tray icon, and `beakLeft` places the beak under
- *  wherever the glyph actually sits (mirrors the interactive prototype's own
- *  anchor math: `glyphCenterX - panelLeft`, clamped to stay inside the
- *  panel). Docked (attached under the tray) shows the beak; detached hides
- *  it and the header carries a snap-back affordance instead (see App.tsx).
+ *  The beak is pinned to the panel's left edge, not centered, since the
+ *  panel opens rightward from the status item and `beakLeft` places the
+ *  beak under wherever the glyph actually sits. Docked shows the beak.
+ *  Detached hides it, and the header carries a snap-back affordance
+ *  instead.
  *
- *  Docked, the beak is fused into the panel's own outline as one shape —
- *  a single fill and one 0.5px border tracing the whole boundary (rect
- *  *and* beak edges, no seam where they meet) — via one SVG path
- *  (`buildPanelOutlinePath`) used both as a `clip-path` for a background
- *  layer and as the stroke itself. Two translucent layers stacked on top
- *  of each other (the beak's old rotated-square div, painted over the
- *  panel body wherever they overlapped) is exactly what read as a visible
- *  seam over a real desktop: 0.86 alpha over 0.86 alpha is not 0.86. One
- *  shape, one fill, one stroke is what removes it — re-verified over a
- *  bright backdrop after the blur was dropped (see the fill layer below),
- *  since the original argument for one shape leaned partly on the blur
- *  kernel not sampling across an element boundary and that argument is
- *  gone now. The remaining reason still holds on its own.
+ *  Docked, the beak is fused into the panel's own outline as one shape,
+ *  not two stacked layers: two overlapping translucent fills would double
+ *  the alpha and show a seam where they meet. One SVG path,
+ *  `buildPanelOutlinePath`, is used both as a `clip-path` for the
+ *  background layer and as the border stroke.
  *
- *  The header is always grab/grabbing — dragging it is how the panel
- *  detaches (there is no detach button). `onHeaderPointerDown` is wired by
- *  the caller, which owns the drag-vs-click distinction and the actual
- *  window move (native Tauri drag, or a simulated position in the browser
- *  harness — see App.tsx). */
+ *  The header is always grab or grabbing, since dragging it is how the
+ *  panel detaches. There is no detach button. `onHeaderPointerDown` is
+ *  wired by the caller, which owns the drag-versus-click distinction and
+ *  the actual window move. */
 export function Panel({
   title = "Quotos",
   docked = true,
@@ -155,21 +126,18 @@ export function Panel({
       : null;
   const clipId = useId();
 
-  // The unified beak+rect shape needs the content's *real* rendered height
-  // (rows expand/collapse, the body scrolls past a variable number of
-  // subscriptions) — there is no way to express "however tall the content
-  // turns out to be" as a static SVG path, so this measures it directly
-  // rather than guessing or hardcoding a max.
+  // The SVG outline needs the content's real rendered height, and there is
+  // no way to express that as a static path, so this measures it directly
+  // instead of guessing or hardcoding a max.
   const contentRef = useRef(null);
   const [contentHeight, setContentHeight] = useState(0);
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return undefined;
-    // Measured synchronously here (not only via the observer's own,
-    // inherently-async first callback) so the very first paint already has
-    // a real height — `useLayoutEffect` flushes its own state update
-    // before the browser paints, so there is no flash of an unstyled,
-    // backgroundless panel on open.
+    // Measured synchronously here, not only via the observer's async first
+    // callback, so the first paint already has a real height.
+    // useLayoutEffect flushes its update before the browser paints,
+    // avoiding a flash of an unstyled panel.
     setContentHeight(el.getBoundingClientRect().height);
     const observer = new ResizeObserver((entries) => {
       const next = entries[0]?.contentRect.height;
@@ -193,43 +161,16 @@ export function Panel({
     >
       {pathD ? (
         <>
-          {/* The fill layer — clipped to the exact same path the stroke
-              (below, painted after the content so it's never partly
-              covered by the content box's own edge) traces, so there is
-              nothing for a second translucent layer to double up against.
-              The clipPath def itself has no visual footprint of its own —
-              just referenced by `clip-path` below.
+          {/* The fill layer is clipped to the same path the stroke traces,
+              so nothing doubles up visually.
 
-              W1: it carries **no `backdrop-filter`**, deliberately, and
-              that is the fix for the captain's *"фон должен оставаться
-              прозрачным всегда а не мерцать"*. It used to carry
-              `var(--blur-vibrancy)` (`saturate(180%) blur(28px)`).
-              Quotos's window is `transparent: true` and its page paints
-              nothing behind this element, so the backdrop pass has no
-              in-page content to blur — most of the time it resolves to
-              nothing and the surface degenerates to a plain alpha
-              composite of this 0.86 fill over the desktop, which is the
-              see-through look the whole design is built around. But it
-              does not always resolve to nothing: in the captain's own
-              screencast, ~20% of frames instead show that pass running
-              against the *below-window* content, blurring it into a flat
-              wash. Measured off his frames, the two states are
-              unambiguous — over a Gmail window whose own detail measures
-              mean |dI/dx| = 16.9, the good frames read 2.2 inside the
-              panel (16.9 x 0.14 = 2.4 predicted for an unblurred pass-
-              through: no blur at all), the flat frames read 0.04, and the
-              flat surface un-composites through this fill to a uniform
-              229 against a real backdrop mean of 230.2. So the blur never
-              contributed anything to how the panel is *supposed* to look;
-              its only effect was the flicker. Removing it makes the good
-              state the only reachable state, with the colours, alpha,
-              rim, shadow and beak geometry all untouched.
-
-              Do not add one back here, and do not add one to any ancestor
-              of the panel body: besides restoring the flicker, a non-none
-              `backdrop-filter` makes an element a containing block for
-              fixed-position descendants, which is what SubscriptionRow's
-              own R4-5 note depends on not happening. */}
+              Deliberately no backdrop-filter here. The window is
+              transparent with nothing behind it to blur, so the filter
+              only adds flicker with no visual benefit. Never add
+              backdrop-filter to any ancestor of the panel body either: a
+              non-none value creates a containing block for fixed-position
+              descendants, which SubscriptionRow's row menu depends on not
+              happening. */}
           <svg width="0" height="0" style={{ position: "absolute" }}>
             <defs>
               <clipPath id={clipId}>
@@ -262,9 +203,6 @@ export function Panel({
           overflow: "hidden",
         }}
       >
-        {/* header — always the drag handle; the first movement detaches
-            (see App.tsx's pointer handling), so the cursor always reads
-            grab/grabbing even while docked. */}
         <div
           onMouseDown={onHeaderPointerDown}
           style={{
@@ -292,9 +230,8 @@ export function Panel({
           </span>
           {headerActions}
         </div>
-        {/* body — no reserved scrollbar gutter; the track is hidden outright
-            (scrollbar-width: none / ::-webkit-scrollbar{width:0} in app.css)
-            so there is nothing to reserve space for in the first place. */}
+        {/* No reserved scrollbar gutter: app.css hides the track outright,
+            so there is nothing to reserve space for. */}
         <div
           className="quotos-scroll"
           style={{
@@ -308,7 +245,6 @@ export function Panel({
         >
           {children}
         </div>
-        {/* footer */}
         {footer ? (
           <div
             style={{
@@ -324,12 +260,10 @@ export function Panel({
         ) : null}
       </div>
       {pathD ? (
-        // The border — one stroke along the same path the fill was clipped
-        // to, painted *after* (on top of) the content box so the content's
-        // own edge — which sits almost exactly on the rect portion of this
-        // same boundary — never covers half its width. Traces the beak's
-        // two exposed edges and the rect's corners as a single continuous
-        // line, with no seam at the join between them.
+        // Painted after the content box, so the content's own edge does
+        // not cover half the stroke's width. One continuous line traces
+        // both the beak's exposed edges and the rect's corners, with no
+        // seam at the join.
         <svg
           aria-hidden="true"
           width={PANEL_WIDTH}

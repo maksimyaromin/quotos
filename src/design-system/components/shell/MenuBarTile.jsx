@@ -1,5 +1,6 @@
-/** The placeholder menu-bar glyph — a quota ring. NOT a logo (Quotos has
- *  none); a functional macOS template mark, monochrome via currentColor. */
+/** The placeholder menu-bar glyph, a quota ring. Not a logo, since Quotos
+ *  has none. A functional macOS template mark, monochrome via
+ *  currentColor. */
 export function QuotaGlyph({ size = 15 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flex: "0 0 auto" }}>
@@ -30,10 +31,11 @@ const AttentionMark = () => (
   </svg>
 );
 
-/** The tray representation: the glyph plus optional pinned figures. Monochrome
- *  by macOS convention — a pinned figure only takes a warning tint (amber /
- *  red) when it actually needs attention; broken pins show a small mark instead
- *  of a stale number. Renders on a mock menu-bar strip for preview. */
+/** The status item's representation: the glyph plus optional pinned
+ *  figures. Monochrome by macOS convention, so a pinned figure only takes
+ *  a warning tint, amber or red, when it actually needs attention. Broken
+ *  pins show a small mark instead of a stale number. Renders on a mock
+ *  menu-bar strip for preview. */
 export function MenuBarTile({ pins = [], onClick, showStrip = true, style }) {
   const tintFor = (p) => {
     if (p.state === "broken" || p.state === "behind") return "var(--amber)";
@@ -66,7 +68,7 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }) {
       <QuotaGlyph />
       {pins.map((p, i) => (
         <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: pins carry no stable id yet; revisit in stage 2.
+          // biome-ignore lint/suspicious/noArrayIndexKey: pins carry no stable id yet.
           key={i}
           style={{ display: "inline-flex", alignItems: "center", gap: 3, color: tintFor(p) }}
         >

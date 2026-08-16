@@ -4,7 +4,7 @@ import { CapacityBar } from "../indicators/CapacityBar.jsx";
 import { StatusDot } from "../indicators/StatusDot.jsx";
 import { LimitWindow } from "./LimitWindow.jsx";
 
-// Minimal default affordance glyphs (generic UI arrows/marks, not brand icons).
+// Minimal default affordance glyphs: generic UI arrows and marks, not brand icons.
 const Chevron = ({ open }) => (
   <svg
     width="12"
@@ -45,9 +45,9 @@ const MenuDotsGlyph = () => (
   </svg>
 );
 
-// R4-5: the row menu's geometry, in viewport coordinates. It is `position:
-// fixed` rather than `position: absolute` inside the row, and that is a fix,
-// not a style choice — see the `useLayoutEffect` below.
+// The row menu's geometry, in viewport coordinates. It is position: fixed
+// rather than absolute inside the row, deliberately, see the
+// useLayoutEffect below.
 const MENU_GAP = 4; // between the "…" button's bottom edge and the menu's top
 const MENU_VIEWPORT_MARGIN = 8; // never closer than this to the window's own edge
 const MENU_MIN_WIDTH = 168;
@@ -83,13 +83,13 @@ function MenuItem({ danger, disabled, onClick, children }) {
 }
 
 /** The core panel row: one subscription, scannable in a single pass. Header
- *  order is fixed — dot, name + subtitle, pin (only if pinned), state badge,
- *  the always-visible "…" menu — nothing shifts, appears, or disappears on
- *  hover. Clicking anywhere on the row expands it; an expanded (or
- *  menu-open) row keeps --bg-row-hover so it visibly reads as open. Renders
- *  a "% used" headline + capacity bar for data-bearing states, and a
- *  message for not-connected / connecting / broken / no-limits-yet. Mirrors
- *  quotos-prototype.html's row logic exactly — see design-notes. */
+ *  order is fixed: dot, name and subtitle, pin when pinned, state badge,
+ *  then the always-visible "…" menu. Nothing shifts, appears, or
+ *  disappears on hover. Clicking anywhere on the row expands it. An
+ *  expanded or menu-open row keeps --bg-row-hover so it visibly reads as
+ *  open. Renders a percent-used headline and capacity bar for data-bearing
+ *  states, or a message otherwise. Mirrors docs/design/prototype.html's
+ *  row logic. */
 export function SubscriptionRow({
   label,
   provider,
@@ -101,16 +101,14 @@ export function SubscriptionRow({
   lastRead = null,
   windows = [],
   reason = null,
-  /** R3-4: classified by the caller (see lib/rowPresentation.ts), not
-   *  inferred from `state` here. "Needs sign-in" used to be shown for every
-   *  `broken` row, so an offline launch or an HTTP 403 told the captain his
-   *  working account was signed out. */
+  /** Classified by the caller, see lib/rowPresentation.ts, not inferred
+   *  from `state` here. */
   badge = null,
-  /** v4: how many of this subscription's windows are currently pinned — an
-   * indicator, not a control (docs/design/NOTES.md §2). Renders nothing at 0. */
+  /** How many of this subscription's windows are currently pinned. An
+   * indicator, not a control. Renders nothing at 0. */
   pinnedCount = 0,
-  /** v4: whether the *headline* window specifically is pinned — what the
-   * "…" menu's wording (below) reflects and toggles via `onTogglePin`. */
+  /** Whether the headline window specifically is pinned. The "…" menu's
+   * wording reflects this and toggles it via `onTogglePin`. */
   headlinePinned = false,
   expanded = false,
   menuOpen = false,
@@ -118,20 +116,19 @@ export function SubscriptionRow({
   actionDisabled = false,
   footerNote = null,
   onAction,
-  /** v4: toggles the *headline* window's pin — the "…" menu item only. */
+  /** Toggles the headline window's pin. The "…" menu item only. */
   onTogglePin,
-  /** v4: toggles a specific window's pin, called with that window's `id` —
-   * wired to each row in the expanded list's own pin button. */
+  /** Toggles a specific window's pin, called with that window's `id`.
+   * Wired to each row in the expanded list's own pin button. */
   onToggleWindowPin,
   onToggleExpand,
   onToggleMenu,
   onRename,
   onReadNow,
-  /** v5: reordering — the "…" menu's "Move up"/"Move down". Panel order
-   * drives the tray's digit order too, so this is how the person controls
-   * which account's numbers come first. An edge row's impossible direction
-   * renders disabled (macOS-style) rather than hidden, keeping the menu's
-   * one fixed set of items. */
+  /** Reordering via the "…" menu's Move up and Move down. Panel order
+   * drives the status item's digit order too. An edge row's impossible
+   * direction renders disabled rather than hidden, keeping the menu's one
+   * fixed set of items. */
   canMoveUp = false,
   canMoveDown = false,
   onMoveUp,
@@ -151,29 +148,16 @@ export function SubscriptionRow({
   const menuRef = React.useRef(null);
   const [menuPos, setMenuPos] = React.useState(null);
 
-  // R4-5: place the open menu in *viewport* coordinates, under its own "…"
-  // button.
+  // Places the open menu in viewport coordinates, under its own "…" button.
+  // Measured after mount rather than computed from constants, since
+  // whether the menu opens downward or flips above depends on where the
+  // row sits in the window. useLayoutEffect, not useEffect, flushes the
+  // resulting state update before paint, so the menu never renders visible
+  // at 0,0 for a frame.
   //
-  // It used to be `position: absolute` inside the row, which put it inside the
-  // panel body's `overflow-y: auto` box. Two separate consequences, both in
-  // the captain's 2026-08-15 screencast: the menu was clipped by the panel's
-  // bottom edge (its last item, "Stop tracking", cut in half), and — because
-  // an absolutely-positioned element *does* count toward its scroll
-  // container's scrollable area — merely opening it made a two-row panel
-  // scrollable, so reaching the clipped item meant scrolling the rows out from
-  // under the cursor first. `position: fixed` fixes both at once and for the
-  // same reason: its containing block is the viewport, so no ancestor's
-  // `overflow` can clip it and it adds nothing to any scroll extent. (It works
-  // here only because nothing above this row establishes a containing block
-  // for fixed descendants — no `transform`, `filter`, `backdrop-filter`,
-  // `perspective`, `will-change` or `contain` on the panel's own wrappers. The
-  // panel's blurred backdrop layer is a *sibling*, not an ancestor.)
-  //
-  // Measured after mount rather than computed from constants, because whether
-  // the menu opens downward or flips above depends on where the row happens to
-  // sit in a 560px-tall window. `useLayoutEffect` (not `useEffect`) so the
-  // resulting state update is flushed before paint — the menu is rendered
-  // hidden for exactly one layout pass, never a visible frame at 0,0.
+  // This depends on nothing above the row establishing a containing block
+  // for fixed descendants: no transform, filter, backdrop-filter,
+  // perspective, will-change or contain on the panel's own wrappers.
   React.useLayoutEffect(() => {
     if (!menuOpen) {
       setMenuPos(null);
@@ -208,11 +192,10 @@ export function SubscriptionRow({
     };
   }, [menuOpen]);
 
-  // v6: when the menu closes, focus is often standing on an item that just
-  // unmounted (Escape, or Enter on the item itself), which drops it to
-  // <body> and strands a keyboard user mid-panel. Hand it back to the "…"
-  // trigger — but only when it was genuinely lost; a click that closed the
-  // menu by landing somewhere else keeps its own target.
+  // When the menu closes, focus is often standing on an item that just
+  // unmounted, which drops it to <body>. Hand it back to the "…" trigger,
+  // but only when focus was genuinely lost: a click that closed the menu
+  // by landing somewhere else keeps its own target.
   const wasMenuOpen = React.useRef(false);
   React.useEffect(() => {
     if (wasMenuOpen.current && !menuOpen && document.activeElement === document.body) {
@@ -245,11 +228,8 @@ export function SubscriptionRow({
   const commitRename = () => {
     setRenaming(false);
     const trimmed = draft.trim();
-    // F1: `label` is the composed name — the custom override when one exists —
-    // so an unchanged draft must be a no-op, never a clear. Treating "equals
-    // what the field showed" as "revert to provider name" wiped an existing
-    // custom name on every confirm-without-edit, and blur commits too, so
-    // merely opening Rename and clicking away did the same. Only an
+    // `label` is the composed name, the custom override when one exists,
+    // so an unchanged draft must be a no-op, never a clear. Only an
     // explicitly emptied field clears the custom name.
     if (trimmed === label) return;
     onRename?.(trimmed.length > 0 ? trimmed : null);
@@ -259,12 +239,10 @@ export function SubscriptionRow({
   const reading = state === "reading" || state === "connecting";
   const hasData = typeof used === "number";
 
-  // R2-2/followup-3: the headline number and bar take their color from the
-  // provider-computed severity (the worst of *every* window), not from the
-  // headline percentage's own magnitude — the captain's own example is a
-  // 20%-weekly account whose session is nearly out, which must still read
-  // amber. The handoff's own rule still applies on top: tint only from warn
-  // upward, stay neutral below it.
+  // The headline number and bar take their color from the
+  // provider-computed severity, the worst of every window, not from the
+  // headline percentage's own magnitude. Tints only from warn upward,
+  // stays neutral below it.
   const numColor = stale
     ? "var(--amber)"
     : severity === "critical"
@@ -282,15 +260,12 @@ export function SubscriptionRow({
     onToggleExpand?.();
   };
 
-  // v6: the open menu's keyboard path — ArrowUp/ArrowDown walk the enabled
-  // items (wrapping, like a native NSMenu), Home/End jump to the edges.
-  // Lives on the row div because the fixed-position dropdown is still this
-  // row's DOM child, so keydowns from the trigger and the items alike bubble
-  // through here: Enter on the "…" button, then ArrowDown, reaches "Read
-  // now" without tabbing through the row's other controls first. Dismissal
-  // is deliberately not handled here — Escape and click-away stay with
-  // App's window-level layering. The sign-in code field is the one focusable
-  // that can coexist with an open menu; its caret keeps the arrow keys.
+  // ArrowUp and ArrowDown walk the enabled items, wrapping like a native
+  // NSMenu. Home and End jump to the edges. Lives on the row div because
+  // the fixed-position dropdown is still this row's DOM child, so keydowns
+  // bubble through here. Dismissal is not handled here: Escape and
+  // click-away stay with the window-level layering in App.tsx. The sign-in
+  // code field is excluded so its caret keeps the arrow keys.
   const handleMenuKeyDown = (e) => {
     if (!menuOpen || !menuRef.current) return;
     if (e.target.tagName === "INPUT") return;
@@ -331,7 +306,6 @@ export function SubscriptionRow({
         ...style,
       }}
     >
-      {/* header — fixed order: dot, name+subtitle, pin (if pinned), badge, "…" */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}>
         <StatusDot state={state} style={{ marginTop: 5, flex: "0 0 auto" }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -440,12 +414,10 @@ export function SubscriptionRow({
         </button>
       </div>
 
-      {/* body */}
       {signInInProgress ? (
-        // R2-6: Claude Code's own sign-in is running for this account (see
-        // signin.rs) — it opens the browser itself, so Quotos only needs to
-        // relay whatever code comes back. Replaces the reason text while
-        // active; the row's own action button is hidden by the caller.
+        // Claude Code's own sign-in is running for this account, see
+        // signin.rs. It opens the browser itself, so Quotos only relays
+        // whatever code comes back. Replaces the reason text while active.
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           <div
             style={{
@@ -582,7 +554,6 @@ export function SubscriptionRow({
         </div>
       )}
 
-      {/* footer */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 20 }}>
         <span
           style={{
@@ -625,11 +596,11 @@ export function SubscriptionRow({
           </button>
         ) : null}
         {windows && windows.length > 0 ? (
-          // R6: a real button, not a span — the row div's own onClick is the
-          // pointer path, but a div is unreachable by keyboard and invisible
-          // to the accessibility tree, so this is the row's only focusable
-          // expand control. stopPropagation keeps the row's click from
-          // toggling it straight back.
+          // A real button, not a span, so this stays reachable by keyboard
+          // and visible to the accessibility tree even though the row
+          // div's own onClick already handles pointer clicks.
+          // stopPropagation keeps the row's click from toggling it
+          // straight back.
           <button
             type="button"
             aria-expanded={expanded}
@@ -657,22 +628,20 @@ export function SubscriptionRow({
         ) : null}
       </div>
 
-      {/* expanded detail — always mounted, animated via grid-template-rows so
-          expand/collapse is a deliberate motion rather than a pop, and never
-          shifts layout by itself (I4). Collapsed it must also be
-          visibility-hidden, not merely clipped: overflow leaves the per-window
-          pin buttons in the tab order, so Tab vanished into the closed row and
-          Enter toggled a tray digit with nothing on screen (F2). visibility
-          transitions on the same token — it animates discretely, keeping the
-          content visible while the row closes and only then dropping it from
-          the tab order. */}
+      {/* Always mounted, animated via grid-template-rows so expand and
+          collapse are a deliberate motion. Collapsed, it must also be
+          visibility-hidden, not merely clipped: overflow alone leaves the
+          per-window pin buttons in the tab order, reachable by keyboard
+          with nothing on screen. visibility transitions on the same
+          token, so it animates discretely, staying visible while the row
+          closes and only then dropping out of the tab order. */}
       <div
         aria-hidden={!expanded}
         style={{
           display: "grid",
           gridTemplateRows: expanded && windows && windows.length > 0 ? "1fr" : "0fr",
           visibility: expanded && windows && windows.length > 0 ? "visible" : "hidden",
-          // biome-ignore format: reducedMotion.test.jsx scans this line for a --dur token; keep it on one line.
+          // biome-ignore format: reducedMotion.spec.jsx scans this line for a --dur token; keep it on one line.
           transition: "grid-template-rows var(--dur-base) var(--ease-standard), visibility var(--dur-base) var(--ease-standard)",
         }}
       >
@@ -703,9 +672,9 @@ export function SubscriptionRow({
         </div>
       </div>
 
-      {/* the "…" menu — one fixed set of actions, always the same place.
-          Overlays everything (see the placement effect above): never clipped
-          by the panel body, never part of its scroll extent. */}
+      {/* One fixed set of actions, always the same place. Overlays
+          everything: never clipped by the panel body, never part of its
+          scroll extent. */}
       {menuOpen ? (
         <div
           ref={menuRef}
