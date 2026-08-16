@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const fetchSnapshot = vi.fn();
 const setTrayStatus = vi.fn();
@@ -45,12 +45,12 @@ async function flush() {
   });
 }
 
-// R2-4: in jsdom (no "__TAURI_INTERNALS__" global), the hook takes its
-// browser/mock-harness branch — a one-time initial read via fetchSnapshot,
-// exactly like the pre-R2-4 behaviour. The native branch (subscribing to
-// the Rust scheduler's quota-refresh push) is exercised separately below by
-// setting that global before rendering.
-describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
+// In jsdom, with no "__TAURI_INTERNALS__" global, the hook takes its
+// browser/mock-harness branch: a one-time initial read via fetchSnapshot.
+// The native branch, subscribing to the Rust scheduler's quota-refresh
+// push, is exercised separately below by setting that global before
+// rendering.
+describe("useSubscriptions refresh policy in the browser mock harness path", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
@@ -71,10 +71,9 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
     vi.useRealTimers();
   });
 
-  // B5, still true after R2-4 moved cadence to the Rust side: there is no
-  // JS timer left at all, so time passing — however many simulated
-  // open/close cycles — can never spend budget on its own.
-  it("does not fetch again merely because time passes (no JS timer exists anymore)", async () => {
+  // There is no JS timer left at all, so time passing, however many
+  // simulated open/close cycles, can never spend budget on its own.
+  test("does not fetch again merely because time passes, since no JS timer exists anymore", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
@@ -88,7 +87,7 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
     expect(result.current.subscriptions[0].state).toBe("working");
   });
 
-  it("an explicit manual refresh spends budget on demand", async () => {
+  test("an explicit manual refresh spends budget on demand", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
@@ -99,9 +98,9 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
   });
 
-  // R2-4: "the manual refresh control is debounced" — concurrent calls must
+  // The manual refresh control is debounced: concurrent calls must
   // collapse into a single in-flight fetch, not double-fire.
-  it("concurrent refreshAll calls collapse into a single in-flight fetch", async () => {
+  test("concurrent refreshAll calls collapse into a single in-flight fetch", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
@@ -113,11 +112,11 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
         result.current.refreshAll(),
       ]);
     });
-    // One initial (mount) + one from the three collapsed manual calls.
+    // One initial mount fetch plus one from the three collapsed manual calls.
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
   });
 
-  it("concurrent refreshAccountById calls for the same id collapse into one fetch", async () => {
+  test("concurrent refreshAccountById calls for the same id collapse into one fetch", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
@@ -132,11 +131,11 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
   });
 });
 
-// F4: the header's refresh-everything and a row's own "Read now" are two UI
-// paths to the same account — they must share one per-account in-flight
+// The header's refresh-everything and a row's own "Read now" are two UI
+// paths to the same account. They must share one per-account in-flight
 // guard, or pressing both spends two of the shared 5-per-300s budget slots
 // on a single account and the next scheduled read gets refused early.
-describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
+describe("useSubscriptions shared per-account in-flight guard", () => {
   const SNAPSHOT = {
     account_id: "claude:claude",
     provider: "claude",
@@ -161,7 +160,7 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     loadTracked.mockResolvedValue(TRACKED);
   });
 
-  it("refreshAll joins an account's in-flight read instead of double-fetching it", async () => {
+  test("refreshAll joins an account's in-flight read instead of double-fetching it", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
@@ -172,7 +171,7 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     await act(async () => {
       const readNow = result.current.refreshAccountById("claude:claude");
       const readAll = result.current.refreshAll();
-      // The slow row read is the only fetch in flight — refreshAll joined it.
+      // The slow row read is the only fetch in flight. refreshAll joined it.
       expect(fetchSnapshot).toHaveBeenCalledTimes(2);
       release(SNAPSHOT);
       await Promise.all([readNow, readAll]);
@@ -180,7 +179,7 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
   });
 
-  it("a row's read during a slow refreshAll joins the in-flight read", async () => {
+  test("a row's read during a slow refreshAll joins the in-flight read", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
@@ -198,7 +197,7 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
   });
 
-  it("joining one in-flight account never skips the other accounts", async () => {
+  test("joining one in-flight account never skips the other accounts", async () => {
     loadTracked.mockResolvedValue([
       {
         id: "claude:claude",
@@ -228,22 +227,24 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
       release(SNAPSHOT);
       await Promise.all([readNow, readAll]);
     });
-    // Mount (2) + the row read (1) + refreshAll fetching only the *other*
-    // account (1): the joined account is not refetched, the rest still are.
+    // Two mount fetches plus the row read plus refreshAll fetching only the
+    // other account: the joined account is not refetched, the rest still
+    // are.
     expect(fetchSnapshot).toHaveBeenCalledTimes(4);
     expect(fetchSnapshot.mock.calls[3]?.[0]).toEqual(
       expect.objectContaining({ id: "claude:claude-team" }),
     );
   });
 
-  // Adding a subscription reads it once immediately (brief §5.3 step 4), and
-  // that read spends a real budget slot like any other — so it belongs to the
-  // same guard. It used to call `refreshOne` directly, which never registered
-  // the read as in-flight, so a refresh landing during it started a *second*
-  // request for the same account. The window is widest exactly where it hurts:
-  // adding an account whose token has aged out runs a bounded-20s CLI renewal
-  // first, and any refresh in those 20s doubled the spend.
-  it("the add-subscription read joins the guard instead of starting a second request", async () => {
+  // Adding a subscription reads it once immediately, per
+  // docs/design/brief.md section 5.3 step 4, and that read spends a real
+  // budget slot like any other, so it belongs to the same guard. A refresh
+  // landing during that read must join it rather than starting a second
+  // request for the same account. The window is widest exactly where it
+  // hurts: adding an account whose token has aged out runs a bounded-20s
+  // CLI renewal first, and any refresh in those 20 seconds would otherwise
+  // double the spend.
+  test("the add-subscription read joins the guard instead of starting a second request", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     fetchSnapshot.mockClear();
@@ -262,7 +263,7 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
 
     await act(async () => {
       const readNow = result.current.refreshAccountById("claude:other");
-      // The add's own read is the only fetch in flight — this joined it.
+      // The add's own read is the only fetch in flight. This joined it.
       expect(fetchSnapshot).toHaveBeenCalledTimes(1);
       release({ ...SNAPSHOT, account_id: "claude:other", config_dir: "~/.claude-other" });
       await readNow;
@@ -271,11 +272,11 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
   });
 });
 
-// R2-4: on the native path, automatic reads arrive as pushed `quota-refresh`
-// events from the Rust scheduler, not as JS-initiated fetches — this proves
+// On the native path, automatic reads arrive as pushed `quota-refresh`
+// events from the Rust scheduler, not as JS-initiated fetches. This proves
 // the hook applies a pushed event exactly like a direct fetch result, and
 // never calls fetchSnapshot itself for it.
-describe("useSubscriptions refresh policy (native path)", () => {
+describe("useSubscriptions refresh policy on the native path", () => {
   let quotaRefreshCallback: ((event: unknown) => void) | undefined;
 
   beforeEach(() => {
@@ -297,7 +298,7 @@ describe("useSubscriptions refresh policy (native path)", () => {
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
-  it("subscribes to quota-refresh and kicks the scheduler once at mount, without fetching directly", async () => {
+  test("subscribes to quota-refresh and kicks the scheduler once at mount, without fetching directly", async () => {
     renderHook(() => useSubscriptions());
     await flush();
     expect(onQuotaRefresh).toHaveBeenCalledTimes(1);
@@ -305,7 +306,7 @@ describe("useSubscriptions refresh policy (native path)", () => {
     expect(fetchSnapshot).not.toHaveBeenCalled();
   });
 
-  it("applies a pushed 'ok' event exactly like a direct refresh result", async () => {
+  test("applies a pushed 'ok' event exactly like a direct refresh result", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(quotaRefreshCallback).toBeTypeOf("function");
@@ -333,7 +334,7 @@ describe("useSubscriptions refresh policy (native path)", () => {
     expect(fetchSnapshot).not.toHaveBeenCalled();
   });
 
-  it("a pushed rate_limited event never overwrites prior health state (B5/B6, native path)", async () => {
+  test("a pushed rate_limited event never overwrites prior health state on the native path", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -362,13 +363,10 @@ describe("useSubscriptions refresh policy (native path)", () => {
   });
 });
 
-// B6: a diagnosable failure (e.g. expired login → Broken) must never decay
-// into the generic rate-limit wait, even when a retry of that same broken
-// account comes back rate-limited. This guards against the exact regression
-// found in manual testing: the optimistic "connecting" patch issued at the
-// start of every refresh attempt was clobbering the prior Broken state
-// before the rate-limited response even came back.
-describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh path)", () => {
+// A diagnosable failure such as an expired login becoming broken must
+// never decay into the generic rate-limit wait, even when a retry of that
+// same broken account comes back rate-limited.
+describe("useSubscriptions health vs. rate-limit precedence on the manual refresh path", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     setTrayStatus.mockReset();
@@ -379,7 +377,7 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
     vi.useRealTimers();
   });
 
-  it("a rate-limited retry restores the prior Broken state instead of leaving it 'connecting'", async () => {
+  test("a rate-limited retry restores the prior Broken state instead of leaving it 'connecting'", async () => {
     fetchSnapshot
       .mockRejectedValueOnce({
         kind: "unauthorized",
@@ -401,13 +399,12 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
     expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
   });
 
-  // R5: the restore rule's blind spot. For an account that had never been
-  // read at all, the "prior" state captured before the attempt is the seeded
-  // in-flight "connecting" — writing that back left the row claiming
-  // "Reading…" forever (nothing was in flight), and the footer's reading
-  // branch masked the "Waiting for the rate budget" note entirely. Found by
-  // driving the mock harness's demo-waiting account in a real browser.
-  it("a first-ever read that is rate-limited settles to idle — never a permanent 'Reading…'", async () => {
+  // The restore rule's blind spot: for an account that had never been read
+  // at all, the prior state captured before the attempt is the seeded
+  // in-flight "connecting". Writing that back would leave the row claiming
+  // "Reading…" forever with nothing in flight, and the footer's reading
+  // branch would mask the "Waiting for the rate budget" note entirely.
+  test("a first-ever read that is rate-limited settles to idle, never a permanent 'Reading…'", async () => {
     fetchSnapshot.mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 214 });
 
     const { result } = renderHook(() => useSubscriptions());
@@ -420,11 +417,11 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
   });
 });
 
-// R3-4: revival. A wrong diagnosis is survivable if the user can re-test
-// it; the captain's build made that impossible, because both manual paths
-// silently returned without doing anything while a provider-issued wait was
-// pending — and that wait was itself a consequence of the wrong diagnosis.
-describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", () => {
+// A wrong diagnosis is survivable only if the user can re-test it, so both
+// manual refresh paths must still attempt a real read while a
+// provider-issued wait is pending, even though that wait may itself be a
+// consequence of the wrong diagnosis.
+describe("useSubscriptions revival while a rate-limit wait is pending", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     setTrayStatus.mockReset();
@@ -446,14 +443,14 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     profile: null,
   };
 
-  it("'Read now' still attempts a read while a wait is pending, and revives the row when it succeeds", async () => {
+  test("'Read now' still attempts a read while a wait is pending, and revives the row when it succeeds", async () => {
     fetchSnapshot
-      // Launch: an expired-looking credential reads as broken…
+      // Launch: an expired-looking credential reads as broken.
       .mockRejectedValueOnce({
         kind: "unauthorized",
         message: "the stored sign-in is no longer accepted",
       })
-      // …then the account is throttled for an hour.
+      // The account is then throttled for an hour.
       .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
       // The next explicit press must still reach the provider.
       .mockResolvedValueOnce(goodRead);
@@ -478,7 +475,7 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     expect(result.current.subscriptions[0].rateLimitedUntil).toBeNull();
   });
 
-  it("the panel's refresh-all also still attempts while a wait is pending", async () => {
+  test("the panel's refresh-all also still attempts while a wait is pending", async () => {
     fetchSnapshot
       .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
       .mockResolvedValueOnce(goodRead);
@@ -494,7 +491,7 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     expect(result.current.subscriptions[0].state).toBe("working");
   });
 
-  it("adding a subscription reads it once immediately, as the Subscriptions view promises", async () => {
+  test("adding a subscription reads it once immediately, as the Subscriptions view promises", async () => {
     fetchSnapshot.mockResolvedValue(goodRead);
     const { result } = renderHook(() => useSubscriptions());
     await flush();
@@ -517,9 +514,9 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     expect(result.current.subscriptions[0].lastReadAt).not.toBeNull();
   });
 
-  it("a sign-in warning is dropped the moment a read succeeds — no relaunch, no remove-and-re-add", async () => {
-    // The captain signs in externally while Quotos is running: the very next
-    // read must clear the warning by itself.
+  test("a sign-in warning is dropped the moment a read succeeds, with no relaunch and no remove-and-re-add", async () => {
+    // Signing in externally while Quotos is running must clear the warning
+    // on the very next read by itself.
     fetchSnapshot
       .mockRejectedValueOnce({
         kind: "unauthorized",
@@ -538,7 +535,7 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     expect(result.current.subscriptions[0].state).toBe("working");
   });
 
-  it("a credential Quotos couldn't renew is reported as such, never as a sign-in problem", async () => {
+  test("a credential Quotos couldn't renew is reported as such, never as a sign-in problem", async () => {
     fetchSnapshot.mockRejectedValueOnce({
       kind: "credential_stale",
       message: "This account's access token has expired and Quotos couldn't renew it here.",
@@ -552,12 +549,10 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
   });
 });
 
-// Followup-2: the handoff forbids any tray glyph but a digit ("Никаких
-// знаков и многоточий... Либо цифра, либо ничего") — a broken pin must
-// never show "!" and a numberless pin must never show "…", only be absent.
-// It also restates the stale-taints-everything rule: if *any* pinned value
-// is stale, every digit in the tray turns amber, not just that account's.
-describe("useSubscriptions tray segments (followup-2)", () => {
+// A broken pin must never show "!" and a numberless pin must never show
+// "…", only be absent. If any pinned value is stale, every digit in the
+// tray turns amber, not just that account's.
+describe("useSubscriptions tray segments", () => {
   const TWO_PINNED = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
     {
@@ -581,7 +576,7 @@ describe("useSubscriptions tray segments (followup-2)", () => {
     loadTracked.mockResolvedValue(TRACKED);
   });
 
-  it("a broken pin with no number contributes no segment at all — never '!'", async () => {
+  test("a broken pin with no number contributes no segment at all, never '!'", async () => {
     fetchSnapshot.mockImplementation(async (account: { id: string }) => {
       if (account.id === "claude:claude") {
         throw {
@@ -617,7 +612,7 @@ describe("useSubscriptions tray segments (followup-2)", () => {
     }
   });
 
-  it("one stale pinned account turns every pinned digit amber, not just its own", async () => {
+  test("one stale pinned account turns every pinned digit amber, not just its own", async () => {
     fetchSnapshot.mockImplementation(async (account: { id: string }) => {
       const base = {
         account_id: account.id,
@@ -655,7 +650,7 @@ describe("useSubscriptions tray segments (followup-2)", () => {
       ]),
     );
 
-    // Now the team account goes stale (a failed retry after real data).
+    // The team account now goes stale: a failed retry after real data.
     fetchSnapshot.mockImplementationOnce(async () => {
       throw { kind: "network", message: "the connection timed out" };
     });
@@ -672,9 +667,9 @@ describe("useSubscriptions tray segments (followup-2)", () => {
       ]),
     );
 
-    // I7: the same call carries the tooltip that names those bare digits —
-    // and the amber-everywhere rule stays digits-only: only the stale
-    // account's own tooltip line says "not current".
+    // The same call carries the tooltip that names those bare digits, and
+    // the amber-everywhere rule stays digits-only: only the stale account's
+    // own tooltip line says "not current".
     const tooltip = trayCalls[trayCalls.length - 1]?.[2];
     expect(tooltip).toMatch(/^Quotos\n/);
     expect(tooltip).toContain("Weekly 10%");
@@ -683,10 +678,10 @@ describe("useSubscriptions tray segments (followup-2)", () => {
   });
 });
 
-// v4 migration (firstmate-recorded decision, docs/design/NOTES.md §2): a pre-v4
-// tracked record's `pinned: true` becomes "that subscription's headline
-// window is pinned" — known only once a read reveals `headlineWindowId`.
-describe("useSubscriptions v4 pin migration", () => {
+// An older tracked record's `pinned: true` becomes "that subscription's
+// headline window is pinned", known only once a read reveals
+// `headlineWindowId`.
+describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
@@ -699,7 +694,7 @@ describe("useSubscriptions v4 pin migration", () => {
     loadTracked.mockResolvedValue(TRACKED);
   });
 
-  it("migrates a legacy pinned:true record to pinning its headline window, once a read reveals it", async () => {
+  test("migrates a legacy pinned:true record to pinning its headline window, once a read reveals it", async () => {
     loadTracked.mockResolvedValue([
       {
         id: "claude:claude",
@@ -732,7 +727,7 @@ describe("useSubscriptions v4 pin migration", () => {
     ]);
   });
 
-  it("a legacy pinned:false record migrates to nothing pinned, contributing no segment", async () => {
+  test("a legacy pinned:false record migrates to nothing pinned, contributing no segment", async () => {
     loadTracked.mockResolvedValue([
       {
         id: "claude:claude",
@@ -762,7 +757,7 @@ describe("useSubscriptions v4 pin migration", () => {
     expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual([]);
   });
 
-  it("a pending migration survives a failed first read and completes on the next successful one", async () => {
+  test("a pending migration survives a failed first read and completes on the next successful one", async () => {
     loadTracked.mockResolvedValue([
       {
         id: "claude:claude",
@@ -798,9 +793,9 @@ describe("useSubscriptions v4 pin migration", () => {
   });
 });
 
-// R2-6: startSignIn/submitSignInCode/cancelSignIn and the sign-in-finished
-// reaction — Quotos never inspects a credential itself, so a finished
-// session (success or failure) always triggers a real re-read rather than
+// startSignIn, submitSignInCode, cancelSignIn and the sign-in-finished
+// reaction. Quotos never inspects a credential itself, so a finished
+// session, success or failure, always triggers a real re-read rather than
 // trusting the process's exit status alone.
 describe("useSubscriptions sign-in flow", () => {
   let signInFinishedCallback:
@@ -833,7 +828,7 @@ describe("useSubscriptions sign-in flow", () => {
     vi.useRealTimers();
   });
 
-  it("startSignIn marks the row in-progress and calls the IPC with its config dir", async () => {
+  test("startSignIn marks the row in-progress and calls the IPC with its config dir", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -845,7 +840,7 @@ describe("useSubscriptions sign-in flow", () => {
     expect(result.current.subscriptions[0].signInInProgress).toBe(true);
   });
 
-  it("a finished sign-in clears signInInProgress and triggers a re-read", async () => {
+  test("a finished sign-in clears signInInProgress and triggers a re-read", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -876,7 +871,7 @@ describe("useSubscriptions sign-in flow", () => {
     expect(result.current.subscriptions[0].used).toBe(5);
   });
 
-  it("cancelSignIn calls the IPC and clears the in-progress flag", async () => {
+  test("cancelSignIn calls the IPC and clears the in-progress flag", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     await act(async () => {
@@ -892,14 +887,9 @@ describe("useSubscriptions sign-in flow", () => {
   });
 });
 
-// R4-3: the captain's 2026-08-15 screencast — with both panel rows already
-// stop-tracked and showing their Undo rows, the Subscriptions screen went on
-// listing both accounts as tracked ([Remove]) for a further five seconds,
-// because "Stop tracking" only scheduled a removal that a timer inside App.tsx
-// would apply later. These pin the one-source-of-truth shape that replaced it:
-// stop-tracking untracks *now* everywhere, and the undo window is nothing but a
+// Stop-tracking untracks now everywhere. The undo window is nothing but a
 // slot the panel keeps.
-describe("useSubscriptions stop-tracking is immediate everywhere but the panel's own slot (R4-3)", () => {
+describe("useSubscriptions stop-tracking is immediate everywhere but the panel's own slot", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
     {
@@ -937,7 +927,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     loadTracked.mockResolvedValue(TRACKED);
   });
 
-  it("drops the account from the tracked list the moment it is pressed, while the panel keeps its slot", async () => {
+  test("drops the account from the tracked list the moment it is pressed, while the panel keeps its slot", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -953,7 +943,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(result.current.subscriptions[1].pendingRemoval).toBe(true);
   });
 
-  it("persists the removal immediately, not when the undo window expires", async () => {
+  test("persists the removal immediately, not when the undo window expires", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     saveTracked.mockClear();
@@ -965,7 +955,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude"]);
   });
 
-  it("drops a pinned account's tray digits immediately", async () => {
+  test("drops a pinned account's tray digits immediately", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toHaveLength(2);
@@ -976,7 +966,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toHaveLength(1);
   });
 
-  it("undo restores it in its original slot, with its data intact", async () => {
+  test("undo restores it in its original slot, with its data intact", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     const before = result.current.subscriptions[1];
@@ -992,7 +982,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(result.current.subscriptions[1].used).toBe(before.used);
   });
 
-  it("keeps the slot for exactly the undo window, then gives it up", async () => {
+  test("keeps the slot for exactly the undo window, then gives it up", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -1008,7 +998,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude"]);
   });
 
-  it("an undone row is never removed by its own expired timer", async () => {
+  test("an undone row is never removed by its own expired timer", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -1024,7 +1014,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     ]);
   });
 
-  it("adding an account back during its undo window is the same as undoing it", async () => {
+  test("adding an account back during its undo window is the same as undoing it", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -1047,10 +1037,11 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
   });
 
-  // R4-2: the save effect is keyed on the whole subscription list, so before it
-  // learned to compare, every automatic read wrote the tracked file again —
-  // each write a temp file plus an `fsync` plus a rename, on the main thread.
-  it("does not re-persist when only read state changed", async () => {
+  // The save effect is keyed on the whole subscription list. Without a
+  // compare against the last written value, every automatic read would
+  // write the tracked file again, each write a temp file plus an `fsync`
+  // plus a rename, on the main thread.
+  test("does not re-persist when only read state changed", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     saveTracked.mockClear();
@@ -1062,13 +1053,13 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(saveTracked).not.toHaveBeenCalled();
   });
 
-  // R2: the save effect records what it handed to `saveTracked` before the
-  // write settles (the R4-2 dedupe above), so a write that then failed used
-  // to be remembered as saved — never retried, and the rename died with the
-  // process. A failed save now clears that record, which turns the very
-  // next effect run — even one where only read state changed — into the
-  // retry.
-  it("retries a failed save on the next change instead of remembering it as saved", async () => {
+  // The save effect records what it handed to `saveTracked` before the
+  // write settles, the dedupe from the test above, so a write that then
+  // fails must not stay recorded as saved, or it would never be retried
+  // and the rename would die with the process. A failed save clears that
+  // record, which turns the very next effect run, even one where only
+  // read state changed, into the retry.
+  test("retries a failed save on the next change instead of remembering it as saved", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const { result } = renderHook(() => useSubscriptions());
@@ -1093,11 +1084,11 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
   });
 });
 
-// v5: "Move up"/"Move down" in the row menu. Panel order is the one order
-// everywhere — the persisted list and the tray's digit order both derive
-// from `subscriptions`' own array order — so a swap must show up in all
-// three, and an impossible move must change nothing (not even a save).
-describe("useSubscriptions reordering (v5)", () => {
+// "Move up" and "Move down" in the row menu. Panel order is the one order
+// everywhere, since the persisted list and the tray's digit order both
+// derive from `subscriptions`' own array order, so a swap must show up in
+// all three, and an impossible move must change nothing, not even a save.
+describe("useSubscriptions reordering", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
     {
@@ -1140,7 +1131,7 @@ describe("useSubscriptions reordering (v5)", () => {
     loadTracked.mockResolvedValue(TRACKED);
   });
 
-  it("swaps the row with its neighbor and persists the new order", async () => {
+  test("swaps the row with its neighbor and persists the new order", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     saveTracked.mockClear();
@@ -1156,7 +1147,7 @@ describe("useSubscriptions reordering (v5)", () => {
     expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude-team", "claude:claude"]);
   });
 
-  it("moving up then down lands back where it started", async () => {
+  test("moving up then down lands back where it started", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
 
@@ -1173,7 +1164,7 @@ describe("useSubscriptions reordering (v5)", () => {
     ]);
   });
 
-  it("is a no-op at the edges — no reorder, no save", async () => {
+  test("is a no-op at the edges, with no reorder and no save", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     saveTracked.mockClear();
@@ -1189,7 +1180,7 @@ describe("useSubscriptions reordering (v5)", () => {
     expect(saveTracked).not.toHaveBeenCalled();
   });
 
-  it("reorders the tray digits with it", async () => {
+  test("reorders the tray digits with it", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     const before = setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0];
@@ -1203,10 +1194,8 @@ describe("useSubscriptions reordering (v5)", () => {
   });
 });
 
-// R4-4: one account, one spelling. The same screencast showed "Claude Max" in
-// the panel and "Claude" in the Subscriptions screen for one account, and
-// "Claude Team" / "claude team" for the other.
-describe("useSubscriptions display names are consistent between the panel and the Subscriptions screen (R4-4)", () => {
+// One account, one spelling, everywhere.
+describe("useSubscriptions display names are consistent between the panel and the Subscriptions screen", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
@@ -1218,7 +1207,7 @@ describe("useSubscriptions display names are consistent between the panel and th
     vi.useRealTimers();
   });
 
-  it("titles the id-derived fallback the way every other name in the panel is titled", () => {
+  test("titles the id-derived fallback the way every other name in the panel is titled", () => {
     expect(accountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" })).toBe(
       "Claude",
     );
@@ -1230,7 +1219,7 @@ describe("useSubscriptions display names are consistent between the panel and th
     ).toBe("Work Eu");
   });
 
-  it("keeps the provider's own name for an account after it stops being tracked", async () => {
+  test("keeps the provider's own name for an account after it stops being tracked", async () => {
     fetchSnapshot.mockResolvedValue({
       account_id: "claude:claude",
       provider: "claude",
@@ -1250,9 +1239,9 @@ describe("useSubscriptions display names are consistent between the panel and th
 
     act(() => result.current.removeSubscription("claude:claude"));
 
-    // The Subscriptions screen asks for this account by descriptor now that
-    // there is no subscription to read a label off — it must still be the name
-    // the captain knows it by, not the config directory's.
+    // The Subscriptions screen asks for this account by descriptor now
+    // that there is no subscription to read a label off. It must still be
+    // the name the provider reported, not the config directory's.
     expect(
       result.current.displayLabelFor({
         id: "claude:claude",
@@ -1262,7 +1251,7 @@ describe("useSubscriptions display names are consistent between the panel and th
     ).toBe("Claude Max");
   });
 
-  it("falls back to the id-derived title for an account never read", async () => {
+  test("falls back to the id-derived title for an account never read", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(
