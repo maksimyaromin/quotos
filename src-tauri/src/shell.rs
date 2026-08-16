@@ -1,12 +1,11 @@
-//! The interactive shell: the status item's repaint pipeline and the panel
-//! window's show, hide, dock, detach, and drag lifecycle. One module rather
-//! than two because the two sides are mutually recursive: repainting the
-//! status item can move the open panel, through `repaint_status_item`,
-//! `schedule_resync_after_icon_change`, and `reposition_under_status_item`,
-//! and showing or hiding the panel repaints the status item, through
-//! `show_panel`, `hide_panel`, and `set_status_item_highlighted`. The pure
-//! layers stay out: coordinate math in `geometry`, bitmap composition in
-//! `status_item_render`, the NSPanel class swap in `panel_window`.
+//! One module rather than two because the two sides are mutually
+//! recursive: repainting the status item can move the open panel, through
+//! `repaint_status_item`, `schedule_resync_after_icon_change`, and
+//! `reposition_under_status_item`, and showing or hiding the panel
+//! repaints the status item, through `show_panel`, `hide_panel`, and
+//! `set_status_item_highlighted`. The pure layers stay out: coordinate
+//! math in `geometry`, bitmap composition in `status_item_render`, the
+//! NSPanel class swap in `panel_window`.
 
 use std::time::Duration;
 
@@ -334,9 +333,8 @@ pub(crate) fn set_detached(
 /// detached window, and specifically wrong for the popover; see
 /// `snap_back_to_docked`. Dragging must never fight the docked-position
 /// self-correction; see `AppState.docked_target`'s doc comment.
-/// `set_focus()` would activate the application, and activating while
-/// another app owns a full-screen Space is what makes macOS leave that
-/// Space, so tearing the panel off must not move the user.
+/// `set_focus()` would activate the application; see `panel_window.rs`'s
+/// module doc for why that must not happen here.
 fn enter_detached_mode(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -441,10 +439,7 @@ fn place_window_top_left_sync(window: &tauri::WebviewWindow, x: f64, y: f64) -> 
     if ptr.is_null() {
         return false;
     }
-    // AppKit's global space is y-up from the primary screen's bottom-left.
-    // x and y here are CG-style, y-down from its top-left. NSScreen.screens'
-    // first element is by definition the screen whose origin is (0,0), so
-    // its own height is the flip constant.
+    // See DisplayPoints for the y-up/y-down flip this undoes.
     let screens = NSScreen::screens(mtm);
     let Some(primary) = screens.iter().next() else {
         return false;

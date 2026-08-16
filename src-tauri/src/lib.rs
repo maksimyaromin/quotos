@@ -405,9 +405,8 @@ fn build_status_item(
         .icon_as_template(true)
         .menu(menu)
         .show_menu_on_left_click(false)
-        // The composited glyph and digits image carries no text VoiceOver
-        // can read; set_status_item_state keeps this current as pinned
-        // digits change, and this is just the pre-any-data baseline.
+        // Just the pre-any-data baseline; see shell::repaint_status_item
+        // for why this gets replaced on every repaint.
         .tooltip("Quotos")
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
