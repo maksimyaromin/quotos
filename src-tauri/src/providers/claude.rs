@@ -16,9 +16,8 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 
 /// How close to its own stated expiry an access token has to be before
-/// Quotos renews it before spending a request on it. Claude Code's tokens
-/// live roughly 8 hours, so a minute of margin costs nothing and removes
-/// the whole "expired between the read and the request" class of 401s.
+/// Quotos renews it before spending a request on it, removing the whole
+/// "expired between the read and the request" class of 401s.
 const EXPIRY_MARGIN_MS: i64 = 60_000;
 
 /// Ceiling on how long Quotos will wait for the Claude Code CLI while it
@@ -47,12 +46,8 @@ fn now_ms() -> i64 {
 }
 
 /// `QUOTOS_DEBUG_READS=1` traces the credential and read decisions to
-/// stderr, the same opt-in shape as the `QUOTOS_DEBUG_*` window flags,
-/// silent by default. It deliberately never prints a token, only whether
-/// one was found and how long it has left. Debugging a read otherwise
-/// means re-deriving facts the app already computed and never surfaced,
-/// such as whether the CLI is reachable, whether the token is expired, or
-/// whether a renewal did anything.
+/// stderr, silent by default. Never prints a token, only whether one was
+/// found and how long it has left.
 fn trace_enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("QUOTOS_DEBUG_READS").is_some())
@@ -66,17 +61,9 @@ macro_rules! read_trace {
     };
 }
 
-/// Scans the home directory for Claude Code config directories: the
-/// default `~/.claude` plus any `~/.claude-<name>` sibling, such as
-/// `~/.claude-team`. This is the "scan the machine" step of the
-/// add-subscription flow for the Claude provider.
-///
-/// A directory that merely matches the naming pattern is not itself a
-/// subscription. A plain folder placed alongside the real config
-/// directories, for example to share data between them, would otherwise
-/// show up as an invented account. A config directory only qualifies when
-/// it actually resolves to a usable credential, meaning a Keychain entry
-/// exists for its derived service name.
+/// Scans the home directory for `~/.claude` and any `~/.claude-<name>`
+/// sibling. A directory only qualifies when it resolves to a usable
+/// Keychain credential, so a stray folder can't show up as an invented account.
 pub fn discover_accounts() -> Vec<AccountDescriptor> {
     let Some(home) = home_dir() else {
         return vec![];
@@ -84,10 +71,8 @@ pub fn discover_accounts() -> Vec<AccountDescriptor> {
     discover_accounts_in(&home, credential_exists_in_keychain)
 }
 
-/// The pure, testable core of discovery. Decides which `~/.claude*`
-/// directories under `home` qualify, given a predicate for whether a
-/// Keychain credential exists for this config dir. Split out from
-/// [`discover_accounts`] so the qualification logic can be unit-tested
+/// The pure, testable core of discovery, split out from
+/// [`discover_accounts`] so the qualification logic is unit-testable
 /// without touching the real Keychain.
 fn discover_accounts_in(
     home: &Path,
@@ -146,18 +131,16 @@ fn credential_exists_in_keychain(config_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Whether this config dir is Claude Code's default one, meaning the one
-/// it uses when `CLAUDE_CONFIG_DIR` is not set at all. That distinction is
-/// load-bearing twice over, in the keychain service name below and in the
-/// CLI environment in [`claude_config_dir_env`], so it lives in one place.
+/// Whether this config dir is Claude Code's default one, the one it uses
+/// when `CLAUDE_CONFIG_DIR` is unset. Load-bearing twice over, in the
+/// Keychain service name and in [`claude_config_dir_env`], so it lives here.
 fn is_default_config_dir(home: &Path, config_dir: &Path) -> bool {
     home.join(".claude") == config_dir
 }
 
 /// Keychain service name for a config directory. The default `~/.claude`
-/// uses the bare service name. Any other config dir uses
-/// `Claude Code-credentials-<sha256[:8]>` of the NFC-normalized absolute
-/// path.
+/// uses the bare service name; any other uses
+/// `Claude Code-credentials-<sha256[:8]>` of the NFC-normalized path.
 fn keychain_service_for_config_dir(config_dir: &Path) -> String {
     match home_dir() {
         Some(home) => keychain_service_in(&home, config_dir),
@@ -178,11 +161,8 @@ fn keychain_service_hashed(config_dir: &Path) -> String {
     format!("Claude Code-credentials-{}", &digest[..8])
 }
 
-/// What `CLAUDE_CONFIG_DIR` must be set to when Quotos runs the Claude Code
-/// CLI for this account. `None` means it must not be set at all, which is
-/// the default account. See "CLAUDE_CONFIG_DIR" in claude-provider.md for
-/// why setting it to the default account's own directory is not the same
-/// as leaving it unset.
+/// What `CLAUDE_CONFIG_DIR` must be set to for this account. `None` means
+/// it must not be set at all. See "CLAUDE_CONFIG_DIR" in docs/claude-provider.md.
 fn claude_config_dir_env(home: &Path, config_dir: &Path) -> Option<PathBuf> {
     if is_default_config_dir(home, config_dir) {
         None
@@ -203,10 +183,9 @@ impl DigestHex for sha2::Sha256 {
     }
 }
 
-/// What Quotos knows about a stored credential. The token is the only
-/// secret here. The two expiry stamps are what make an honest diagnosis
-/// possible. Without them a 401 is indistinguishable between "this sign-in
-/// is finished" and "this token simply aged out and needs renewing".
+/// What Quotos knows about a stored credential. The two expiry stamps
+/// are what make an honest diagnosis possible: without them a 401 can't
+/// tell an ended sign-in from a token that simply aged out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StoredCredential {
     access_token: String,
@@ -225,9 +204,8 @@ impl StoredCredential {
     }
 
     /// Whether the refresh half could still renew this credential without
-    /// a new sign-in. A missing refresh expiry is treated as usable. The
-    /// provider is the authority, and guessing "expired" here would claim
-    /// a working account needs signing in.
+    /// a new sign-in. A missing refresh expiry is treated as usable, since
+    /// guessing "expired" here would claim a working account needs signing in.
     fn refresh_usable(&self, now_ms: i64) -> bool {
         self.has_refresh_token && self.refresh_expires_at_ms.is_none_or(|at| at > now_ms)
     }
@@ -303,9 +281,8 @@ fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
 }
 
 /// Only "there is no such item" means the account is not signed in.
-/// Anything else, such as a denied ACL, a locked keychain, or a tool that
-/// will not run, is a local problem. Saying "sign in" for any of those
-/// would misreport a local failure as a missing sign-in.
+/// Anything else, a denied ACL or a locked keychain, is a local problem,
+/// and saying "sign in" for those would misreport it.
 fn classify_keychain_failure(status: &std::process::ExitStatus) -> FetchError {
     match status.code() {
         Some(KEYCHAIN_ITEM_NOT_FOUND_EXIT) => FetchError::NotConnected {
@@ -324,11 +301,7 @@ fn classify_keychain_failure(status: &std::process::ExitStatus) -> FetchError {
 }
 
 /// Where the `claude` CLI actually is. See "Finding the claude CLI" in
-/// claude-provider.md for why a menu bar app can't rely on `$PATH`.
-///
-/// Resolution order, most authoritative first: `$PATH`, then a login-shell
-/// probe of the running system, then Claude Code's own documented install
-/// locations rebuilt from `$HOME`. Nothing here is specific to one machine.
+/// docs/claude-provider.md for why a menu bar app can't rely on `$PATH`.
 fn claude_cli_path() -> Option<PathBuf> {
     static CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
@@ -392,17 +365,9 @@ fn search_env_path(name: &str) -> Option<PathBuf> {
         .find(|candidate| is_executable_file(candidate))
 }
 
-/// Asks the user's own shell where `claude` is. This is the general answer
-/// to the no-`PATH` problem above. The shell sources the same rc files
-/// that put the CLI on `PATH` in a terminal, so whatever install method
-/// was used, this finds it.
-///
-/// Both `-lc` and `-ilc` are tried, in that order, because a login shell
-/// alone is not enough when `PATH` is set in a file such as `.zshrc`,
-/// which only an interactive shell reads: a plain `-lc` login shell can
-/// find nothing while `-ilc` resolves the same command correctly. The
-/// cheaper, quieter form goes first. The interactive form is the fallback,
-/// bounded by the same deadline in case an rc file misbehaves.
+/// Asks the user's own shell where `claude` is, sourcing the same rc
+/// files that put the CLI on `PATH` in a terminal. See
+/// docs/claude-provider.md for why both `-lc` and `-ilc` are tried.
 fn ask_login_shell(name: &str) -> Option<PathBuf> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
     for flags in ["-lc", "-ilc"] {
@@ -464,14 +429,8 @@ fn run_bounded(mut cmd: Command, timeout: Duration, capture: bool) -> Option<Out
 }
 
 /// A zero-cost-to-quota way to have Claude Code renew a stale access
-/// token. Any CLI invocation refreshes and writes back the stored
-/// credential, and `claude mcp list` does no inference beyond that: an
-/// expired token's `expiresAt` advances across exactly this call.
-///
-/// Returns whether the CLI actually ran. This is not a claim that anything
-/// was renewed. The caller proves that by re-reading the credential, which
-/// is the only thing that can distinguish an actual renewal from the CLI
-/// running without changing anything.
+/// token. Returns whether the CLI ran, not whether anything was renewed;
+/// see docs/claude-provider.md for why only a re-read can prove that.
 fn run_cli_credential_refresh(config_dir: &Path) -> bool {
     let Some(invocation) = cli_invocation(config_dir) else {
         return false;
@@ -515,10 +474,8 @@ fn child_path_including(extra: Option<&Path>) -> std::ffi::OsString {
 }
 
 /// Everything a caller needs to spawn the Claude Code CLI for one account.
-/// Shared with the sign-in flow in `signin.rs`, which spawns the CLI
-/// through a pty rather than `std::process::Command`, but needs the same
-/// binary resolution, the same `CLAUDE_CONFIG_DIR` decision, and the same
-/// `PATH` this module produces.
+/// Shared with `signin.rs`, which spawns through a pty instead but needs
+/// the same binary resolution, `CLAUDE_CONFIG_DIR`, and `PATH`.
 pub struct CliInvocation {
     pub program: PathBuf,
     /// `Some(dir)` sets `CLAUDE_CONFIG_DIR` to it. `None` means it must not
@@ -540,10 +497,8 @@ pub fn cli_invocation(config_dir: &Path) -> Option<CliInvocation> {
     })
 }
 
-/// Has the CLI renew the credential, then re-reads it. Returns `Some` only
-/// when the stored credential genuinely changed. That proof is what keeps
-/// a no-op refresh from costing a second request and from being reported
-/// as an expired sign-in.
+/// Has the CLI renew the credential, then re-reads it. Returns `Some`
+/// only when the credential genuinely changed; see docs/claude-provider.md.
 fn renew_credential(config_dir: &Path, previous: &StoredCredential) -> Option<StoredCredential> {
     if !run_cli_credential_refresh(config_dir) {
         return None;
@@ -628,18 +583,12 @@ async fn get_json(
         .and_then(|s| s.parse::<u64>().ok());
     let body = match resp.json::<serde_json::Value>().await {
         Ok(body) => body,
-        // A 200 whose body cannot be read, whether from a mid-body reset,
-        // a timeout, or a proxy's HTML error page, is a failed read, full
-        // stop. Swallowing it as Null would be indistinguishable from a
-        // genuine "no limits to report" answer, a healthy-looking read
-        // that silently wipes every window.
+        // A failed read, not an empty one; see docs/claude-provider.md.
         Err(e) if status == 200 => {
             return Err(FetchError::Network {
                 message: format!("The provider's answer couldn't be read: {e}"),
             });
         }
-        // A non-200 answer is classified by its status alone. Its body is
-        // never consumed, so an unreadable one changes nothing.
         Err(_) => serde_json::Value::Null,
     };
     Ok(HttpResult {
@@ -678,15 +627,8 @@ pub struct UsageRead {
     pub fetched_at: String,
 }
 
-/// Fetches `/api/oauth/usage` for a config dir.
-///
-/// The read follows three rules:
-///  1. Renew before spending a request whenever the stored token is at or
-///     past its own expiry. Claude Code's tokens live roughly 8 hours, so
-///     this is the ordinary case, not an edge case.
-///  2. On an unexpected 401, renew once, retrying only if the credential
-///     actually changed. See "Sign-in recovery" in claude-provider.md.
-///  3. Reserve one budget slot per real request, not per read attempt.
+/// Fetches `/api/oauth/usage` for a config dir. See docs/claude-provider.md
+/// for the three rules this read follows.
 pub async fn fetch_usage(
     client: &reqwest::Client,
     config_dir: &Path,
@@ -780,16 +722,9 @@ pub async fn fetch_usage(
     }
 }
 
-/// Fetches `/api/oauth/profile` for account labeling. Best effort: the
-/// profile is a nice-to-have for the label, so callers should tolerate
-/// `None`.
-///
-/// Deliberately outside the request budget, and deliberately fetched at
-/// most once per account per app run, since the caller caches it. The
-/// fixed one-read-per-minute cadence already consumes the whole
-/// 5-per-300s allowance, so charging this call too would make the limiter
-/// refuse a scheduled read every launch. One un-budgeted request per
-/// account per run is a bounded, documented overshoot.
+/// Fetches `/api/oauth/profile` for account labeling. Best effort:
+/// callers should tolerate `None`. Deliberately outside the request
+/// budget; see docs/claude-provider.md for why that overshoot is bounded.
 pub async fn fetch_profile(
     client: &reqwest::Client,
     config_dir: &Path,
@@ -1143,10 +1078,9 @@ mod tests {
         result
     }
 
-    /// Treating this as `Ok(Null)` would read as a healthy "no limits
-    /// reported yet" to the whole pipeline, wiping every window and status
-    /// item digit while still bumping lastReadAt. A failed read instead
-    /// lets the frontend's prior-good-data logic say "behind" honestly.
+    /// `Ok(Null)` would read as a healthy "no limits reported yet" and
+    /// wipe every window; a failed read instead lets the frontend's
+    /// prior-good-data logic say "behind" honestly.
     #[test]
     fn a_200_with_an_unreadable_body_is_a_failed_read_not_an_empty_one() {
         let result = get_json_against("200 OK", b"<html>gateway error</html>");

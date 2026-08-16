@@ -19,6 +19,29 @@ find-generic-password -w` call this app shells out to is authorized and
 never raises a sign-in prompt. `QUOTOS_DEBUG_READS=1` traces the
 credential and read decisions, never a token, to standard error.
 
+`fetch_usage` follows three rules: renew before spending a request
+whenever the stored token is at or past its own expiry, the ordinary
+case rather than an edge case, since Claude Code's tokens live roughly 8
+hours; on an unexpected 401, renew once, retrying only if the credential
+actually changed, per "Sign-in recovery" below; and reserve one budget
+slot per real request, never per read attempt, per "Refresh scheduling
+and the shared request budget" in architecture.md.
+
+A 200 whose body cannot be read, whether from a mid-body reset, a
+timeout, or a proxy's HTML error page, is a failed read, full stop:
+`get_json` returns `FetchError::Network` rather than swallowing it as
+`Null`, which would be indistinguishable from a genuine "no limits to
+report" answer, a healthy-looking read that silently wipes every
+window. A non-200 answer is classified by its status alone, and its body
+is never consumed, so an unreadable one changes nothing.
+
+`fetch_profile` is deliberately outside the request budget and fetched
+at most once per account per app run, since the caller caches it: the
+fixed one-read-per-minute cadence already consumes the whole 5-per-300s
+allowance, so charging this call too would make the limiter refuse a
+scheduled read every launch. One un-budgeted request per account per run
+is a bounded, documented overshoot.
+
 ## `CLAUDE_CONFIG_DIR`
 
 Setting `CLAUDE_CONFIG_DIR` to the default account's own directory is not
@@ -35,9 +58,16 @@ A menu bar app launched from Finder or the Dock inherits no `PATH`, so a
 bare `Command::new("claude")` only ever finds `/usr/bin:/bin:/usr/sbin:/sbin`
 and never a per-user install. `claude_cli_path` layers `$PATH`, then a
 login-shell probe of the running system, then Claude Code's own
-documented install locations rebuilt from `$HOME`. Both shell forms
-matter: a `PATH` set in a shell's interactive-only startup file, such as
-`.zshrc`, is invisible to a non-interactive shell.
+documented install locations rebuilt from `$HOME`, never hardcoded for
+one Mac.
+
+`ask_login_shell` tries both `-lc` and `-ilc`, in that order: a login
+shell alone is not enough when `PATH` is set in a file such as
+`.zshrc`, which only an interactive shell reads, so a plain `-lc` login
+shell can find nothing while `-ilc` resolves the same command
+correctly. The cheaper, quieter `-lc` form goes first; the interactive
+form is the fallback, bounded by the same deadline in case an rc file
+misbehaves.
 
 ## Sign-in recovery
 
@@ -64,6 +94,14 @@ actually changed, so a renewal that does nothing never costs a second
 request or gets reported as an expired sign-in. An expiring token is
 renewed before a request is spent on it, so an ordinary access-token
 expiry never reaches the user as a 401 at all.
+
+`run_cli_credential_refresh` renews a stale access token at zero cost
+against the shared request budget: any CLI invocation refreshes and
+writes back the stored credential, and `claude mcp list` does no
+inference beyond that, since an expired token's `expiresAt` advances
+across exactly this call. That it ran is not proof anything was
+renewed; only re-reading the credential afterward can distinguish an
+actual renewal from the CLI running without changing anything.
 
 ## The statusline feed
 
