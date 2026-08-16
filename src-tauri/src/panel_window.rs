@@ -71,6 +71,16 @@ extern "C" fn can_become_main_window(_this: &AnyObject, _sel: Sel) -> Bool {
 }
 
 #[cfg(target_os = "macos")]
+fn log_class_before_conversion(object: &AnyObject) {
+    if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
+        eprintln!(
+            "quotos-pos: window class before conversion = {}",
+            object.class().name().to_string_lossy()
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn panel_class() -> Option<&'static AnyClass> {
     if let Some(existing) = AnyClass::get(PANEL_CLASS_NAME) {
         return Some(existing);
@@ -120,12 +130,7 @@ pub fn make_nonactivating_panel(window: &tauri::WebviewWindow) -> bool {
     };
 
     let object: &AnyObject = unsafe { &*(ptr as *const AnyObject) };
-    if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
-        eprintln!(
-            "quotos-pos: window class before conversion = {}",
-            object.class().name().to_string_lossy()
-        );
-    }
+    log_class_before_conversion(object);
     if !std::ptr::eq(object.class(), class) {
         // object_setClass is only safe when the new class does not grow
         // the allocation. A future AppKit where NSPanel gained storage
