@@ -116,11 +116,11 @@ The installed helper is a copy of Quotos's own executable, not a
 separate binary: `main.rs` intercepts an ingest flag as `argv[1]` before
 touching Tauri at all, so the copy Claude Code's hook invokes, possibly
 many times a minute, never starts a second GUI instance. Reusing the
-whole GUI binary avoids Tauri's `externalBin` sidecar bundling, target-
-triple-suffixed binaries staged into a `binaries/` folder before `tauri
-build`, for a purpose-built helper that would only ever need to spawn,
-parse one JSON payload, and exit; the tradeoff is tens of extra megabytes
-on disk, not correctness, for a local desktop app.
+whole GUI binary avoids Tauri's `externalBin` sidecar bundling,
+target-triple-suffixed binaries staged into a `binaries/` folder before
+`tauri build`, for a purpose-built helper that would only ever need to
+spawn, parse one JSON payload, and exit; the tradeoff is tens of extra
+megabytes on disk, not correctness, for a local desktop app.
 
 Writing `settings.json` follows six rules: only on an explicit in-app
 opt-in per subscription, never automatic; read-merge-write, refusing and
