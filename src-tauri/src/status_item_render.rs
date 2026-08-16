@@ -616,6 +616,10 @@ mod text {
                 8,
                 (width * 4) as usize,
                 Some(&colorspace),
+                // An alpha-only context, CGImageAlphaInfo::Alpha or
+                // ::AlphaOnly, corrupts CoreText glyph shapes: CTLineDraw
+                // needs real RGB channels to rasterize into, even though
+                // only this alpha channel is read back afterward.
                 CGImageAlphaInfo::PremultipliedLast.0,
                 None,
                 std::ptr::null_mut(),
@@ -846,6 +850,23 @@ pub fn used_fallback_font() -> bool {
 /// Each segment gets a fixed `CELL_WIDTH_PX` reserve, never the raw text
 /// width. `text::measure` is only used to center text inside that reserve,
 /// not to size the layout.
+/// Every cell except the trailing one keeps the fixed `CELL_WIDTH_PX`
+/// reserve. The trailing cell is sized to that one segment's own measured
+/// width instead. See `CELL_WIDTH_PX`'s own doc comment for why only the
+/// last one is safe to trim. A `group_start` flag on the very first
+/// segment means nothing, since there is no prior group to part from, so
+/// it is excluded here the same way `render`'s draw loop excludes it.
+fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
+    if segments.is_empty() {
+        return 0;
+    }
+    let boundaries = segments.iter().skip(1).filter(|s| s.group_start).count() as u32;
+    let gutter_px = GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
+    let last_width = *widths.last().unwrap_or(&0);
+    let non_last_segments = segments.len().saturating_sub(1) as u32;
+    GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX * non_last_segments + last_width + boundaries * gutter_px
+}
+
 pub fn render(
     segments: &[StatusItemSegment],
     highlighted: bool,
@@ -860,26 +881,7 @@ pub fn render(
         .iter()
         .map(|s| text::measure(&font, &s.text))
         .collect();
-    // A group_start flag on the very first segment means nothing, since
-    // there is no prior group to part from, so it is excluded here the
-    // same way the draw loop below excludes it.
-    let boundaries = segments.iter().skip(1).filter(|s| s.group_start).count() as u32;
-    let gutter_px = GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
-    // Every cell except the trailing one keeps the fixed CELL_WIDTH_PX
-    // reserve. The trailing cell is sized to that one segment's own
-    // measured width instead. See CELL_WIDTH_PX's own doc comment for why
-    // only the last one is safe to trim.
-    let last_width = *widths.last().unwrap_or(&0);
-    let non_last_segments = segments.len().saturating_sub(1) as u32;
-    let text_area = if segments.is_empty() {
-        0
-    } else {
-        GLYPH_TO_CELL_GAP_PX
-            + CELL_WIDTH_PX * non_last_segments
-            + last_width
-            + boundaries * gutter_px
-    };
-    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + text_area;
+    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + text_area_width(segments, &widths);
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
 
