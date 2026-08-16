@@ -154,6 +154,12 @@ export function useSubscriptions() {
   /** The exact JSON last handed to `saveTracked`. See the save effect. */
   const lastSavedRef = useRef<string | null>(null);
 
+  /** Set when the most recent persistence write failed, so a failure is
+   * detectable by something other than a console message: cleared the
+   * moment a save, retried or otherwise, next succeeds. See the save
+   * effect. */
+  const [saveError, setSaveError] = useState<Error | null>(null);
+
   // Accounts still needing migrateLegacyTracked's one-shot migration wait
   // here until a read reveals their headline window.
   const pendingPinMigrationRef = useRef<Set<string>>(new Set());
@@ -567,12 +573,14 @@ export function useSubscriptions() {
     void (async () => {
       try {
         await saveTracked(tracked);
+        setSaveError(null);
       } catch (error) {
         console.error(
           "Quotos: saving the tracked list failed; will retry on the next change",
           error,
         );
         if (lastSavedRef.current === serialized) lastSavedRef.current = null;
+        setSaveError(error instanceof Error ? error : new Error(String(error)));
       }
     })();
   }, [trackedSubscriptions]);
@@ -597,6 +605,7 @@ export function useSubscriptions() {
   return {
     subscriptions,
     trackedSubscriptions,
+    saveError,
     refreshAll,
     refreshAccountById,
     togglePin,

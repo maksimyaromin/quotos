@@ -1069,6 +1069,31 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
       consoleError.mockRestore();
     }
   });
+
+  test("exposes a failed save as saveError, detectable without reading the console", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useSubscriptions());
+      await flush();
+      expect(result.current.saveError).toBeNull();
+      saveTracked.mockClear();
+      saveTracked.mockRejectedValueOnce(new Error("disk full"));
+
+      act(() => result.current.renameSubscription("claude:claude", "Renamed Personal"));
+      await flush();
+
+      expect(result.current.saveError).toBeInstanceOf(Error);
+      expect(result.current.saveError?.message).toBe("disk full");
+
+      await act(async () => {
+        await result.current.refreshAll();
+      });
+
+      expect(result.current.saveError).toBeNull();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });
 
 describe("useSubscriptions reordering", () => {

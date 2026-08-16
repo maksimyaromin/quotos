@@ -195,6 +195,28 @@ mod tests {
         assert!(path.exists());
     }
 
+    /// The frontend detects a save failure only by `save_tracked` actually
+    /// rejecting; a write that silently kept the old in-memory list as
+    /// current would make that failure undetectable.
+    #[test]
+    fn a_failed_write_returns_err_and_leaves_memory_untouched() {
+        let dir = TempDir::new();
+        let obstruction = dir.path.join("blocked");
+        fs::write(&obstruction, "not a directory").unwrap();
+        let store = Store::load(obstruction.join("tracked.json"));
+
+        let result = store.save(vec![sample("Should not persist")]);
+
+        assert!(
+            result.is_err(),
+            "a parent path blocked by a file must fail to save"
+        );
+        assert!(
+            store.list().is_empty(),
+            "a failed save must not be remembered as if it had succeeded"
+        );
+    }
+
     #[test]
     fn save_overwrites_rather_than_appends() {
         let dir = TempDir::new();

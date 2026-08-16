@@ -143,7 +143,9 @@ pub(crate) fn save_tracked(
     state: tauri::State<'_, AppState>,
     tracked: Vec<TrackedAccount>,
 ) -> Result<(), String> {
-    state.tracked_store.save(tracked)
+    state.tracked_store.save(tracked).inspect_err(|err| {
+        eprintln!("quotos: saving the tracked list failed: {err}");
+    })
 }
 
 /// Reports what is currently configured for this account's statusline,

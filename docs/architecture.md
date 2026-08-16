@@ -156,6 +156,13 @@ the scheduler polls from memory while the next launch loads from disk.
 The save runs on a blocking thread, never across an `await`, so holding
 the lock through file I/O blocks only sibling saves.
 
+A failed save logs on the Rust side, since a rejected `invoke` promise
+alone leaves no trace a release build's console can show. The frontend's
+save effect in `use-subscriptions.ts` exposes the same failure as
+`saveError`, so it is detectable as state rather than only as a passing
+console message, and clears its save-dedupe record so the very next
+change retries instead of the failure going silent.
+
 A `localStorage` write returns as soon as the in-memory page state
 updates, and WebKit flushes its backing store to disk on its own
 schedule; whether an abrupt quit can race that flush was never
