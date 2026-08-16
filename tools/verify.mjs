@@ -11,6 +11,8 @@ const lanes = [
   { name: "lint", script: "lint" },
   { name: "typecheck", script: "typecheck" },
   { name: "test", script: "test" },
+  { name: "hidden characters", script: "check:hidden-characters" },
+  { name: "spec suffix", script: "check:spec-suffix" },
   { name: "cargo fmt", script: "cargo:fmt" },
   { name: "cargo clippy", script: "cargo:clippy" },
 ];

@@ -16,6 +16,8 @@
     "format:check": "biome format .",
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:hidden-characters": "node tools/checks/hiddenCharacters.mjs",
+    "check:spec-suffix": "node tools/checks/specFileSuffix.mjs",
     "cargo:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "cargo:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "verify": "node tools/verify.mjs"
