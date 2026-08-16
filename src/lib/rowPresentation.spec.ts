@@ -32,7 +32,7 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
   };
 }
 
-describe("rowPresentation — failure states are mutually exclusive", () => {
+describe("rowPresentation, failure states are mutually exclusive", () => {
   test("a row that needs signing in never also shows a rate-budget wait", () => {
     const result = rowPresentation(
       sub({
@@ -64,7 +64,7 @@ describe("rowPresentation — failure states are mutually exclusive", () => {
   });
 });
 
-describe("rowPresentation — the badge tells the truth", () => {
+describe("rowPresentation, the badge tells the truth", () => {
   test("only a row that really needs signing in gets the sign-in badge", () => {
     expect(rowPresentation(sub({ state: "broken", needsSignIn: true }), NOW).badge).toBe(
       "Needs sign-in",

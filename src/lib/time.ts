@@ -31,8 +31,8 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
-/** Bare clock time, e.g. "4:05 PM" — used for compact labels like a
- * disabled refresh control's "available at …" tooltip. */
+/** Bare clock time, for example "4:05 PM". Used for compact labels such
+ * as a disabled refresh control's "available at …" tooltip. */
 export function formatClockTime(iso: string | null): string | null {
   if (!iso) return null;
   const then = new Date(iso);

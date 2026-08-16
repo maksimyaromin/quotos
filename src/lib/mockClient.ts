@@ -305,7 +305,7 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
 }
 
 export async function setDetached(_detached: boolean): Promise<void> {
-  // no-op in the browser — there is no real window chrome to change
+  // no-op in the browser: there is no real window chrome to change
 }
 
 export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
@@ -336,7 +336,7 @@ export async function cancelSignIn(accountId: string): Promise<void> {
 }
 
 export async function forgetSignIn(_accountId: string): Promise<void> {
-  // no-op in the browser — nothing native to clean up
+  // no-op in the browser: nothing native to clean up
 }
 
 export function onSignInFinished(

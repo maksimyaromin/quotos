@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The single quality gate: runs every lane concurrently, lets each one run
 // to completion, and reports every failure instead of stopping at the
-// first. CI invokes `npm run verify` — this file — literally, so a green
+// first. CI invokes this same file through `npm run verify`, so a green
 // local run and a red CI run can never disagree about what ran.
 
 import { spawn } from "node:child_process";

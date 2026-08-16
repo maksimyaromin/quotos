@@ -83,8 +83,8 @@ export async function dragWindowStep(): Promise<void> {
   return invoke("drag_window_step");
 }
 
-/** Ends a header-drag gesture (mouseup) so the next one re-anchors instead
- * of jumping from a stale position — see `end_window_drag`. */
+/** Ends a header-drag gesture, mouseup, so the next one re-anchors instead
+ * of jumping from a stale position. See `end_window_drag`. */
 export async function endWindowDrag(): Promise<void> {
   return invoke("end_window_drag");
 }

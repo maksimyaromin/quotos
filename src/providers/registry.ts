@@ -47,7 +47,7 @@ export interface OutcomeResult {
 export type OutcomeMapper = (outcome: ReadOutcome, hadGoodRead: boolean) => OutcomeResult;
 
 /** One entry per provider adapter. Adding a second provider means one new
- * module plus one new line here — nothing else in the app changes. */
+ * module plus one new line here. Nothing else in the app changes. */
 export const PROVIDER_NORMALIZERS: Record<string, Normalizer> = {
   claude: normalizeClaude,
 };
@@ -56,8 +56,8 @@ export const PROVIDER_OUTCOME_MAPPERS: Record<string, OutcomeMapper> = {
   claude: mapOutcomeClaude,
 };
 
-/** Display name of who issued the subscription — the one place "Claude" as
- * a provider concept is named; the panel itself never branches on it. */
+/** Display name of who issued the subscription. The one place "Claude" as
+ * a provider concept is named. The panel itself never branches on it. */
 export const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   claude: "Anthropic",
 };

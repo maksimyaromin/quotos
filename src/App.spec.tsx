@@ -134,7 +134,7 @@ describe("pointer dismissal consumes the dismissing click", () => {
     fireEvent.click(target);
   }
 
-  test("a click on the row body only dismisses the menu — the row does not expand", async () => {
+  test("a click on the row body only dismisses the menu, the row does not expand", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
     expect(screen.getByText("Stop tracking")).toBeTruthy();
@@ -146,7 +146,7 @@ describe("pointer dismissal consumes the dismissing click", () => {
     expect(expandToggle.getAttribute("aria-expanded")).toBe("false");
   });
 
-  test("only the dismissing click is consumed — the next click acts normally", async () => {
+  test("only the dismissing click is consumed, the next click acts normally", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
 
@@ -179,7 +179,7 @@ describe("panel reopen refreshes the presentation clock", () => {
   });
 
   // macOS suspends a hidden WKWebView's timers, so the NOW_TICK interval
-  // does not run while the panel is closed — modeled here by moving the
+  // does not run while the panel is closed. Modeled here by moving the
   // wall clock without ever letting the interval fire.
   test("re-reads `now` on visible=true so relative times are not hours stale", async () => {
     await renderAppWithRow();

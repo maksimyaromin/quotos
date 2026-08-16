@@ -79,7 +79,7 @@ describe("claude mapOutcome", () => {
   });
 });
 
-describe("claude mapOutcome — what really needs a sign-in", () => {
+describe("claude mapOutcome, what really needs a sign-in", () => {
   test("credential_stale is never a sign-in warning: the account is signed in, its token just aged out", () => {
     const err = {
       kind: "credential_stale" as const,
