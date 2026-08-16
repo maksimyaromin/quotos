@@ -67,8 +67,7 @@ struct AppState {
     /// cached for the same reason as `last_status_item_segments`.
     last_status_item_worst_used_percent: Mutex<u8>,
     /// The status item's hover and VoiceOver text last set by
-    /// `set_status_item_state`, cached the same way. Starts as the plain product
-    /// name, matching the builder's own pre-any-data baseline.
+    /// `set_status_item_state`, cached the same way.
     last_status_item_tooltip: Mutex<String>,
     /// The layout the window is supposed to be at right now, while docked
     /// and visible, in global points; see `DisplayPoints`. `None` whenever
@@ -174,16 +173,13 @@ fn log_status_item_font_choice() {
     );
 }
 
-/// Before anything else touches shared state: if a Quotos is already
-/// running, this one must bow out, since two instances would each run
-/// their own rate limiter against the same shared 5-per-300s allowance and
-/// spend it double-speed. See single_instance.rs.
+/// Before anything else touches shared state. See single_instance.rs for
+/// why a second instance must bow out rather than run alongside this one.
 fn claim_single_instance_or_exit(app_support_dir: &Path) {
     match single_instance::claim(app_support_dir) {
         single_instance::Claim::Held(guard) => {
-            // The OS lock lives exactly as long as this handle stays open
-            // and is owned by this process, so the handle is deliberately
-            // never closed.
+            // The lock lives as long as this handle stays open, so it is
+            // deliberately never closed.
             std::mem::forget(guard);
         }
         single_instance::Claim::TakenByOther => {
@@ -269,12 +265,8 @@ fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
                 }
             }
             tauri::WindowEvent::Resized(size) => {
-                // resizable: false in tauri.conf.json only disables the
-                // native resize-handle drag, not a third-party window
-                // manager resizing this window directly, so this snaps
-                // the size back since the panel's layout math assumes
-                // exactly 360x560 logical and cannot reflow. Fights only
-                // a resize, never a move.
+                // See "Third-party window managers can still resize this
+                // window" in platform-constraints.md.
                 //
                 // Compared and reasserted in logical units: the incoming
                 // PhysicalSize is the point size times the window's own
@@ -370,11 +362,10 @@ fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
 }
 
 /// The status item's right-click menu. "Launch at Login" drives the OS's
-/// own login-item registry; see launch_at_login.rs. Its checkmark is read
-/// from the OS at build time and re-read after every toggle, never
-/// assumed from the click. Returns the menu together with the
-/// launch-at-login item, since the status item's own `on_menu_event`
-/// handler needs it to update the checkmark after every toggle.
+/// own login-item registry; see launch_at_login.rs. Returns the menu
+/// together with the launch-at-login item, since the status item's own
+/// `on_menu_event` handler needs it to update the checkmark after every
+/// toggle.
 fn build_status_item_menu(
     app: &AppHandle,
 ) -> tauri::Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>)> {
@@ -452,8 +443,6 @@ fn build_status_item(
             });
             let app = status_item.app_handle();
             if let Some(xy) = item_xy {
-                // Cached so set_detached's snap-back path, not itself a
-                // status item event, still knows where to re-dock.
                 *app.state::<AppState>()
                     .last_status_item_rect
                     .lock()
