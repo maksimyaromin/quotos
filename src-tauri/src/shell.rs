@@ -1,11 +1,6 @@
-//! One module rather than two because the two sides are mutually
-//! recursive: repainting the status item can move the open panel, through
-//! `repaint_status_item`, `schedule_resync_after_icon_change`, and
-//! `reposition_under_status_item`, and showing or hiding the panel
-//! repaints the status item, through `show_panel`, `hide_panel`, and
-//! `set_status_item_highlighted`. The pure layers stay out: coordinate
-//! math in `geometry`, bitmap composition in `status_item_render`, the
-//! NSPanel class swap in `panel_window`.
+//! The status item's repaint pipeline and the panel's show, hide, dock,
+//! detach, and drag lifecycle, mutually recursive with each other. See
+//! docs/panel-lifecycle.md.
 
 use std::time::Duration;
 
@@ -35,11 +30,9 @@ pub(crate) struct StatusItemSegmentDto {
     group_start: bool,
 }
 
-/// An empty `segments` clears the status item back to just the plain,
-/// theme-tinted glyph unless the panel is currently open. See
-/// `repaint_status_item`. `worst_used_percent` is the bare glyph's own arc
-/// fill, sent on every call regardless of `segments` so the arc stays
-/// current whether or not anything is pinned.
+/// An empty `segments` clears the status item back to the plain glyph.
+/// `worst_used_percent` is sent on every call regardless of `segments`
+/// so the bare glyph's own arc fill stays current either way.
 #[tauri::command]
 pub(crate) fn set_status_item_state(
     app: tauri::AppHandle,
@@ -56,14 +49,8 @@ pub(crate) fn set_status_item_state(
     repaint_status_item(&app, &status_item)
 }
 
-/// This command runs on the main thread and its caller's body is a full
-/// bitmap composite plus a set_icon. The frontend fires it on every state
-/// change, most of which leave the pinned digits identical, so comparing
-/// first turns those into a no-op rather than main-thread work that also
-/// reaches `schedule_resync_after_icon_change`, which moves the open
-/// panel. The tooltip participates because it can change alone: renaming a
-/// subscription rewrites its tooltip line while leaving every digit
-/// byte-identical.
+/// Skips the repaint's main-thread bitmap composite when nothing actually
+/// changed. See docs/panel-lifecycle.md for why the tooltip is compared too.
 fn record_if_changed(
     app: &tauri::AppHandle,
     segments: Vec<StatusItemSegmentDto>,
@@ -92,9 +79,8 @@ fn record_if_changed(
     true
 }
 
-/// Called from `show_panel`, `hide_panel`, and the click-away and hide
-/// branches, never from the frontend directly, since it is a pure
-/// reflection of native window visibility, not app data.
+/// Never called from the frontend directly, since it is a pure reflection
+/// of native window visibility, not app data.
 pub(crate) fn set_status_item_highlighted(app: &tauri::AppHandle, highlighted: bool) {
     let Some(status_item) = app.tray_by_id("main-status-item") else {
         return;
@@ -106,19 +92,9 @@ pub(crate) fn set_status_item_highlighted(app: &tauri::AppHandle, highlighted: b
     let _ = repaint_status_item(app, &status_item);
 }
 
-/// The one place the status item icon actually gets redrawn, shared by
-/// both of its independent inputs: the pinned-subscription digits, from
-/// `set_status_item_state`, and the "panel open" highlight, from
-/// `set_status_item_highlighted`. Neither knows the other's current value,
-/// so this always reads both fresh from `AppState` rather than taking
-/// either as a parameter.
-///
-/// Always clears the title with `Some("")`; see "tray-icon 0.24.2 on
-/// macOS" in platform-constraints.md for why `None` cannot do that here.
-/// With any segments present, or the highlight active, this drops
-/// `icon_as_template` and paints a composed bitmap instead, since a plain
-/// template image cannot carry its own background tint; with neither, it
-/// reverts to the plain template glyph.
+/// The one place the status item icon actually gets redrawn. See
+/// docs/panel-lifecycle.md for why this always reads both of its inputs
+/// fresh from `AppState` instead of taking either as a parameter.
 fn repaint_status_item(
     app: &tauri::AppHandle,
     status_item: &tauri::tray::TrayIcon,
@@ -141,9 +117,7 @@ fn repaint_status_item(
     status_item.set_title(Some("")).map_err(|e| e.to_string())?;
 
     // The composited image carries no text a screen reader can read, so
-    // the tooltip names every pinned figure instead, composed in full by
-    // the frontend and cached here alongside the segments so a
-    // native-only repaint, a highlight toggle, keeps it.
+    // the tooltip, composed by the frontend, names every pinned figure.
     let tooltip = state
         .last_status_item_tooltip
         .lock()
@@ -195,21 +169,8 @@ fn repaint_status_item(
         changed
     };
 
-    // Pinning or unpinning a subscription, or the highlight toggling, can
-    // change the status item's own width, which on macOS shifts the
-    // item's own on-screen x too, since status items lay out
-    // right-to-left. Nothing about that resize goes through
-    // `TrayIconEvent`, so the last-known item position goes stale the
-    // instant this runs and the beak and panel silently drift off the
-    // glyph until the next real click or hover, hence re-docking here
-    // whenever the panel is open and attached.
-    //
-    // Gated on the width having actually changed: a same-width repaint
-    // cannot have moved the item, and re-docking after one costs three
-    // `status_item.rect()` reads and up to three frame-placement calls on
-    // the open panel, on the main thread. The highlight toggle never
-    // changes the width, by construction, and it fires on every open and
-    // close.
+    // A width change shifts the item's on-screen x too, with no event to
+    // read it from, so the docked panel needs re-syncing. See docs/panel-lifecycle.md.
     sync_status_item_length(status_item, icon_width_px);
 
     if width_changed {
@@ -219,17 +180,12 @@ fn repaint_status_item(
 }
 
 /// Pins the status item to a fixed length exactly matching the composited
-/// image, closing the variable-length margin platform-constraints.md
-/// documents; see `status_item_render::draw_highlight_background` for the
-/// highlight that margin would otherwise widen past. Must run on every
-/// repaint, not just once: unlike a variable-length item, a fixed-length
-/// one never resizes itself when a new, differently sized image is set.
+/// image; see "tray-icon 0.24.2 on macOS" in platform-constraints.md.
+/// Must run on every repaint: a fixed-length item never resizes itself.
 #[cfg(target_os = "macos")]
 pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_width_px: u32) {
-    // status_item_render's buffer is always 2x an 18pt-tall image, see
-    // GLYPH_PX's doc comment, regardless of the display's own backing
-    // scale, so dividing by two gives this image's real width in points
-    // on any display.
+    // status_item_render's buffer is always 2x an 18pt-tall image, so
+    // dividing by two gives this image's real width in points.
     let width_points = icon_width_px as f64 / 2.0;
     let _ = status_item.with_inner_tray_icon(move |inner| {
         if let Some(ns_status_item) = inner.ns_status_item() {
@@ -242,12 +198,8 @@ pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_
 pub(crate) fn sync_status_item_length(_status_item: &tauri::tray::TrayIcon, _icon_width_px: u32) {}
 
 /// Re-reads the status item's current rect and, if the panel is visible
-/// and still docked, never while detached, re-applies the docked position
-/// and beak offset from it. Pinning or unpinning changes the icon's
-/// width, and therefore its on-screen x, with no click to refresh the
-/// last-known rect from. Returns whether it actually repositioned
-/// anything, so `schedule_resync_after_icon_change` knows whether a retry
-/// is still needed.
+/// and still docked, re-applies the docked position and beak offset from
+/// it. Returns whether it repositioned anything, for the caller's retry.
 fn resync_docked_position_after_icon_change(
     app: &tauri::AppHandle,
     status_item: &tauri::tray::TrayIcon,
@@ -274,16 +226,9 @@ fn resync_docked_position_after_icon_change(
     Some((item_x, item_y))
 }
 
-/// A single synchronous call from `resync_docked_position_after_icon_change`
-/// reads a stale rect: right after `set_icon()` changes the composited
-/// image's width, `status_item.rect()`, called immediately after on the
-/// same main-thread dispatch, still reports the item's previous width and
-/// position for one to a few runloop turns. `set_icon`'s own dispatch
-/// guarantees the image is set, not that `NSStatusItem`'s width-driven
-/// layout pass has already run, so this makes one immediate attempt plus
-/// a couple of short-delay retries rather than trusting the first read;
-/// each retry just re-reads and re-applies, harmless if the previous
-/// attempt already landed on the right numbers.
+/// A single synchronous read right after `set_icon()` reports a stale
+/// rect for one to a few runloop turns, so this retries on a short delay
+/// rather than trusting the first read. See docs/panel-lifecycle.md.
 fn schedule_resync_after_icon_change(app: &tauri::AppHandle, status_item: tauri::tray::TrayIcon) {
     if resync_docked_position_after_icon_change(app, &status_item).is_none() {
         return;
@@ -298,16 +243,8 @@ fn schedule_resync_after_icon_change(app: &tauri::AppHandle, status_item: tauri:
 }
 
 /// Tears the panel off into a real, freestanding window, `detached =
-/// true`, or folds it back into a popover, `false`. Detached mode stays
-/// out of the hide-on-blur path and shows up in Cmd+Tab, so it can be
-/// parked on screen and watched while the user works elsewhere.
-///
-/// Decorations must stay off in both states: with `titleBarStyle: Overlay`
-/// in `tauri.conf.json`, turning decorations on paints real traffic
-/// lights over the content and a native title-bar strip regardless of the
-/// window's own transparency. Dragging comes from `app.tsx`'s own
-/// header-drag calling `drag_window_step` on every `mousemove`, which
-/// needs no native title bar at all.
+/// true`, or folds it back into a popover, `false`. See docs/panel-lifecycle.md
+/// for why decorations must stay off in both states.
 #[tauri::command]
 pub(crate) fn set_detached(
     app: tauri::AppHandle,
@@ -327,12 +264,8 @@ pub(crate) fn set_detached(
     }
 }
 
-/// `NSFloatingWindowLevel`, which this sets, is right for a free-floating
-/// detached window, and specifically wrong for the popover; see
-/// `snap_back_to_docked`. Dragging must never fight the docked-position
-/// self-correction; see `AppState.docked_target`'s doc comment.
-/// `set_focus()` would activate the application; see `panel_window.rs`'s
-/// module doc for why that must not happen here.
+/// Sets `NSFloatingWindowLevel`, right for a free-floating detached
+/// window and wrong for the popover; see `snap_back_to_docked`.
 fn enter_detached_mode(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -347,17 +280,9 @@ fn enter_detached_mode(
     Ok(())
 }
 
-/// Restores `NSStatusWindowLevel`, through `set_popover_collection_behavior`,
-/// and must be the only level-setting call on this path: `tao`'s
-/// `set_always_on_top`, called by `enter_detached_mode`, ends in an async
-/// dispatch to the main queue, and calling it here too would schedule a
-/// later runloop turn to drop the level back to floating right after this
-/// synchronous restore, undoing it. Also re-docks the window under the
-/// status item, from the last rect seen by any status item event, since
-/// this path has no fresh click to read a rect from: it is triggered by
-/// the panel's own header button. `None` only before the app's first such
-/// event, which cannot happen here since detaching requires the panel to
-/// already be open.
+/// Restores `NSStatusWindowLevel` and must be the only level-setting call
+/// on this path, and re-docks from the last seen status item rect. See
+/// docs/panel-lifecycle.md for why a second `set_always_on_top` would race it.
 fn snap_back_to_docked(app: &tauri::AppHandle, window: &tauri::WebviewWindow, state: &AppState) {
     set_popover_collection_behavior(window);
     if let Some((item_x, item_y)) = *state
@@ -408,21 +333,9 @@ fn compute_docked_layout(
     ))
 }
 
-/// Moves the window's top-left to a global-point coordinate, synchronously
-/// on the main thread wherever that is possible.
-///
-/// The synchronicity matters: `tao`'s own `set_outer_position` ends in an
-/// async dispatch of `setFrameTopLeftPoint:` onto the main queue, while
-/// `show()` runs inline. Called in either order from the click handler,
-/// already on the main thread, the window becomes visible at its stale
-/// position first and only moves a runloop turn later, a guaranteed
-/// one-frame flash at wherever it last was. Placing it directly through
-/// `NSWindow` closes that gap: by the time `show()` runs the frame is
-/// already right.
-///
-/// Returns whether the synchronous path was taken. Callers fall back to
-/// Tauri's own async `set_position` on non-macOS, or when the call
-/// arrives off the main thread, where `setFrameTopLeftPoint:` is not safe.
+/// Moves the window's top-left synchronously on the main thread, closing
+/// a one-frame flash `tao`'s own async `set_outer_position` leaves. See
+/// docs/panel-lifecycle.md. Returns whether the synchronous path was taken.
 #[cfg(target_os = "macos")]
 fn place_window_top_left_sync(window: &tauri::WebviewWindow, x: f64, y: f64) -> bool {
     use objc2_app_kit::{NSScreen, NSWindow};
@@ -455,24 +368,8 @@ fn place_window_top_left_sync(_window: &tauri::WebviewWindow, _x: f64, _y: f64) 
 }
 
 /// Moves a detached window by hand, one `mousemove` at a time, instead of
-/// calling AppKit's `-[NSWindow performWindowDragWithEvent:]`, which
-/// `tao`'s `startDragging()` bottoms out in. `performWindowDragWithEvent:`
-/// does move the window, but doing so while the mouse stays down
-/// measurably reactivates the application, the same Space-losing failure
-/// `panel_window.rs` exists to prevent. The same problem reproduces for
-/// this function's own replacement mechanism, `place_window_top_left_sync`:
-/// relocating a window while the mouse button is held over it appears to
-/// carry an implicit activation outside
-/// `NSWindowStyleMaskNonactivatingPanel`'s own promise, which is scoped to
-/// key and main status, not window-server-level drag handling.
-/// Reactivation is therefore scoped to the physical gesture's duration
-/// only, never on show and never on an external window-manager move.
-///
-/// Called on every `mousemove` while a header drag is in progress. The
-/// first call of a gesture only records where the cursor and the window
-/// each started, in `AppState.manual_drag_anchor`. Every later call sets
-/// the window's frame directly from the live delta, through the same
-/// synchronous `place_window_top_left_sync` the docking path already uses.
+/// AppKit's `performWindowDragWithEvent:`, which measurably reactivates
+/// the app while the mouse stays down. See docs/panel-lifecycle.md.
 #[tauri::command]
 pub(crate) fn drag_window_step(window: tauri::WebviewWindow, state: tauri::State<'_, AppState>) {
     let Some((mouse, window_origin)) = current_mouse_and_window_points(&window) else {
@@ -498,10 +395,7 @@ pub(crate) fn drag_window_step(window: tauri::WebviewWindow, state: tauri::State
 }
 
 /// Clears `AppState.manual_drag_anchor` at the end of a header-drag
-/// gesture. Without this, the next drag's first `drag_window_step` call
-/// would see the previous gesture's stale anchor instead of re-anchoring
-/// to where this new one actually started, and jump the window on its
-/// first move.
+/// gesture, so the next drag re-anchors instead of jumping on its first move.
 #[tauri::command]
 pub(crate) fn end_window_drag(state: tauri::State<'_, AppState>) {
     *state
@@ -510,13 +404,9 @@ pub(crate) fn end_window_drag(state: tauri::State<'_, AppState>) {
         .expect("manual_drag_anchor mutex poisoned") = None;
 }
 
-/// Reads the live global mouse location and the window's own current
-/// top-left, both in the same CG-style, y-down, top-left-of-primary-screen
-/// global points `place_window_top_left_sync` writes in; see
-/// `DisplayPoints`'s doc comment for why points, not physical pixels, are
-/// the only safe coordinate space for this arithmetic. Both
-/// `NSEvent.mouseLocation` and `NSWindow.frame` are natively in points
-/// already, so there is no per-display scale factor to resolve here.
+/// Reads the live global mouse location and the window's own top-left,
+/// both in the same global points `place_window_top_left_sync` writes in.
+/// Both are natively in points, so no per-display scale factor applies.
 #[cfg(target_os = "macos")]
 fn current_mouse_and_window_points(
     window: &tauri::WebviewWindow,
@@ -551,17 +441,9 @@ fn current_mouse_and_window_points(
     None
 }
 
-/// Applies a docked position and beak offset, and records it as the
-/// window's current intended target, `AppState.docked_target`. See that
-/// field's own doc comment: the `WindowEvent::Moved` handler reapplies
-/// this exact target whenever something relocates the window away from
-/// it.
-///
-/// `x` and `y` are global points, see `DisplayPoints`. The fallback path
-/// uses a `LogicalPosition` deliberately: `tao`'s `Position::to_logical`
-/// passes a logical value straight through, so no scale factor is
-/// consulted. A `PhysicalPosition` here would be reinterpreted through
-/// whatever display the window currently happens to sit on.
+/// Applies a docked position and beak offset, and records it as
+/// `AppState.docked_target`, which `WindowEvent::Moved` reapplies
+/// whenever something relocates the window. See docs/architecture.md.
 pub(crate) fn apply_docked_position(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -577,11 +459,9 @@ pub(crate) fn apply_docked_position(
     let _ = window.emit("panel-beak-offset", layout.beak_left);
 }
 
-/// Moves an already-visible, already-docked-chrome window to sit under
-/// the status item and tells the frontend where to draw the beak, the
-/// shared tail end of both `show_panel` and `set_detached`'s snap-back
-/// path. Returns what it applied, or `None` if no display could be
-/// resolved.
+/// Moves an already-visible, docked window under the status item and
+/// tells the frontend where to draw the beak, the shared tail end of
+/// both `show_panel` and `set_detached`'s snap-back path.
 fn reposition_under_status_item(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -593,11 +473,8 @@ fn reposition_under_status_item(
     Some(layout)
 }
 
-/// Clears the docked position target, see `AppState.docked_target`, so
-/// the `WindowEvent::Moved` self-correction stops reasserting a position
-/// that no longer applies. Called whenever the window stops being docked
-/// and expected to stay exactly here: hiding, and detaching, since
-/// dragging must never fight the drag.
+/// Clears `AppState.docked_target` so the `WindowEvent::Moved`
+/// self-correction stops reasserting a position that no longer applies.
 pub(crate) fn clear_docked_target(app: &tauri::AppHandle) {
     *app.state::<AppState>()
         .docked_target
@@ -605,21 +482,9 @@ pub(crate) fn clear_docked_target(app: &tauri::AppHandle) {
         .expect("docked_target mutex poisoned") = None;
 }
 
-/// A full-screen application owns its Space, and macOS does not order
-/// another application's window into it just because that application
-/// asks. The flag that grants it is
-/// `NSWindowCollectionBehaviorFullScreenAuxiliary`, the standard utility
-/// and palette window behavior. Paired with `CanJoinAllSpaces`: the window
-/// then exists on every Space at once, which is both what a menu bar
-/// popover actually is and the option with no asynchronous Space
-/// transition to race, unlike `MoveToActiveSpace`.
-///
-/// `.Transient` keeps it out of Mission Control and Exposé's per-Space
-/// window list, matching the system's own Volume and Wi-Fi popovers.
-/// `.IgnoresCycle` keeps it out of Cmd-` window cycling.
-///
-/// Reapplied on every show rather than only at launch: idempotent, and
-/// cheap insurance against anything resetting it after first realization.
+/// Grants this window a place on every full-screen Space at once, the
+/// only option with no asynchronous Space transition to race. Reapplied
+/// on every show, idempotent. See docs/panel-lifecycle.md.
 #[cfg(target_os = "macos")]
 pub(crate) fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
@@ -651,12 +516,9 @@ pub(crate) fn set_popover_collection_behavior(window: &tauri::WebviewWindow) {
     set_popover_window_level(ns_window);
 }
 
-/// `alwaysOnTop` in `tauri.conf.json` gets this window
-/// `NSFloatingWindowLevel`, which is right for a panel floating over
-/// ordinary windows and not enough to be seen over another application's
-/// full-screen Space. A status-item popover belongs at
-/// `NSStatusWindowLevel`, the level the system's own menu bar popovers
-/// use. Overridable through `QUOTOS_DEBUG_WINDOW_LEVEL` for diagnosis.
+/// `alwaysOnTop` gets `NSFloatingWindowLevel`, not enough to be seen over
+/// a full-screen Space; a popover belongs at `NSStatusWindowLevel`.
+/// Overridable through `QUOTOS_DEBUG_WINDOW_LEVEL` for diagnosis.
 #[cfg(target_os = "macos")]
 fn set_popover_window_level(ns_window: &objc2_app_kit::NSWindow) {
     const NS_STATUS_WINDOW_LEVEL: isize = 25;
@@ -688,10 +550,8 @@ fn collection_behavior_bits(_window: &tauri::WebviewWindow) -> Option<u64> {
     None
 }
 
-/// AppKit's own answer to whether this window is on the Space the user is
-/// looking at, through the public `-[NSWindow isOnActiveSpace]` rather
-/// than the private `CGSCopySpacesForWindows` route. Surfaced through the
-/// `QUOTOS_DEBUG_POS` trace.
+/// Whether this window is on the Space the user is looking at, through
+/// the public `isOnActiveSpace` rather than a private route.
 #[cfg(target_os = "macos")]
 fn space_diagnostics(window: &tauri::WebviewWindow) -> Option<String> {
     use objc2_app_kit::{NSApplication, NSWindow};
@@ -725,13 +585,9 @@ fn space_diagnostics(_window: &tauri::WebviewWindow) -> Option<String> {
     None
 }
 
-/// Shows the panel and gives it keyboard focus without activating the
-/// application. See `panel_window.rs`'s module doc for the whole argument.
-/// The fallback branch activates the application in the ordinary way,
-/// taken only if the panel conversion did not happen: a non-macOS build,
-/// `QUOTOS_PANEL_MODE=window`, or an AppKit that refused the class swap. A
-/// window that can never take keyboard focus would be a worse regression
-/// than a Space switch.
+/// Shows the panel and gives it focus without activating the app. The
+/// fallback branch activates normally, taken only if the panel class
+/// swap did not happen; see docs/platform-constraints.md.
 fn order_panel_front(window: &tauri::WebviewWindow) {
     let is_panel = panel_window::make_nonactivating_panel(window);
     let _ = window.show();
@@ -764,17 +620,9 @@ fn order_front_regardless(window: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "macos"))]
 fn order_front_regardless(_window: &tauri::WebviewWindow) {}
 
-/// Positions the window before showing it. `show()` reveals the window
-/// wherever it was last left, so showing before moving guarantees a
-/// visible frame at the wrong place on a multi-display machine. The move
-/// itself must also actually land before the reveal, which `set_position`
-/// alone cannot promise; see `place_window_top_left_sync` for that half.
-///
-/// The position is reapplied once more after `show()`. That second call
-/// is a no-op when nothing moved the window, since setting the frame to
-/// its current origin emits no `Moved` event, and it costs one
-/// main-thread call to be immune to anything ordering-front does to the
-/// frame.
+/// Positions the window before showing it, then reapplies the position
+/// once more after `show()`, a no-op unless ordering-front moved the
+/// frame. See docs/panel-lifecycle.md.
 pub(crate) fn show_panel(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -795,10 +643,8 @@ pub(crate) fn show_panel(
     set_status_item_highlighted(app, true);
 }
 
-/// Opt-in placement trace, `QUOTOS_DEBUG_POS=1`, off by default so no
-/// build ever writes to stderr on its own. Every number the docked-
-/// position arithmetic consumes and produces, plus the frame AppKit
-/// actually ended up with.
+/// Opt-in placement trace, `QUOTOS_DEBUG_POS=1`, off by default. Every
+/// number the docked-position arithmetic consumes and produces.
 fn log_docked_placement(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -869,9 +715,8 @@ fn window_frame_points(_window: &tauri::WebviewWindow) -> Option<(f64, f64, f64,
 }
 
 /// Left-clicking the status item while detached brings the window forward
-/// instead of hiding it. Closing a window the user deliberately parked on
-/// screen must be an explicit action, not an accidental side effect of
-/// clicking the glyph again.
+/// instead of hiding it, since closing a deliberately parked window must
+/// be an explicit action.
 pub(crate) fn toggle_panel(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,

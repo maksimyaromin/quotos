@@ -12,7 +12,7 @@ this page is the map between them.
 | Module | Owns |
 | --- | --- |
 | `lib.rs` | Application state and the Tauri setup: window and menu events, the tray click handler, wiring every command. |
-| `shell.rs` | The interactive shell: the status item's repaint pipeline and the panel's show, hide, dock, detach, and drag lifecycle. |
+| `shell.rs` | The interactive shell: the status item's repaint pipeline and the panel's show, hide, dock, detach, and drag lifecycle. See [panel-lifecycle.md](panel-lifecycle.md). |
 | `geometry.rs` | Pure placement math and read-only screen queries. No module here moves a window; `shell.rs` does that with these numbers. |
 | `panel_window.rs` | Turns the panel into a non-activating `NSPanel`, the AppKit window class that can hold keyboard focus without activating its application. |
 | `status_item_render.rs` | Composites the status item's glyph and colored percentage digits into an RGBA bitmap, since `tray-icon` has no colored-title path. See [status-item-rendering.md](status-item-rendering.md). |
@@ -208,7 +208,11 @@ scale factors they diverge, so `resolve_status_item_point` tries each
 display's own scale factor against the status item's rect and keeps the
 one whose quotient actually lands inside that display, tie-breaking on
 whichever candidate sits closest to its own display's top edge, since a
-menu bar always hugs it.
+menu bar always hugs it. On the way out, `apply_docked_position` places
+the window with a `LogicalPosition`, which `tao`'s `Position::to_logical`
+passes through untouched, so no scale factor is consulted there either;
+a `PhysicalPosition` would be reinterpreted through whatever display the
+window happens to currently sit on.
 
 `displays_in_points` reads `NSScreen` directly on macOS rather than
 going through `tao`'s `Monitor`, since it is the only API that also
