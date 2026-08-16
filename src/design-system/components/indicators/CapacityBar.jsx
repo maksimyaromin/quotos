@@ -1,15 +1,5 @@
-/** Maps consumed capacity to a fill color: teal when little is used, amber
- *  approaching the limit, red near or at it. This is the only place color
- *  changes meaning by value. I2: consumed, not remaining — a full bar and a
- *  red bar both mean the same thing everywhere the bar appears.
- *
- *  Used directly by `LimitWindow`'s per-window bars, where each window's own
- *  percentage is the only thing that should color it. The subscription's
- *  own headline bar instead takes a `severity` prop (below) — R2-2/
- *  followup-3: the captain's own request is that the headline number and
- *  bar read from the *worst of every window*, not just the headline's own
- *  percentage, so a 20%-weekly account with an 85%-used session still shows
- *  amber. */
+/** Thresholds must match `providers/claude/normalizeUsage.ts`'s severity
+ *  calculation exactly. */
 export function capacityColor(used) {
   if (used >= 90) return "var(--cap-critical)";
   if (used >= 75) return "var(--cap-warn)";
@@ -22,13 +12,11 @@ function severityColor(severity) {
   return "var(--cap-healthy)";
 }
 
-/** The thin filling bar. `used` (0–100, percent consumed) always sets fill
- *  width — more filled always means more used, never the reverse. Color
- *  comes from `severity` when given (the subscription's own headline bar);
- *  otherwise it falls back to `used`'s own bracket (a single window's bar,
- *  which has no separate severity of its own). When `reading`, an
- *  indeterminate shimmer plays over the held value — the number is never
- *  blanked. When `stale`, the fill dims. */
+/** `used`, 0 to 100 percent consumed, always sets fill width: more filled
+ *  always means more used, never the reverse. `severity` overrides the
+ *  fill color when given; otherwise color falls back to `used`'s own
+ *  bracket. `reading` plays a shimmer over the held value without
+ *  blanking it. `stale` dims the fill. */
 export function CapacityBar({
   used = 0,
   reading = false,
@@ -59,7 +47,7 @@ export function CapacityBar({
           background: color,
           borderRadius: "var(--radius-pill)",
           opacity: stale ? 0.4 : 1,
-          // biome-ignore format: reducedMotion.test.jsx scans this line for a --dur token; keep it on one line.
+          // biome-ignore format: reducedMotion.spec.jsx scans this line for a --dur token, so it must stay on one line.
           transition: "width var(--dur-slow) var(--ease-out), background var(--dur-base), opacity var(--dur-base)",
         }}
       />

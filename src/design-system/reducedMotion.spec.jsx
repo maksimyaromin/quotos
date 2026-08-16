@@ -7,14 +7,11 @@ import { CapacityBar } from "./components/indicators/CapacityBar.jsx";
 
 afterEach(cleanup);
 
-// macOS "Reduce Motion" reaches the webview as prefers-reduced-motion, and
+// macOS "Reduce Motion" reaches the webview as prefers-reduced-motion.
 // tokens/elevation.css answers it in one place: zero the --dur-* tokens
-// (which every transition in the app takes its duration from), stop the
-// inline-styled keyframe animations, and hide the shimmer overlay (stopped,
-// its gradient would sit as a static white stripe). jsdom applies none of
-// this, so these tests pin the pieces the media query relies on instead:
-// the block itself, its token coverage, the no-literal-durations invariant
-// that makes token-zeroing complete, and the shimmer's targeting hook.
+// every transition takes its duration from, stop the inline-styled
+// keyframe animations, and hide the shimmer overlay. jsdom cannot evaluate
+// a real media query, so these tests pin the pieces it relies on instead.
 
 const dsDir = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.resolve(dsDir, "..");

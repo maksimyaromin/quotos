@@ -10,9 +10,9 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   /** Control height. `base` = macOS small control (26px). */
   size?: "sm" | "base" | "lg";
   disabled?: boolean;
-  /** Stretch to the container width — used for the primary action in the add-subscription sheet. */
+  /** Stretch to the container width, used for the primary action in the add-subscription sheet. */
   fullWidth?: boolean;
-  /** Optional 14px leading icon node (e.g. a Lucide SVG). */
+  /** Optional 14px leading icon node, typically a Lucide SVG. */
   icon?: React.ReactNode;
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
   children?: React.ReactNode;

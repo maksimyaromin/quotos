@@ -1,7 +1,6 @@
-/* Quotos — webfonts (self-hosted, shipped with the system)
-   Inter for UI text, MonoLisa for every number/key. Both are the real files
-   the user provided. Inter is a variable font (one file per style covers all
-   weights); MonoLisa is shipped as static weights. */
+/* Inter for UI text, MonoLisa for every number and key, both self-hosted.
+   Inter is a variable font, one file per style covers all weights; MonoLisa
+   ships as static weights. */
 
 @font-face {
   font-family: "Inter";

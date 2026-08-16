@@ -1,9 +1,7 @@
-/* Quotos — color tokens
-   Cool graphite neutrals + a single teal accent. Semantic capacity/status
-   colors are muted on purpose: the common case ("plenty left, carry on")
-   should read as calm, never as an alert. Dark is the hero appearance;
-   light mirrors it. Scope: :root defaults to dark; [data-appearance="light"]
-   overrides. */
+/* Cool graphite neutrals and a single teal accent. Semantic capacity and
+   status colors are muted on purpose, so the common case reads as calm,
+   never as an alert. Dark is the hero appearance; light mirrors it.
+   :root defaults to dark; [data-appearance="light"] overrides. */
 
 :root {
   /* --- base neutral ramp (cool graphite) --- */
@@ -36,7 +34,7 @@
 
   /* --- surfaces --- */
   --bg-base: var(--graphite-0);        /* behind the vibrancy blur */
-  --bg-panel: rgba(19, 21, 24, 0.86);  /* the popover surface — translucent, vibrancy shows through */
+  --bg-panel: rgba(19, 21, 24, 0.86);  /* the popover surface, translucent, vibrancy shows through */
   --bg-row: transparent;               /* rows sit on the panel */
   --bg-row-hover: var(--graphite-3);
   --bg-elevated: var(--graphite-2);    /* nested cards, menus */

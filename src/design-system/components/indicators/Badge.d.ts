@@ -7,5 +7,5 @@ export interface BadgeProps {
   style?: React.CSSProperties;
 }
 
-/** A small pill for a status word ("Behind", "Broken") or a window scope tag ("Opus"). */
+/** A small pill for a status word such as "Behind" or "Broken", or a window scope tag such as "Opus". */
 export function Badge(props: BadgeProps): React.ReactElement;

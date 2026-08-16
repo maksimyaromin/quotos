@@ -13,7 +13,7 @@ const base = {
   cursor: "pointer",
   userSelect: "none",
   whiteSpace: "nowrap",
-  // biome-ignore format: reducedMotion.test.jsx scans this line for a --dur token; keep it on one line.
+  // biome-ignore format: reducedMotion.spec.jsx scans this line for a --dur token, so it must stay on one line.
   transition: "background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast), transform var(--dur-instant)",
 };
 
@@ -54,7 +54,7 @@ const variants = {
   },
 };
 
-/** A labeled action button. Named, sentence-case labels; verbs. */
+/** A labeled action button using sentence-case, verb-first labels. */
 export function Button({
   variant = "secondary",
   size = "base",

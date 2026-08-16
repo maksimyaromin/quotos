@@ -1,7 +1,6 @@
-/* Quotos — spacing, radii, sizing
-   Tight 2px-based scale. A menu bar popover is dense; whitespace is earned,
-   not sprinkled. Radii follow macOS: small controls ~5-6px, the popover
-   itself ~12px, chips ~4px. */
+/* Tight 2px-based scale: a menu bar popover is dense, so spacing stays
+   tight. Radii follow macOS: small controls about 5 to 6px, the popover
+   itself about 12px, chips about 4px. */
 
 :root {
   /* spacing scale */

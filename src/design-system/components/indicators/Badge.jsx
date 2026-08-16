@@ -10,8 +10,7 @@ const TONES = {
   info: { color: "var(--blue)", bg: "var(--blue-muted)", border: "transparent" },
 };
 
-/** A small pill for a short status word or a window scope tag. Sentence-case,
- *  never louder than it needs to be. */
+/** A small pill for a short status word or a window scope tag, sentence-case. */
 export function Badge({ tone = "neutral", children, style }) {
   const t = TONES[tone] || TONES.neutral;
   return (

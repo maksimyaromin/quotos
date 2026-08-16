@@ -1,7 +1,7 @@
 import React from "react";
 
-/** A square, borderless icon control for toolbar-style actions (refresh, close,
- *  settings, expand). Monochrome; inherits currentColor. */
+/** A square, borderless icon control for toolbar actions such as refresh,
+ *  close, settings and expand. Monochrome, inheriting currentColor. */
 export function IconButton({
   size = 24,
   active = false,

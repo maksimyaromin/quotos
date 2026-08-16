@@ -1,4 +1,4 @@
-/* Quotos design system — global entry point.
+/* Quotos design system, global entry point.
    Consumers link THIS file. It only @imports; no rules live here. */
 
 @import url("./tokens/fonts.css");

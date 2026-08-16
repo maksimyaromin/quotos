@@ -9,8 +9,8 @@ const STATE_COLOR = {
 
 const PULSING = new Set(["connecting", "reading"]);
 
-/** A small state dot. Color maps to subscription state; in-progress states
- *  pulse gently. "working" reads as calm (teal), not a loud green "OK". */
+/** A small state dot. Color maps to subscription state, and in-progress
+ *  states pulse gently. "working" reads as calm teal, not a loud green "OK". */
 export function StatusDot({ state = "working", size = 7, style }) {
   const pulsing = PULSING.has(state);
   return (

@@ -1,7 +1,7 @@
 import React from "react";
 
-/** A labeled text input in macOS small-control style. Used in the
- *  add-subscription flow (paste a key, name an account). */
+/** A labeled text input in macOS small-control style, used in the
+ *  add-subscription flow to paste a key or name an account. */
 export function TextField({
   label,
   value,
