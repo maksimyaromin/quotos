@@ -32,11 +32,9 @@ export interface LimitWindowEntity {
 }
 
 /** Computed by the provider adapter from every window it saw, not just the
- * headline one, so a 20% headline with a session window nearly exhausted
- * still reads as amber. `critical` when any window is at least 90% used,
- * `warn` when any window is at least 75% used, otherwise `healthy`. These
- * thresholds mirror the design system's `--cap-critical` and `--cap-warn`
- * tokens and must not diverge from them. */
+ * headline one, so a healthy headline percent does not mask a
+ * near-exhausted window elsewhere. See `providers/claude/normalizeUsage.ts`'s
+ * `computeSeverity` for the exact thresholds. */
 export type Severity = "healthy" | "warn" | "critical";
 
 export interface Subscription {
@@ -47,9 +45,8 @@ export interface Subscription {
   labelOverride: string | null;
   account: string | null;
   state: SubscriptionState;
-  /** Computed from every window, not just the headline one, so a healthy
-   * headline percent does not mask a near-exhausted window elsewhere.
-   * Untouched by a failed or rate-limited read. */
+  /** Untouched by a failed or rate-limited read; see `Severity`'s own doc
+   * for how it's computed. */
   severity: Severity;
   /** Percent of the headline window consumed, 0 to 100. The headline is
    * the account-wide weekly window, not the most-consumed one, see
