@@ -14,6 +14,7 @@ const EXACT_EXCEPTIONS = new Set([
   "Cargo.toml",
   "Cargo.lock",
   "Info.plist",
+  "LICENSE",
 ]);
 
 // Path prefixes carrying their own naming authority: Rust's own snake_case
