@@ -1,7 +1,7 @@
 import * as React from "react";
-import type { SubscriptionState } from "../indicators/StatusDot";
 import { Badge } from "../indicators/Badge";
 import { CapacityBar } from "../indicators/CapacityBar";
+import type { SubscriptionState } from "../indicators/StatusDot";
 import { StatusDot } from "../indicators/StatusDot";
 import { LimitWindow, type LimitWindowProps } from "./LimitWindow";
 import styles from "./SubscriptionRow.module.css";
