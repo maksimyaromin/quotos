@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**301 automated tests pass** (185 vitest, 116 `cargo test`); `tsc --noEmit`,
+**307 automated tests pass** (189 vitest, 118 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (185) from `quotos-app/`; `cargo test` (116)
+- **Tests**: `npx vitest run` (189) from `quotos-app/`; `cargo test` (118)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -295,6 +295,26 @@ clean.
     persisted the loss. Unchanged is now a no-op; only an explicitly
     emptied field clears (both design-system copies, bundle regenerated,
     four regression tests).
+
+29. **The statusline second source can actually win now** — the snapshot's
+    `fetched_at` was stamped at snapshot *assembly*, which happens after the
+    feed file is read, so the freshest-wins comparison
+    (`statuslineMerge.ts`) discarded the feed on every live read: the whole
+    S2 feature (helper install, ingest, `read_feed`) shipped inert, and its
+    tests never noticed because they fabricate a feed timestamp the Rust
+    producer couldn't construct. `fetched_at` is now stamped the moment the
+    usage HTTP response arrives (`providers/claude.rs`'s `UsageRead`,
+    pinned by a slow-body local-server test). In the same pass the ingest
+    helper's write path stopped sharing one fixed temp name per feed file —
+    two concurrent Claude Code sessions (one helper process per statusline
+    render) could truncate each other's temp between write and rename,
+    making the feed intermittently vanish; temp names are now unique per
+    writer (pid + counter), pinned by an overlapping-writers test. Still
+    open by design: a failed or rate-limited API read delivers no feed at
+    all (`perform_fetch` returns the error before reading it) — the case
+    where a zero-cost second source would matter most; that needs a wire-
+    shape and presentation decision (what a "behind" row says when the feed
+    is fresher than the last good read), recorded for a future round.
 
 ## Honest gaps, still open
 

@@ -18,6 +18,11 @@ pub struct RawSnapshot {
     pub account_id: String,
     pub provider: String,
     pub config_dir: String,
+    /// When the usage HTTP response arrived — never when this snapshot was
+    /// assembled. The statusline merge's freshest-wins comparison runs
+    /// against this, and the feed is read after the fetch, so a later stamp
+    /// would make the API side always look fresher and silently disable the
+    /// second source. See `claude::UsageRead`.
     pub fetched_at: String,
     pub usage: serde_json::Value,
     pub profile: Option<serde_json::Value>,

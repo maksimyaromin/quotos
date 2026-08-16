@@ -418,11 +418,16 @@ rewritten each round, not appended to.
   selection, severity, window naming) applies unchanged — a fresher
   statusline reading looks exactly like a fresher API response would have.
   Freshest-wins is a plain `written_at` vs. the API read's own `fetched_at`
-  comparison, and it only ever refreshes a window the API response already
-  asserts exists (never synthesizes one from `null`/absent — the write-
-  mechanism contract's "never double-count"), which is also what makes "no
-  interactive session is feeding it" require zero special-casing: an empty
-  or stale feed is just never fresher. `providers/registry.ts`'s
+  comparison — and `fetched_at` must be stamped when the usage HTTP response
+  *arrives* (`providers/claude.rs`'s `UsageRead`, pinned by test), never at
+  snapshot assembly: assembly happens after `read_feed`, so a stamp there
+  makes the feed lose every comparison and silently disables the whole
+  second source (R1 of the 2026-08-16 review — the feature shipped inert
+  exactly that way). It only ever refreshes a window the API response
+  already asserts exists (never synthesizes one from `null`/absent — the
+  write-mechanism contract's "never double-count"), which is also what
+  makes "no interactive session is feeding it" require zero special-casing:
+  an empty or stale feed is just never fresher. `providers/registry.ts`'s
   `Normalizer` signature carries a `NormalizeContext` (`fetchedAt`,
   `statuslineFeed`) for this — a provider with nothing to reconcile just
   ignores it.

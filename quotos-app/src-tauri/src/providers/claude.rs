@@ -611,6 +611,9 @@ struct HttpResult {
     status: u16,
     body: serde_json::Value,
     retry_after_secs: Option<u64>,
+    /// Stamped the moment the response arrived, before the body was read —
+    /// see [`UsageRead::fetched_at`] for why the placement is load-bearing.
+    fetched_at: String,
 }
 
 async fn get_json(
@@ -630,6 +633,9 @@ async fn get_json(
             message: e.to_string(),
         })?;
 
+    // The server produced its answer no later than this; anything written
+    // after it (a statusline feed line, in particular) is genuinely fresher.
+    let fetched_at = chrono::Utc::now().to_rfc3339();
     let status = resp.status().as_u16();
     let retry_after_secs = resp
         .headers()
@@ -644,6 +650,7 @@ async fn get_json(
         status,
         body,
         retry_after_secs,
+        fetched_at,
     })
 }
 
@@ -667,6 +674,18 @@ fn rate_limited(retry_after_secs: Option<u64>) -> FetchError {
     }
 }
 
+/// A completed usage read: the payload plus the moment its HTTP response
+/// arrived. The snapshot's `fetched_at` must be *this* moment, not
+/// snapshot-assembly time: the statusline feed's freshest-wins comparison
+/// (`statuslineMerge.ts`) runs against it, and the feed file is only read
+/// *after* this fetch returns — so a stamp taken any later would make
+/// `written_at < fetched_at` always hold and silently disable the second
+/// source. (R1 of the 2026-08-16 review: exactly that bug.)
+pub struct UsageRead {
+    pub body: serde_json::Value,
+    pub fetched_at: String,
+}
+
 /// Fetch `/api/oauth/usage` for a config dir.
 ///
 /// R3-4, the shape that fixes the false "sign-in expired":
@@ -683,7 +702,7 @@ pub async fn fetch_usage(
     client: &reqwest::Client,
     config_dir: &Path,
     budget: &dyn RequestBudget,
-) -> Result<serde_json::Value, FetchError> {
+) -> Result<UsageRead, FetchError> {
     let mut credential = read_credential(config_dir)?;
     let mut renewed_this_read = false;
     read_trace!(
@@ -722,7 +741,12 @@ pub async fn fetch_usage(
         first.status
     );
     match first.status {
-        200 => return Ok(first.body),
+        200 => {
+            return Ok(UsageRead {
+                body: first.body,
+                fetched_at: first.fetched_at,
+            })
+        }
         429 => return Err(rate_limited(first.retry_after_secs)),
         401 => {}
         other => return Err(map_unexpected_status(other)),
@@ -755,7 +779,10 @@ pub async fn fetch_usage(
         second.status
     );
     match second.status {
-        200 => Ok(second.body),
+        200 => Ok(UsageRead {
+            body: second.body,
+            fetched_at: second.fetched_at,
+        }),
         429 => Err(rate_limited(second.retry_after_secs)),
         401 => Err(FetchError::Unauthorized {
             message: format!("{SIGN_IN_EXPIRED} (refused after renewing it)"),
@@ -1090,5 +1117,57 @@ mod tests {
         let locations = well_known_cli_locations(Path::new("/Users/someone"));
         assert!(locations.contains(&PathBuf::from("/Users/someone/.local/bin/claude")));
         assert!(locations.iter().all(|p| p.file_name().unwrap() == "claude"));
+    }
+
+    /// R1: `fetched_at` is the statusline merge's freshest-wins anchor, so
+    /// it must mark when the response *arrived* — not when a slow body
+    /// finished streaming, and never when the caller later assembled a
+    /// snapshot (stamping there made the feed lose every comparison). The
+    /// server delays its body by 400ms; the stamp must land well inside
+    /// that window.
+    #[test]
+    fn fetched_at_marks_response_arrival_not_body_completion() {
+        use std::io::{Read as _, Write as _};
+
+        const BODY_DELAY: Duration = Duration::from_millis(400);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let addr = listener.local_addr().expect("test server addr");
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            let body = br#"{"ok":true}"#;
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).expect("write head");
+            stream.flush().expect("flush head");
+            let headers_sent = chrono::Utc::now();
+            std::thread::sleep(BODY_DELAY);
+            stream.write_all(body).expect("write body");
+            headers_sent
+        });
+
+        let client = reqwest::Client::new();
+        let result = tauri::async_runtime::block_on(get_json(
+            &client,
+            &format!("http://{addr}/"),
+            "test-token",
+        ))
+        .expect("get_json against the local server");
+        let headers_sent = server.join().expect("server thread");
+
+        assert_eq!(result.status, 200);
+        assert_eq!(result.body, serde_json::json!({"ok": true}));
+        let fetched_at = chrono::DateTime::parse_from_rfc3339(&result.fetched_at)
+            .expect("fetched_at parses as RFC 3339")
+            .with_timezone(&chrono::Utc);
+        let lag = fetched_at - headers_sent;
+        assert!(
+            lag < chrono::Duration::milliseconds(300),
+            "fetched_at lags response arrival by {lag} — stamped after the body was read?"
+        );
     }
 }

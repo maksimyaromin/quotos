@@ -40,6 +40,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -194,21 +195,41 @@ fn build_command(helper: &Path, config_dir: &Path, feed_dir: &Path) -> String {
     )
 }
 
+/// Distinguishes concurrent writers aiming at the same target: the counter
+/// separates threads within one process, the pid in the temp name separates
+/// the ingest helper's processes — Claude Code spawns one per statusline
+/// render, so two live sessions on the same account overlap routinely. A
+/// shared temp name let one writer's `File::create` truncate another's file
+/// between its write and its rename (R4).
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
 fn atomic_write_string(path: &Path, content: &str) -> Result<(), String> {
     let parent = path.parent().ok_or("path has no parent directory")?;
+    let file_name = path
+        .file_name()
+        .ok_or("path has no file name")?
+        .to_string_lossy();
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    // Matches persistence.rs's own trick: paths here always end in
-    // ".json", so `with_extension("json.tmp")` reliably produces a sibling
-    // temp file in the same directory (required for the rename below to be
-    // an atomic same-filesystem replace).
-    let tmp_path = path.with_extension("json.tmp");
-    {
+    // A sibling in the same directory (required for the rename below to be
+    // an atomic same-filesystem replace), under a name no other writer can
+    // share — see TMP_SEQ above.
+    let tmp_path = parent.join(format!(
+        "{file_name}.tmp.{}-{}",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| {
         let mut f = fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
         f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
         f.sync_all().map_err(|e| e.to_string())?;
+        fs::rename(&tmp_path, path).map_err(|e| e.to_string())
+    })();
+    if written.is_err() {
+        // The unique name is this writer's alone, so a failed write's
+        // leftover is ours to remove — otherwise every failure strands one.
+        let _ = fs::remove_file(&tmp_path);
     }
-    fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
-    Ok(())
+    written
 }
 
 fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {
@@ -956,6 +977,51 @@ mod tests {
 
         let read_back = read_feed(&t.app_support_dir, &t.config_dir).unwrap();
         assert_eq!(read_back, feed);
+    }
+
+    // ---- atomic writes: overlapping writers never corrupt the target ---
+
+    /// R4: the ingest helper runs as one process per statusline render, so
+    /// two live Claude Code sessions on the same account write the same
+    /// feed file concurrently. With a shared temp name, one writer's
+    /// `File::create` truncated another's temp between its write and its
+    /// rename — the renamed-in feed was intermittently empty or spliced.
+    /// Every observed final state must be one writer's intact payload, and
+    /// no writer may strand its temp file.
+    #[test]
+    fn overlapping_writers_leave_one_intact_payload_and_no_temp_files() {
+        let t = TempDirs::new();
+        let target = feed_dir(&t.app_support_dir).join("acct.json");
+
+        let payloads: Vec<String> = (0..4).map(|i| format!(r#"{{"writer":{i}}}"#)).collect();
+        let writers: Vec<_> = payloads
+            .iter()
+            .map(|payload| {
+                let target = target.clone();
+                let payload = payload.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..25 {
+                        atomic_write_string(&target, &payload).expect("write must succeed");
+                    }
+                })
+            })
+            .collect();
+        for w in writers {
+            w.join().expect("writer thread");
+        }
+
+        let survivor = fs::read_to_string(&target).expect("target exists");
+        assert!(
+            payloads.contains(&survivor),
+            "target must be one writer's intact payload, got: {survivor:?}"
+        );
+        let leftovers: Vec<String> = fs::read_dir(target.parent().unwrap())
+            .expect("feed dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "stranded temp files: {leftovers:?}");
     }
 
     // ---- ingest path: extraction from the documented stdin shape -------

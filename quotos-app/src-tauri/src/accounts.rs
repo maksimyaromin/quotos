@@ -104,14 +104,17 @@ async fn perform_fetch(
     // The frontend's provider adapter is what actually reconciles this
     // against `usage` (freshest wins); this is just attaching it to the
     // snapshot both the manual and scheduled read paths already share.
+    // Read *after* the usage fetch on purpose: a feed line written while
+    // that fetch ran is newer than `usage.fetched_at` and can win the
+    // reconciliation.
     let statusline = statusline::read_feed(&state.statusline_root, &path);
 
     Ok(RawSnapshot {
         account_id: account_id.to_string(),
         provider: provider.to_string(),
         config_dir: config_dir.to_string(),
-        fetched_at: chrono::Utc::now().to_rfc3339(),
-        usage,
+        fetched_at: usage.fetched_at,
+        usage: usage.body,
         profile,
         statusline,
     })
