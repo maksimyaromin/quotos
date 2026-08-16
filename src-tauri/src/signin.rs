@@ -1,6 +1,7 @@
-//! Drives Claude Code's own sign-in for one account. Quotos never touches
-//! the Keychain and never handles a credential itself; Claude Code writes
-//! the credential.
+//! Drives Claude Code's own sign-in for one account. See "Sign-in
+//! recovery" in claude-provider.md for the full argument: what Quotos does
+//! and does not touch, and why completion is detected by the process
+//! exiting rather than trusted from its exit status.
 //!
 //! `claude setup-token` opens a browser at the authorization URL itself,
 //! then waits for a pasted code on stdin, confirmed by reading `claude
@@ -96,50 +97,18 @@ impl SignInRegistry {
         }
         cmd.env("PATH", &invocation.path_env);
 
-        let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
         // This copy of the slave must close so the pty can signal EOF once
         // the child itself exits. Otherwise the reader thread below never
         // sees end-of-stream.
         drop(pair.slave);
 
         let killer = child.clone_killer();
-        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+        let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-        // Drain output continuously so the child never blocks writing to a
-        // full pty buffer. Quotos does not parse or display any of it. The
-        // CLI already opens the browser and prints the URL on its own.
-        // This thread's only job is to keep the pipe flowing.
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {}
-                }
-            }
-        });
-
-        // This thread owns child for the rest of the session, and by
-        // extension pair.master, since dropping the master before the
-        // child exits can tear down the pty out from under it. killer,
-        // cloned above, is the independent handle cancel uses, so cancel
-        // never has to contend with this thread's blocking wait call.
-        let master = pair.master;
-        let wait_app = app.clone();
-        let wait_account_id = account_id.clone();
-        std::thread::spawn(move || {
-            let status = child.wait();
-            let success = matches!(status, Ok(s) if s.success());
-            let _ = wait_app.emit(
-                "sign-in-finished",
-                SignInFinished {
-                    account_id: wait_account_id,
-                    success,
-                },
-            );
-            drop(master);
-        });
+        spawn_output_drain(reader);
+        spawn_wait_and_notify(app.clone(), account_id.clone(), child, pair.master);
 
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         sessions.insert(
@@ -190,4 +159,46 @@ impl SignInRegistry {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         sessions.remove(account_id);
     }
+}
+
+/// Drains the pty continuously so the child never blocks writing to a full
+/// buffer. Quotos does not parse or display any of it; the CLI already
+/// opens the browser and prints the URL on its own. This thread's only job
+/// is to keep the pipe flowing.
+fn spawn_output_drain(mut reader: Box<dyn Read + Send>) {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    });
+}
+
+/// Waits for the child to exit and tells the frontend. This thread owns
+/// `child` for the rest of the session, and by extension `master`, since
+/// dropping the master before the child exits can tear down the pty out
+/// from under it. `killer`, cloned by the caller before this call, is the
+/// independent handle `cancel` uses, so cancel never contends with this
+/// thread's blocking wait.
+fn spawn_wait_and_notify(
+    app: AppHandle,
+    account_id: String,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+) {
+    std::thread::spawn(move || {
+        let status = child.wait();
+        let success = matches!(status, Ok(s) if s.success());
+        let _ = app.emit(
+            "sign-in-finished",
+            SignInFinished {
+                account_id,
+                success,
+            },
+        );
+        drop(master);
+    });
 }
