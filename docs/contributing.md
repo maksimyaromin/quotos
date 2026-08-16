@@ -7,17 +7,18 @@ commands; this page covers how the code is shaped and proven.
 ## The gate
 
 `npm run verify` is the single quality gate: format and lint through
-Biome, a TypeScript typecheck of the app and of `tools/` separately, the
-vitest suite, a handful of small repository checks including this
-documentation's link check, `cargo fmt --check`, and `cargo clippy -- -D
-warnings`. `tools/verify.ts` is the source of truth for the exact lane
-list; every lane runs concurrently, and every failure is reported, not
-just the first. CI runs the identical command on every pull request.
+Biome, a TypeScript typecheck of each of the tree's TypeScript projects
+separately, the vitest suite, a handful of small repository checks
+including this documentation's link check, `cargo fmt --check`, and
+`cargo clippy -- -D warnings`. `tools/verify.ts` is the source of truth
+for the exact lane list; every lane runs concurrently, and every failure
+is reported, not just the first. CI runs the identical command on every
+pull request.
 
 ## Module layout
 
 There is exactly one path alias, `@/*` resolving to `./src/*`, defined
-once in `tsconfig.json`'s own `paths`. Every internal package is reached
+once in `tsconfig.app.json`'s own `paths`. Every internal package is reached
 through that one prefix: `@/lib/...`, `@/hooks/...`, `@/providers/...`,
 and the design system itself as `@/design-system`, which resolves to
 `src/design-system/index.ts` through the same wildcard's ordinary
@@ -42,27 +43,58 @@ renaming around it.
 
 ## TypeScript configuration
 
-The app project includes `@types/node`, through `tsconfig.json`'s
-`"types": ["node"]`, on purpose rather than by oversight.
-`reducedMotion.spec.tsx` is the one file under `src/` that genuinely
-needs Node's `fs`/`path`/`url` declarations, to walk the tree for a
-no-literal-transition-duration check, and TypeScript's `types`
-restriction applies to the whole program, not to one file, so there is
-no narrower way to grant it. This does not conflict with the DOM types
-the app otherwise relies on. If a future `@types/node` upgrade
-reintroduces a clash between Node's and DOM's `setTimeout`/`setInterval`
-return types, a typecheck failure across otherwise unrelated files is
-the first place to look.
+The tree is a solution-style set of project references. The root
+`tsconfig.json` holds only `references`, so an editor opening any file
+finds the right project without being told which one to use.
+`tsconfig.base.json` holds the options every project shares — `strict`,
+`skipLibCheck`, `isolatedModules`, `noEmit`, `noUnusedLocals`,
+`noUnusedParameters`, `noFallthroughCasesInSwitch` — and each leaf
+project extends it, then sets only what makes that project different.
+Strictness, module resolution and library level are each decided once,
+in the project that owns the decision, not restated per file.
+
+Four leaf projects exist, and every TypeScript file in the tree belongs
+to exactly one of them; `tsc --showConfig -p <project>` answers, for any
+file, which project claims it and with which options:
+
+- `tsconfig.app.json` covers `src`: DOM libraries, no Node types, the
+  `@/*` path alias, target ES2020. ES2020 is the ceiling because
+  `src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 11, whose
+  Safari does not carry later syntax or library additions, and Vite does
+  not polyfill missing runtime APIs for older engines, only lowers
+  syntax.
+- `tsconfig.node.json` covers `vite.config.ts`: Node types, bundler
+  module resolution to match how Vite itself loads the file, target
+  ES2023.
+- `tools/tsconfig.json` covers the repository scripts under `tools/`,
+  described below.
+- `src/design-system/tsconfig.json` covers exactly one file,
+  `reducedMotion.spec.tsx`, the one place under `src/` that genuinely
+  needs Node's `fs`/`path`/`url` declarations, to walk the tree for a
+  no-literal-transition-duration check. It extends `tsconfig.app.json`
+  and overrides only `types`; `tsconfig.app.json` excludes that one file
+  in return, so it is claimed by exactly one project rather than two. A
+  `/// <reference types="node" />` in the file itself cannot do this
+  instead: every file in one TypeScript program shares the same global
+  scope, so an ambient reference in one file leaks Node's globals to
+  every other file the program compiles, which is the leak this split
+  exists to prevent.
+
+`tools/` and `vite.config.ts` target ES2023, matching the Node runtime
+that actually executes them — `package.json`'s `engines.node` is `>=24`.
+`src` stays at ES2020 for the reason above; the two targets track two
+genuinely different runtimes rather than one drifting away from the
+other by accident.
 
 ## `tools/`
 
 `tools/` is TypeScript that Node runs directly, with no build step and no
-loader flag, relying on Node's built-in type stripping. It has its own
-`tools/tsconfig.json`, deliberately not referenced from or referencing
-the app's `tsconfig.json`, so the two type universes cannot mix. Its
+loader flag, relying on Node's built-in type stripping. Its
 `erasableSyntaxOnly` setting means a script that drifts into a construct
 Node's stripper cannot erase fails `npm run typecheck:tools` instead of
-only at runtime.
+only at runtime, and its `nodenext` module resolution matches Node's own
+ESM resolution rules exactly, unlike the bundler resolution the app and
+`vite.config.ts` projects use.
 
 ## Naming
 

@@ -27,7 +27,10 @@ how it was tested. It is rewritten each round, not appended to.
 ## Develop
 
 Tauri v2 + React + TypeScript menu bar app. Everything below runs from the
-repository root.
+repository root. Run `npm install` before opening the repository in an
+editor, not only before running a command: TypeScript resolves `@types/node`
+and the rest of the toolchain from `node_modules`, so an uninstalled tree
+shows type errors an install clears.
 
 ```bash
 npm install
