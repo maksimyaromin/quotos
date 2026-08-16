@@ -642,10 +642,21 @@ async fn get_json(
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
-    let body = resp
-        .json::<serde_json::Value>()
-        .await
-        .unwrap_or(serde_json::Value::Null);
+    let body = match resp.json::<serde_json::Value>().await {
+        Ok(body) => body,
+        // A 200 whose body can't be read (mid-body reset, timeout, a proxy's
+        // HTML error page) is a failed read, full stop. Swallowing it as
+        // `Null` made it indistinguishable from a genuine "no limits to
+        // report" answer — a healthy-looking read that wiped every window.
+        Err(e) if status == 200 => {
+            return Err(FetchError::Network {
+                message: format!("The provider's answer couldn't be read: {e}"),
+            })
+        }
+        // A non-200 answer is classified by its status alone; its body is
+        // never consumed, so an unreadable one changes nothing.
+        Err(_) => serde_json::Value::Null,
+    };
     Ok(HttpResult {
         status,
         body,
@@ -1169,5 +1180,67 @@ mod tests {
             lag < chrono::Duration::milliseconds(300),
             "fetched_at lags response arrival by {lag} — stamped after the body was read?"
         );
+    }
+
+    /// Serve one canned HTTP response on a local socket and run `get_json`
+    /// against it.
+    fn get_json_against(status_line: &str, body: &[u8]) -> Result<HttpResult, FetchError> {
+        use std::io::{Read as _, Write as _};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let addr = listener.local_addr().expect("test server addr");
+        let response = format!(
+            "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        let body = body.to_vec();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            stream.write_all(response.as_bytes()).expect("write head");
+            stream.write_all(&body).expect("write body");
+        });
+        let client = reqwest::Client::new();
+        let result = tauri::async_runtime::block_on(get_json(
+            &client,
+            &format!("http://{addr}/"),
+            "test-token",
+        ));
+        server.join().expect("server thread");
+        result
+    }
+
+    /// R3: a 200 whose body isn't JSON (a proxy's HTML error page, a
+    /// truncated stream) used to come back as `Ok(Null)`, which the whole
+    /// pipeline read as a *healthy* "no limits reported yet" — wiping every
+    /// window and tray digit while bumping lastReadAt. It must be a failed
+    /// read, so the frontend's prior-good-data logic can say "behind"
+    /// honestly.
+    #[test]
+    fn a_200_with_an_unreadable_body_is_a_failed_read_not_an_empty_one() {
+        let result = get_json_against("200 OK", b"<html>gateway error</html>");
+        match result {
+            Err(FetchError::Network { message }) => {
+                assert!(
+                    message.contains("couldn't be read"),
+                    "unexpected message: {message}"
+                );
+            }
+            Err(other) => panic!("expected a Network error, got {other:?}"),
+            Ok(ok) => panic!("expected a Network error, got an HTTP {} answer", ok.status),
+        }
+    }
+
+    /// The deliberate asymmetry of the above: a non-200 answer is classified
+    /// by its status alone (its body is never consumed), so an HTML-bodied
+    /// 401 must still reach the 401 handling — not become a network error
+    /// that hides the real verdict.
+    #[test]
+    fn a_non_200_with_an_unreadable_body_still_classifies_by_status() {
+        let result = get_json_against("401 Unauthorized", b"<html>denied</html>")
+            .expect("a 401 is a classified answer, not a transport failure");
+        assert_eq!(result.status, 401);
+        assert_eq!(result.body, serde_json::Value::Null);
     }
 }

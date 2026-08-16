@@ -296,7 +296,12 @@ rewritten each round, not appended to.
   footer note (the row's `reading` branch wins over `footerNote`).
 - The Rust side never returns a stale number as current: on read failure it
   returns a typed `FetchError` (see `providers/mod.rs`), and the frontend
-  decides `behind` vs `broken` based on whether prior good data exists.
+  decides `behind` vs `broken` based on whether prior good data exists. A 200
+  whose body can't be parsed as JSON (mid-body reset, proxy HTML page) is one
+  of those failures — `get_json` returns `Network`, never `Ok(Null)`, because
+  a `Null` body reads downstream as a *healthy* "No limits reported yet" and
+  silently wipes every window and tray digit. Only a non-200's body may be
+  unreadable (its status alone classifies it; the body is never consumed).
 - `quotos-app/src/lib/tauriClient.ts` swaps between the real Tauri IPC client
   and `mockClient.ts` (browser-only demo data) based on
   `"__TAURI_INTERNALS__" in window`. The mock client exists purely so the UI

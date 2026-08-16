@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**311 automated tests pass** (192 vitest, 119 `cargo test`); `tsc --noEmit`,
+**313 automated tests pass** (192 vitest, 121 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (192) from `quotos-app/`; `cargo test` (119)
+- **Tests**: `npx vitest run` (192) from `quotos-app/`; `cargo test` (121)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -337,6 +337,22 @@ clean.
     changed, i.e. within about a minute — retries; a failed *migration*
     save still shows the legacy list and simply re-fires on the next launch
     (three regression tests).
+
+31. **A 200 with an unreadable body is a failed read now, not a healthy
+    empty one.** `get_json` swallowed any body that didn't parse as JSON
+    into `Ok(Null)` — so a mid-body connection reset, a timeout during the
+    body, or a proxy's HTML error page (served with a 200) flowed through
+    normalization as a *successful* read with no windows: "working / No
+    limits reported yet", every window and tray digit wiped, `lastReadAt`
+    bumped, the honest "behind — these numbers are from the last successful
+    read" path never taken. The same swallow let `fetch_profile` cache a
+    `Null` profile for the whole run (wrong label until relaunch). An
+    unreadable 200 body is now `FetchError::Network` (which the frontend
+    already maps to `behind`/`broken` by prior-good-data), while a non-200's
+    body may still be unreadable — its status alone classifies it, the body
+    is never consumed, and an HTML-bodied 401 must keep reaching the 401
+    handling. Both sides pinned by local-server regression tests; the
+    failure one failed against the old code on its first run.
 
 ## Honest gaps, still open
 
