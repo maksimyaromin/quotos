@@ -399,11 +399,10 @@ describe("useSubscriptions health vs. rate-limit precedence on the manual refres
     expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
   });
 
-  // The restore rule's blind spot: for an account that had never been read
-  // at all, the prior state captured before the attempt is the seeded
-  // in-flight "connecting". Writing that back would leave the row claiming
-  // "Reading…" forever with nothing in flight, and the footer's reading
-  // branch would mask the "Waiting for the rate budget" note entirely.
+  // The restore rule's blind spot: an account never read at all has the
+  // seeded in-flight "connecting" as its prior state. See the
+  // settledPrior comment in applyRefreshResult for why that can't be
+  // written back verbatim.
   test("a first-ever read that is rate-limited settles to idle, never a permanent 'Reading…'", async () => {
     fetchSnapshot.mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 214 });
 
@@ -678,9 +677,7 @@ describe("useSubscriptions status item segments", () => {
   });
 });
 
-// An older tracked record's `pinned: true` becomes "that subscription's
-// headline window is pinned", known only once a read reveals
-// `headlineWindowId`.
+// See migrateLegacyTracked's doc for what this migration converts.
 describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -793,10 +790,8 @@ describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
   });
 });
 
-// startSignIn, submitSignInCode, cancelSignIn and the sign-in-finished
-// reaction. Quotos never inspects a credential itself, so a finished
-// session, success or failure, always triggers a real re-read rather than
-// trusting the process's exit status alone.
+// See "Sign-in recovery" in claude-provider.md for why a finished session
+// always triggers a real re-read rather than trusting its exit status.
 describe("useSubscriptions sign-in flow", () => {
   let signInFinishedCallback:
     | ((event: { account_id: string; success: boolean }) => void)
@@ -887,8 +882,6 @@ describe("useSubscriptions sign-in flow", () => {
   });
 });
 
-// Stop-tracking untracks now everywhere. The undo window is nothing but a
-// slot the panel keeps.
 describe("useSubscriptions stop-tracking is immediate everywhere but the panel's own slot", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
@@ -1041,10 +1034,6 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
   });
 
-  // The save effect is keyed on the whole subscription list. Without a
-  // compare against the last written value, every automatic read would
-  // write the tracked file again, each write a temp file plus an `fsync`
-  // plus a rename, on the main thread.
   test("does not re-persist when only read state changed", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
@@ -1057,12 +1046,6 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(saveTracked).not.toHaveBeenCalled();
   });
 
-  // The save effect records what it handed to `saveTracked` before the
-  // write settles, the dedupe from the test above, so a write that then
-  // fails must not stay recorded as saved, or it would never be retried
-  // and the rename would die with the process. A failed save clears that
-  // record, which turns the very next effect run, even one where only
-  // read state changed, into the retry.
   test("retries a failed save on the next change instead of remembering it as saved", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -1088,9 +1071,6 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
   });
 });
 
-// Panel order is the one order everywhere, since the persisted list and
-// the status item's digit order both derive from `subscriptions`' own
-// array order.
 describe("useSubscriptions reordering", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
@@ -1197,7 +1177,6 @@ describe("useSubscriptions reordering", () => {
   });
 });
 
-// One account, one spelling, everywhere.
 describe("useSubscriptions display names are consistent between the panel and the Subscriptions screen", () => {
   beforeEach(() => {
     vi.useFakeTimers();
