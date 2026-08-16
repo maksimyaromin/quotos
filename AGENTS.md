@@ -7,10 +7,13 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 ## What this is
 
 Tauri v2 + React/TS + Vite menu bar app, rooted at the repository root (`npm`,
-`vitest`, `tsc`, and `tauri` all run from here). `npm run verify` is the single
-quality gate — format (Biome), lint (Biome), typecheck (tsc), test (vitest),
+`vitest`, `tsc`, and `tauri` all run from here). The whole tree is TypeScript,
+application code and repository scripts alike — see the module-layout and
+`tools/` entries under Architecture below. `npm run verify` is the single
+quality gate — format (Biome), lint (Biome), typecheck (tsc) for both the app
+(`tsconfig.json`) and `tools/` (`tools/tsconfig.json`), test (vitest),
 `cargo fmt --check`, and `cargo clippy -- -D warnings`, run concurrently by
-`tools/verify.mjs`, reporting every failing lane instead of stopping at the
+`tools/verify.ts`, reporting every failing lane instead of stopping at the
 first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
 `README.md` covers day-to-day run/build/test commands.
 
@@ -42,15 +45,72 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   the single place macOS's Reduce Motion is honored (tokens zeroed,
   `animation: none !important` for the inline keyframe animations, and
   `[data-quotos-shimmer]` display-hidden — merely stopping the shimmer
-  leaves its gradient as a static white stripe). `reducedMotion.test.jsx`
+  leaves its gradient as a static white stripe). `reducedMotion.spec.tsx`
   pins the token coverage and the no-literal-duration-transitions invariant;
-  don't add a transition with a literal duration.
+  don't add a transition with a literal duration. Every component is a single
+  `.tsx` file — the hand-written `.d.ts` that used to sit beside each `.jsx`
+  is gone, folded into the same file as a real, checked `Props` interface, so
+  the two can no longer disagree with each other or with the implementation.
+  Outside consumers reach the design system through `src/design-system/index.ts`,
+  a hand-curated barrel of named re-exports (component plus its `Props` type,
+  never `export *`), not through a component's own file path — see the
+  module-layout entry under Architecture. A component's internal siblings
+  (e.g. `SubscriptionRow` importing `LimitWindow`) still import each other by
+  relative path; the barrel is for crossing into the design system from
+  outside it, not for the design system talking to itself.
 - `data/quotos-source-s1/report.md` (in the firstmate data dir, not this repo)
   — how the Claude usage-reading mechanism was verified: endpoint, headers,
   Keychain service naming, rate limits, the 401 refresh trick.
 
 ## Architecture
 
+- **Module layout: one alias for `src/`, one for the design system's public
+  surface, both sourced from `tsconfig.json`'s own `paths` and nothing
+  else.** `@/*` resolves to `./src/*`; `@design-system` resolves to the
+  single file `src/design-system/index.ts`, not a wildcard into its
+  internals. Vite reads that same `paths` field natively via
+  `resolve.tsconfigPaths: true` in `vite.config.ts` (Vite 8) — chosen over a
+  duplicated `resolve.alias` block (two places to keep in sync, and the
+  thing this migration was asked to stop doing) and over the
+  `vite-tsconfig-paths` plugin (same idea, but an extra dependency for
+  something Vite now ships itself). Vitest inherits it for free since its
+  `test` block lives inside the same `vite.config.ts`. The rule for when to
+  alias: an import crossing from one top-level `src/` directory into another
+  (or from a root file, `App.tsx`/`main.tsx`, into any of them) uses `@/...`;
+  an import staying inside one top-level directory's own tree — including
+  the design system talking to itself — stays relative. A rename was swept
+  by search; `grep -rn 'from "\.\./' src` should only ever match design
+  system internals and `providers/claude/index.ts`'s `../registry` (same
+  reasoning: `providers/claude` and `providers/registry.ts` are one module).
+- `tools/` is TypeScript that Node runs directly — no build step, no loader
+  flag, relying on Node 24's built-in type-stripping (confirmed live:
+  `node tools/verify.ts` runs unmodified). It has its own
+  `tools/tsconfig.json` (`module`/`moduleResolution: "nodenext"`, matching
+  what Node's own resolver actually does; `erasableSyntaxOnly: true`, so a
+  script that drifts into a construct Node's stripper can't erase — an
+  `enum`, a parameter-property constructor — fails `npm run typecheck:tools`
+  instead of only at runtime), deliberately not referenced from or
+  referencing the app's `tsconfig.json`, so the two type universes can't
+  contaminate each other. `npm run verify` runs both typecheck lanes.
+- **The app project includes `@types/node` (`tsconfig.json`'s
+  `"types": ["node"]`), a deliberate call, not an oversight.** TypeScript's
+  `types` restriction is program-wide, not per-file, so there was no way to
+  hand Node's ambient `fs`/`path`/`url` module declarations to just
+  `reducedMotion.spec.tsx` (the one file under `src/` that genuinely needs
+  them, to walk the tree for the no-literal-transition-duration check)
+  without also handing them to every other file in the project — a second,
+  narrower tsconfig for one file was judged not worth the config surface.
+  Checked empirically before deciding, not assumed: `tsc` with
+  `types: ["node"]` reports zero new errors anywhere else in `src/`, so
+  `@types/node`'s ambient globals don't collide with the DOM lib this app
+  otherwise relies on (the historical `setTimeout`/`setInterval` return-type
+  clash between the two) — recorded here because that is a real historical
+  footgun, and if a future `@types/node` upgrade reintroduces it, this
+  decision should be revisited rather than silently patched around. This
+  also let `vite.config.ts` drop the `// @ts-expect-error process is a
+  nodejs global` workaround it used to carry: `tsconfig.node.json` (the
+  project covering just that file, which genuinely runs under Node) now
+  declares its own `"types": ["node"]` honestly instead.
 - Provider adapter seam: `src/providers/registry.ts` (frontend)
   and `src-tauri/src/providers/mod.rs` (backend). A second
   provider is a new module on each side plus one registry entry — nothing
@@ -1148,7 +1208,7 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   no `version` field of its own, and lets Tauri derive its version from
   `src-tauri/Cargo.toml`'s `[package] version` — the single source of truth.
   `package.json`'s `version` can't derive automatically the same way, so
-  `tools/checks/versions.test.js` (part of the `test` lane) fails the gate if
+  `tools/checks/versions.spec.ts` (part of the `test` lane) fails the gate if
   it drifts from Cargo.toml's. If side-by-side packaging is needed again, the
   earlier approach (a merged `--config` file, reusing an existing `identifier`
   when a build needs to prove itself against real on-disk data rather than
