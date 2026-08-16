@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const invoke = vi.fn();
 
@@ -27,14 +27,14 @@ function clearNative(): void {
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
 }
 
-describe("persistence (browser/mock harness path — no native store)", () => {
+describe("persistence in the browser mock harness, without a native store", () => {
   beforeEach(() => {
     clearNative();
     window.localStorage.clear();
     invoke.mockReset();
   });
 
-  it("reads and writes localStorage directly, never invoking the Rust side", async () => {
+  test("reads and writes localStorage directly, never invoking the Rust side", async () => {
     await saveTracked([SAMPLE]);
     expect(invoke).not.toHaveBeenCalled();
     const loaded = await loadTracked();
@@ -42,10 +42,7 @@ describe("persistence (browser/mock harness path — no native store)", () => {
   });
 });
 
-// Followup-3: this is the exact scenario his real upgrade goes through — a
-// pre-R2-5 build's localStorage list (custom name + pin) meeting the new
-// native-file code for the first time.
-describe("persistence (native path — migration, followup-3)", () => {
+describe("persistence on the native path, migrating from localStorage", () => {
   beforeEach(() => {
     setNative();
     window.localStorage.clear();
@@ -56,10 +53,10 @@ describe("persistence (native path — migration, followup-3)", () => {
     clearNative();
   });
 
-  it("migrates a legacy localStorage list into the native store on first run", async () => {
+  test("migrates a legacy localStorage list into the native store on first run", async () => {
     window.localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 1, tracked: [SAMPLE] }));
     invoke.mockImplementation((cmd: string) => {
-      if (cmd === "load_tracked") return Promise.resolve([]); // native store starts empty
+      if (cmd === "load_tracked") return Promise.resolve([]); // The native store starts empty.
       if (cmd === "save_tracked") return Promise.resolve();
       throw new Error(`unexpected command ${cmd}`);
     });
@@ -70,7 +67,7 @@ describe("persistence (native path — migration, followup-3)", () => {
     expect(invoke).toHaveBeenCalledWith("save_tracked", { tracked: [SAMPLE] });
   });
 
-  it("never clears or overwrites the legacy localStorage key after migrating", async () => {
+  test("never clears or overwrites the legacy localStorage key after migrating", async () => {
     const raw = JSON.stringify({ version: 1, tracked: [SAMPLE] });
     window.localStorage.setItem(LEGACY_KEY, raw);
     invoke.mockImplementation((cmd: string) =>
@@ -79,12 +76,12 @@ describe("persistence (native path — migration, followup-3)", () => {
 
     await loadTracked();
 
-    // Followup-3: a bad migration must be recoverable by going back to the
-    // old build — that only works if the old key was never touched.
+    // A bad migration must be recoverable by going back to the old build.
+    // That only works if the old key was never touched.
     expect(window.localStorage.getItem(LEGACY_KEY)).toBe(raw);
   });
 
-  it("migrates once, never twice: a non-empty native store is never overwritten from stale localStorage", async () => {
+  test("migrates once, never twice: a non-empty native store is never overwritten from stale localStorage", async () => {
     const nativeAlready: TrackedAccount = { ...SAMPLE, label: "Already Native" };
     window.localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 1, tracked: [SAMPLE] }));
     invoke.mockImplementation((cmd: string) =>
@@ -97,7 +94,7 @@ describe("persistence (native path — migration, followup-3)", () => {
     expect(invoke).not.toHaveBeenCalledWith("save_tracked", expect.anything());
   });
 
-  it("stays empty when the legacy key is absent — a fresh install migrates nothing", async () => {
+  test("stays empty when the legacy key is absent, so a fresh install migrates nothing", async () => {
     invoke.mockImplementation((cmd: string) =>
       cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve(),
     );
@@ -108,7 +105,7 @@ describe("persistence (native path — migration, followup-3)", () => {
     expect(invoke).not.toHaveBeenCalledWith("save_tracked", expect.anything());
   });
 
-  it("stays empty when the legacy key is corrupt JSON, without throwing", async () => {
+  test("stays empty when the legacy key is corrupt JSON, without throwing", async () => {
     window.localStorage.setItem(LEGACY_KEY, "{ not valid json");
     invoke.mockImplementation((cmd: string) =>
       cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve(),
@@ -120,7 +117,7 @@ describe("persistence (native path — migration, followup-3)", () => {
     expect(invoke).not.toHaveBeenCalledWith("save_tracked", expect.anything());
   });
 
-  it("loadTracked falls back to empty if the native invoke itself fails", async () => {
+  test("loadTracked falls back to empty if the native invoke itself fails", async () => {
     invoke.mockImplementation((cmd: string) =>
       cmd === "load_tracked" ? Promise.reject(new Error("no such command")) : Promise.resolve(),
     );
@@ -130,21 +127,21 @@ describe("persistence (native path — migration, followup-3)", () => {
     expect(loaded).toEqual([]);
   });
 
-  it("saveTracked calls the native command with the tracked list", async () => {
+  test("saveTracked calls the native command with the tracked list", async () => {
     invoke.mockResolvedValue(undefined);
     await saveTracked([SAMPLE]);
     expect(invoke).toHaveBeenCalledWith("save_tracked", { tracked: [SAMPLE] });
   });
 
-  // R2: the caller holds the "what was last saved" record, so a failure
-  // swallowed here was a save remembered as done — never retried, and the
-  // change died with the process.
-  it("saveTracked rejects when the native write fails, so the caller can retry", async () => {
+  test("saveTracked rejects when the native write fails, so the caller can retry", async () => {
+    // The caller holds the record of what was last saved. A failure
+    // swallowed here would be a save remembered as done, never retried,
+    // and the change would die with the process.
     invoke.mockRejectedValue(new Error("disk full"));
     await expect(saveTracked([SAMPLE])).rejects.toThrow("disk full");
   });
 
-  it("a failed migration save still returns the legacy list and leaves the migration to re-fire next launch", async () => {
+  test("a failed migration save still returns the legacy list and leaves the migration to re-fire next launch", async () => {
     const raw = JSON.stringify({ version: 1, tracked: [SAMPLE] });
     window.localStorage.setItem(LEGACY_KEY, raw);
     invoke.mockImplementation((cmd: string) =>
@@ -153,7 +150,7 @@ describe("persistence (native path — migration, followup-3)", () => {
 
     const loaded = await loadTracked();
 
-    // This session still shows his real list from memory; the native store
+    // This session still shows the real list from memory. The native store
     // stayed empty and the source key untouched, so the next launch simply
     // migrates again.
     expect(loaded).toEqual([SAMPLE]);
