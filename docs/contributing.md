@@ -9,11 +9,11 @@ commands; this page covers how the code is shaped and proven.
 `npm run verify` is the single quality gate: format and lint through
 Biome, a TypeScript typecheck of each of the tree's TypeScript projects
 separately, the vitest suite, a handful of small repository checks
-including this documentation's link check, `cargo fmt --check`, and
-`cargo clippy -- -D warnings`. `tools/verify.ts` is the source of truth
-for the exact lane list; every lane runs concurrently, and every failure
-is reported, not just the first. CI runs the identical command on every
-pull request.
+including this documentation's link check, `cargo fmt --check`,
+`cargo clippy -- -D warnings`, and `cargo test`. `tools/verify.ts` is the
+source of truth for the exact lane list; every lane runs concurrently,
+and every failure is reported, not just the first. CI runs the identical
+command on every pull request.
 
 ## Module layout
 

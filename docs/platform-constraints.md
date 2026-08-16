@@ -99,14 +99,21 @@ dev configuration and tries to load the Vite dev server rather than the
 bundled frontend. With no dev server running, the window shows nothing
 at all. Use `npm run tauri dev` or a real bundle to see the app render.
 
-## A known flaky Rust test
+## `flock` and forked children share a test binary
 
-`single_instance`'s claim-and-release test is flaky only under a full
-`cargo test` run, never in isolation. BSD `flock` locks belong to the
-open file description, and a test elsewhere in the same binary that
-forks a process, several here shell out or spawn a pty, can inherit a
-duplicate of this test's own file descriptor before its child's `exec`
-closes it, keeping the lock alive after this test's file has already
-been dropped. This can only happen when file locking and process
-spawning run concurrently inside one test binary. The shipped app claims
-its lock exactly once, at startup, long before anything else forks.
+`single_instance`'s claim-and-release test used to fail intermittently
+under a full `cargo test` run, never in isolation. BSD `flock` locks
+belong to the open file description, so a test elsewhere in the same
+binary that forks a process can inherit a duplicate of this test's own
+file descriptor before its child's `exec` closes it, keeping the lock
+alive after this test's file has already been dropped. The actual
+forking culprit was `status_item_render::render`'s tests: `render`
+used to call `is_dark_mode`, which shells out to `defaults read`, on
+every one of its own test invocations. `render` now takes `dark: bool`
+as a parameter instead, and only `shell.rs`'s real repaint path calls
+`is_dark_mode` itself, so the pure layout and color tests no longer
+fork at all. The shipped app still claims its lock exactly once, at
+startup, long before anything else forks; this was always a test-binary
+concurrency artifact, never a production defect. Any new test that
+spawns a real child process is a reintroduction of this hazard and
+should take its environment reading as a parameter the same way.

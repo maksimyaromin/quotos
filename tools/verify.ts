@@ -28,6 +28,7 @@ const lanes: Lane[] = [
   { name: "doc links", script: "check:doc-links" },
   { name: "cargo fmt", script: "cargo:fmt" },
   { name: "cargo clippy", script: "cargo:clippy" },
+  { name: "cargo test", script: "cargo:test" },
 ];
 
 function runLane(lane: Lane): Promise<LaneResult> {

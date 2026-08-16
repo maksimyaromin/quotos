@@ -172,7 +172,8 @@ fn repaint_status_item(
                 group_start: s.group_start,
             })
             .collect();
-        let (rgba, w, h) = status_item_render::render(&segs, highlighted, worst_used_percent);
+        let dark = status_item_render::is_dark_mode();
+        let (rgba, w, h) = status_item_render::render(&segs, highlighted, worst_used_percent, dark);
         status_item
             .set_icon(Some(Image::new_owned(rgba, w, h)))
             .map_err(|e| e.to_string())?;

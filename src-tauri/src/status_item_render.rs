@@ -245,7 +245,11 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
 /// read of user preferences, not a write, so it changes nothing on the
 /// machine. Absence of the key, the default light-mode case, makes the
 /// command fail, which `unwrap_or(false)` correctly treats as "not dark".
-fn is_dark_mode() -> bool {
+/// `render` takes the result as a parameter rather than calling this
+/// itself, so the pure layout and color math it does stays a subprocess
+/// away from the real menu bar appearance; `shell.rs` calls this once
+/// per repaint and passes the answer in.
+pub(crate) fn is_dark_mode() -> bool {
     Command::new("defaults")
         .args(["read", "-g", "AppleInterfaceStyle"])
         .output()
@@ -846,8 +850,8 @@ pub fn render(
     segments: &[StatusItemSegment],
     highlighted: bool,
     worst_used_percent: u8,
+    dark: bool,
 ) -> (Vec<u8>, u32, u32) {
-    let dark = is_dark_mode();
     let used_fraction = worst_used_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     let font = text::load_font(text_font_size_pt());
@@ -1044,7 +1048,7 @@ mod tests {
 
     #[test]
     fn render_with_no_segments_is_the_glyph_square_plus_its_side_padding() {
-        let (buf, w, h) = render(&[], false, 0);
+        let (buf, w, h) = render(&[], false, 0, false);
         assert_eq!((w, h), (SIDE_PAD_PX * 2 + GLYPH_PX, GLYPH_PX));
         assert_eq!(buf.len(), (w * h * 4) as usize);
     }
@@ -1054,8 +1058,8 @@ mod tests {
     // toggle, moving the glyph and the beak with it.
     #[test]
     fn every_bare_glyph_path_produces_the_same_image_width() {
-        assert_eq!(plain_glyph_rgba(50).1, render(&[], false, 50).1);
-        assert_eq!(plain_glyph_rgba(50).1, render(&[], true, 50).1);
+        assert_eq!(plain_glyph_rgba(50).1, render(&[], false, 50, false).1);
+        assert_eq!(plain_glyph_rgba(50).1, render(&[], true, 50, false).1);
     }
 
     // shell::sync_status_item_length sets the status item's native length
@@ -1069,8 +1073,8 @@ mod tests {
             seg("67%", StatusItemColor::Neutral),
             seg("96%", StatusItemColor::Red),
         ];
-        let unhighlighted = render(&segs, false, 96);
-        let highlighted = render(&segs, true, 96);
+        let unhighlighted = render(&segs, false, 96, false);
+        let highlighted = render(&segs, true, 96, false);
         assert_eq!(
             unhighlighted.1, highlighted.1,
             "the image width driving the status item's length must not change when the panel-open pill is drawn"
@@ -1081,12 +1085,15 @@ mod tests {
     #[test]
     fn worst_used_percent_never_changes_the_bare_glyph_width() {
         assert_eq!(plain_glyph_rgba(0).1, plain_glyph_rgba(100).1);
-        assert_eq!(render(&[], false, 0).1, render(&[], false, 100).1);
+        assert_eq!(
+            render(&[], false, 0, false).1,
+            render(&[], false, 100, false).1
+        );
     }
 
     #[test]
     fn the_highlight_reaches_into_the_side_padding_where_the_glyph_never_draws() {
-        let (buf, w, h) = render(&[], true, 0);
+        let (buf, w, h) = render(&[], true, 0, false);
         let mid_row = h / 2;
         let alpha_at = |x: u32| buf[(((mid_row * w) + x) * 4 + 3) as usize];
         assert!(alpha_at(2) > 0, "highlight must cover the left padding");
@@ -1094,7 +1101,7 @@ mod tests {
             alpha_at(w - 3) > 0,
             "highlight must cover the right padding"
         );
-        let (bare, _, _) = render(&[], false, 0);
+        let (bare, _, _) = render(&[], false, 0, false);
         assert_eq!(
             bare[(((mid_row * w) + 2) * 4 + 3) as usize],
             0,
@@ -1104,7 +1111,7 @@ mod tests {
 
     #[test]
     fn render_grows_width_per_segment_and_never_touches_height() {
-        let one = render(&[seg("2%", StatusItemColor::Neutral)], false, 0);
+        let one = render(&[seg("2%", StatusItemColor::Neutral)], false, 0, false);
         let two = render(
             &[
                 seg("2%", StatusItemColor::Neutral),
@@ -1112,6 +1119,7 @@ mod tests {
             ],
             false,
             0,
+            false,
         );
         assert!(
             one.1 > GLYPH_PX,
@@ -1127,9 +1135,9 @@ mod tests {
     // trailing segment's own width to move.
     #[test]
     fn a_trailing_figures_width_now_tracks_its_own_digit_count() {
-        let one_digit = render(&[seg("9%", StatusItemColor::Neutral)], false, 0);
-        let two_digit = render(&[seg("42%", StatusItemColor::Neutral)], false, 0);
-        let three_digit = render(&[seg("100%", StatusItemColor::Neutral)], false, 0);
+        let one_digit = render(&[seg("9%", StatusItemColor::Neutral)], false, 0, false);
+        let two_digit = render(&[seg("42%", StatusItemColor::Neutral)], false, 0, false);
+        let three_digit = render(&[seg("100%", StatusItemColor::Neutral)], false, 0, false);
         assert!(
             one_digit.1 < two_digit.1,
             "a single (and so trailing) segment's own wider text should now widen the image"
@@ -1149,6 +1157,7 @@ mod tests {
             ],
             false,
             0,
+            false,
         );
         let wide_first = render(
             &[
@@ -1157,6 +1166,7 @@ mod tests {
             ],
             false,
             0,
+            false,
         );
         assert_eq!(
             narrow_first.1, wide_first.1,
@@ -1172,8 +1182,8 @@ mod tests {
                 seg("51%", StatusItemColor::Neutral),
                 seg(text, StatusItemColor::Neutral),
             ];
-            let unhighlighted = render(&segs, false, 50);
-            let highlighted = render(&segs, true, 50);
+            let unhighlighted = render(&segs, false, 50, false);
+            let highlighted = render(&segs, true, 50, false);
             assert_eq!(
                 unhighlighted.1, highlighted.1,
                 "trailing text {text:?}: image width must not depend on `highlighted`"
@@ -1183,7 +1193,7 @@ mod tests {
 
     #[test]
     fn a_digit_and_percent_segment_renders_some_exact_colored_pixels() {
-        let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], false, 0);
+        let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], false, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .chunks_exact(4)
@@ -1199,7 +1209,7 @@ mod tests {
         // '!' is very likely unreachable in practice, since a broken pin
         // contributes no segment at all, but should still render
         // correctly rather than being special-cased away.
-        let (buf, w, h) = render(&[seg("!", StatusItemColor::Red)], false, 0);
+        let (buf, w, h) = render(&[seg("!", StatusItemColor::Red)], false, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .chunks_exact(4)
@@ -1219,6 +1229,7 @@ mod tests {
             ],
             false,
             0,
+            false,
         );
         let mut second_group = seg("9%", StatusItemColor::Neutral);
         second_group.group_start = true;
@@ -1226,6 +1237,7 @@ mod tests {
             &[seg("9%", StatusItemColor::Neutral), second_group],
             false,
             0,
+            false,
         );
         assert_eq!(
             two_groups.1 - same_group.1,
@@ -1255,8 +1267,8 @@ mod tests {
     fn a_group_start_first_segment_draws_no_leading_hairline() {
         let mut first = seg("9%", StatusItemColor::Neutral);
         first.group_start = true;
-        let with_flag = render(&[first], false, 0);
-        let without_flag = render(&[seg("9%", StatusItemColor::Neutral)], false, 0);
+        let with_flag = render(&[first], false, 0, false);
+        let without_flag = render(&[seg("9%", StatusItemColor::Neutral)], false, 0, false);
         assert_eq!(
             with_flag.1, without_flag.1,
             "group_start on the first segment must not add a gutter"
@@ -1288,8 +1300,8 @@ mod tests {
         // MonoLisa is monospace already, and the system fallback font is
         // requested via monospacedDigitSystemFontOfSize:weight:, which
         // guarantees tabular figures.
-        let one = render(&[seg("1", StatusItemColor::Red)], false, 0);
-        let eight = render(&[seg("8", StatusItemColor::Red)], false, 0);
+        let one = render(&[seg("1", StatusItemColor::Red)], false, 0, false);
+        let eight = render(&[seg("8", StatusItemColor::Red)], false, 0, false);
         assert_eq!(
             one.1, eight.1,
             "'1' and '8' must render at the same width (tabular figures)"
@@ -1305,7 +1317,7 @@ mod tests {
 
     #[test]
     fn highlighted_bare_glyph_paints_translucent_pixels_behind_the_ink() {
-        let (buf, w, h) = render(&[], true, 0);
+        let (buf, w, h) = render(&[], true, 0, false);
         // Sampled just inset from the flat middle of an edge, inside the
         // highlight's rounded rect but outside the glyph's own ink.
         let (x, y) = (2u32, h / 2);
@@ -1323,7 +1335,7 @@ mod tests {
 
     #[test]
     fn unhighlighted_bare_glyph_leaves_the_corner_fully_transparent() {
-        let (buf, _, _) = render(&[], false, 0);
+        let (buf, _, _) = render(&[], false, 0, false);
         assert_eq!(
             buf[3], 0,
             "no highlight requested, corner should stay fully transparent"
@@ -1332,7 +1344,7 @@ mod tests {
 
     #[test]
     fn highlighted_digits_still_render_their_own_color_on_top() {
-        let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], true, 0);
+        let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], true, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .chunks_exact(4)
@@ -1355,6 +1367,7 @@ mod tests {
             ],
             false,
             0,
+            false,
         );
         let mut last_ink_x = 0u32;
         for y in 0..h {
