@@ -251,6 +251,18 @@ describe("normalizeUsage", () => {
       expect(result.severity).toBe("critical");
     });
 
+    test("the warn and critical thresholds are inclusive of the boundary percent", () => {
+      const atWarnBoundary = normalizeUsage({
+        limits: [{ kind: "session", percent: 75, is_active: true }],
+      });
+      expect(atWarnBoundary.severity).toBe("warn");
+
+      const atCriticalBoundary = normalizeUsage({
+        limits: [{ kind: "session", percent: 90, is_active: true }],
+      });
+      expect(atCriticalBoundary.severity).toBe("critical");
+    });
+
     test("counts an inactive window toward severity too", () => {
       const result = normalizeUsage({
         limits: [

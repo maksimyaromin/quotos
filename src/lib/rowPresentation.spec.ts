@@ -62,6 +62,15 @@ describe("presentRow, failure states are mutually exclusive", () => {
     expect(result.footerNote).toBeNull();
     expect(result.actionLabel).toBe("Try again");
   });
+
+  test("a wait that resolves at exactly now has already elapsed", () => {
+    const result = presentRow(
+      sub({ state: "behind", rateLimitedUntil: new Date(NOW).toISOString() }),
+      NOW,
+    );
+    expect(result.footerNote).toBeNull();
+    expect(result.actionLabel).toBe("Try again");
+  });
 });
 
 describe("presentRow, the badge tells the truth", () => {

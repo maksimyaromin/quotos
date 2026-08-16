@@ -73,6 +73,11 @@ describe("formatRelativePast", () => {
     expect(formatRelativePast(iso, now)).toBe("just now");
   });
 
+  test("switches from 'just now' to a second count at the ten-second boundary", () => {
+    expect(formatRelativePast(new Date(now.getTime() - 9_000).toISOString(), now)).toBe("just now");
+    expect(formatRelativePast(new Date(now.getTime() - 10_000).toISOString(), now)).toBe("10s ago");
+  });
+
   test("returns null for a missing timestamp", () => {
     expect(formatRelativePast(null, now)).toBeNull();
   });
