@@ -3,7 +3,7 @@ import { Button } from "@/design-system";
 import { listAccounts, onPanelVisibility } from "@/lib/tauriClient";
 import type { AccountDescriptor, Subscription } from "@/types/entities";
 import { StatuslineControl } from "./StatuslineControl";
-import styles from "./SubscriptionsScreen.module.css";
+import styles from "./subscriptions-screen.module.css";
 
 interface Row {
   id: string;

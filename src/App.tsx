@@ -16,7 +16,7 @@ import {
 } from "@/lib/tauriClient";
 import { formatClockTime, formatExactReset, formatRelativePast } from "@/lib/time";
 import "./app.css";
-import styles from "./App.module.css";
+import styles from "./app.module.css";
 
 const NOW_TICK_MS = 30_000;
 

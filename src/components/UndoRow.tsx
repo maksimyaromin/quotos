@@ -1,5 +1,5 @@
 import { Button } from "@/design-system";
-import styles from "./UndoRow.module.css";
+import styles from "./undo-row.module.css";
 
 /** Stand-in for a just-removed row for five seconds. App.tsx owns the
  * timer. Adopted in place of a confirmation dialog: cheaper than a dialog,
