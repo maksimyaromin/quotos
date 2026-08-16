@@ -7,10 +7,12 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 ## What this is
 
 Tauri v2 + React/TS + Vite menu bar app, rooted at the repository root (`npm`,
-`vitest`, `tsc`, and `tauri` all run from here). See `RESULT.md` at the repo
-root for the state of the current build (what works, what doesn't, how to
-run/build/test) — read it before assuming a feature is done. It is rewritten
-each round, not appended to.
+`vitest`, `tsc`, and `tauri` all run from here). `npm run verify` is the single
+quality gate — format (Biome), lint (Biome), typecheck (tsc), test (vitest),
+`cargo fmt --check`, and `cargo clippy -- -D warnings`, run concurrently by
+`tools/verify.mjs`, reporting every failing lane instead of stopping at the
+first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
+`README.md` covers day-to-day run/build/test commands.
 
 ## Sources of truth (don't duplicate, read these)
 
@@ -23,12 +25,18 @@ each round, not appended to.
   prototype wins unless the handoff text says otherwise. Its own JS
   (`renderVals()`) is the authoritative source for exact row-state logic —
   read it directly rather than re-deriving from the prose.
-- `docs/design/system/` — the design system (tokens, React components). Use
-  it, don't reinvent it; `docs/design/system/readme.md` explains the visual
-  language. `src/design-system/` is a verbatim copy consumed by the app —
-  when you change a component, edit both copies identically (there is no
-  build step that syncs them; `src/design-system/sync.test.js`
-  fails the vitest suite if the copies ever diverge). Motion is token-driven:
+- `src/design-system/` — the design system (tokens, React components) the app
+  builds against, and its only copy: a prep-stage pass consolidated it out of
+  a former duplicate at `docs/design/system/`, which also hosted design-tool
+  output (a prebuilt component bundle, card/ui_kit preview pages, a readme)
+  that no build ever consumed — all removed along with the duplicate. The two
+  build inputs that tree did carry — `assets/app-icon.svg` and
+  `assets/menubar-glyph.svg`, the source vectors behind the app icon and the
+  tray glyph's procedural geometry (see `tray_render.rs`'s `glyph_coverage`
+  below) — moved into `src/design-system/assets/` and stay there; there is no
+  automated pipeline that regenerates icons from them; the icon export
+  process (see the SVG-to-raster entry under Sharp edges) is manual. Motion is
+  token-driven:
   every `transition` takes its duration from `tokens/elevation.css`'s
   `--dur-*` tokens, and that same file's `prefers-reduced-motion` block is
   the single place macOS's Reduce Motion is honored (tokens zeroed,
@@ -385,13 +393,14 @@ each round, not appended to.
   establishes a containing block for fixed descendants: no `transform`,
   `filter`, `backdrop-filter`, `perspective`, `will-change` or `contain` on
   `Panel`'s wrappers (the blurred backdrop layer is a *sibling*). Deliberately
-  not a React portal — `docs/design/system/`'s components are consumed through a
-  prebuilt `_ds_bundle.js`, and its generator
-  (`docs/design/system/_build_bundle.mjs`, run `node` on it after any component
-  edit) only knows how to rewrite `react` imports against the page-global
-  React — a `react-dom` import would need the generator taught about it
-  first. The bundle feeds only the design card pages and
-  `ui_kits/quotos/index.html`, never the app.
+  not a React portal — at the time this was built, the design system had a
+  second copy (`docs/design/system/`, since removed — see the sources-of-truth
+  entry above) whose components were consumed through a prebuilt bundle whose
+  generator only knew how to rewrite `react` imports against page-global
+  React, not `react-dom`. That constraint no longer applies now that
+  `src/design-system/` is the only copy and Vite handles `react-dom` natively;
+  nobody has revisited whether a portal would work now, so this stays fixed
+  positioning until someone does.
 - **R4-3: "Stop tracking" untracks immediately; the undo window is only a
   slot the panel keeps.** `Subscription.pendingRemoval` marks a row that the
   panel still draws (as the Undo row, in place) while `trackedSubscriptions`
@@ -741,10 +750,11 @@ each round, not appended to.
   on-screen half of the invariant is only observable in a live WKWebView and
   is not testable in jsdom, so that half was verified by burst-capturing the
   real panel over a controlled backdrop (390 frames flat with the filter,
-  200 frames sharp without it). `--blur-vibrancy` itself stays defined:
-  `docs/design/system/`'s card and ui_kit pages still use it on in-page mock
-  surfaces, where a backdrop-filter has real in-page content to blur and
-  behaves normally.
+  200 frames sharp without it). `--blur-vibrancy` itself stays defined in
+  `tokens/elevation.css` but, since the design-tool card/ui_kit pages that
+  used to consume it were removed (see the sources-of-truth entry above), has
+  no current consumer in this tree — a stage-2 cleanup candidate, not touched
+  here since removing an unused token is a code change, not a repo-shape one.
 - **What a transparent Tauri window can and cannot tell you about
   compositing, from an agent seat.** The technique that settled W1 and is
   worth reusing: give the *page* a known high-frequency background
@@ -1035,7 +1045,7 @@ each round, not appended to.
 - **The tray glyph is drawn procedurally now, not from a raster asset —
   there is no `icons/tray/tray-icon.png` to update if the mark ever
   changes.** `tray_render.rs`'s `glyph_coverage` ports the exact geometry of
-  `docs/design/system/assets/menubar-glyph.svg` (a 16×16-viewBox capacity-gauge
+  `src/design-system/assets/menubar-glyph.svg` (a 16×16-viewBox capacity-gauge
   mark: a faint full-circle track, `r=5.4` stroke `1.4` opacity `0.28`, plus
   a bold round-capped arc on the same circle, stroke `1.9`, with a gap at
   the bottom — the gap's two angles were derived by hand from the SVG path's
@@ -1129,37 +1139,24 @@ each round, not appended to.
   `app.css`'s `padding-top` / the centered flex body). A wider blur gets
   hard-clipped by the window edge instead of fading, which reads as a dark
   halo band against a bright desktop rather than a soft shadow.
-- Side-by-side packaging (a second identity for the same product) is done
-  at packaging time via a config in `src-tauri/` merged with
-  `--config` (e.g. `npx tauri build --config src-tauri/tauri.v3.conf.json`
-  from the repo root) — see that file and `README.md`'s packaging sections. Don't put
-  `--config` before the `build` subcommand; each subcommand defines its own
-  flag. A distinct `identifier` is sufficient to diverge WKWebView storage
-  (verified empirically: `~/Library/WebKit/<identifier>/` is a separate
-  directory per bundle identifier, confirmed by launching both builds).
-  **`identifier` is not always meant to diverge, though** —
-  `tauri.v3.conf.json` deliberately reuses v2's `com.quotos.desktop.v2`
-  rather than minting a new one, on purpose, reversing round-1's own
-  "always diverge" convention: v3 carries the R2-5 native-persistence
-  migration, and that migration only has real data to prove itself against
-  if the build shares the captain's actual in-use identity (`Quotos 2`'s
-  WKWebView storage, where his real tracked list and custom names already
-  live). A fresh identifier would boot empty and migrate nothing. The next
-  person tidying up packaging configs should not "fix" this back to a
-  unique identifier without checking whether the same reasoning still
-  applies. **v5 follows the same v3 precedent, not v4's**:
-  `tauri.v5.conf.json` (`productName` "Quotos v5") reuses v4's
-  `com.quotos.desktop.v4` rather than minting a new one — v5 is a
-  repository layout flatten with no change to the persisted data shape, so
-  there is nothing new to isolate a fresh identity from, and reusing v4's
-  identity is what lets the flattened build prove itself against the
-  captain's real tracked-subscription list at
-  `~/Library/Application Support/com.quotos.desktop.v4/tracked.json`
-  instead of booting empty. `tauri.v5-1.conf.json` ("Quotos v5.1", the W1
-  panel-background fix) reuses it a third time on the same reasoning. One
-  consequence of that shared identity is worth knowing before testing two
-  of these side by side: they also share `instance.lock`, so the second one
-  launched exits quietly rather than opening a window.
+- **One shipped config, one version, one identity — a GitHub-publication prep
+  stage removed the side-by-side dev packaging configs
+  (`tauri.dev/v2/v3/v4/v5/v5-1.conf.json`) that used to let several builds run
+  at once during development, each with its own `--config` override,
+  `productName`, and (sometimes deliberately reused, sometimes not) bundle
+  `identifier`.** `src-tauri/tauri.conf.json` is now the only config, carries
+  no `version` field of its own, and lets Tauri derive its version from
+  `src-tauri/Cargo.toml`'s `[package] version` — the single source of truth.
+  `package.json`'s `version` can't derive automatically the same way, so
+  `tools/checks/versions.test.js` (part of the `test` lane) fails the gate if
+  it drifts from Cargo.toml's. If side-by-side packaging is needed again, the
+  earlier approach (a merged `--config` file, reusing an existing `identifier`
+  when a build needs to prove itself against real on-disk data rather than
+  boot empty — verified empirically: `~/Library/WebKit/<identifier>/` is a
+  separate directory per bundle identifier, and two builds sharing one
+  identifier also share `instance.lock`, so the second one launched exits
+  quietly) is sound; it just isn't in the tree anymore, since a published repo
+  ships one product identity, not several.
 
 ## Maintaining this file
 
