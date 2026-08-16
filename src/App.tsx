@@ -314,8 +314,8 @@ export default function App() {
       }
     >
       {screen === "manage" ? (
-        // The tracked list, not the panel's row list: a row inside its
-        // undo window is already untracked.
+        // See useSubscriptions's trackedSubscriptions doc for what
+        // "tracked" excludes here.
         <SubscriptionsScreen
           tracked={trackedSubscriptions}
           onAdd={addSubscription}
