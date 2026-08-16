@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { StatuslineFeedWire } from "../../types/entities";
 import { reconcileWithStatusline } from "./statuslineMerge";
 
@@ -14,19 +14,19 @@ function feedWith(
 }
 
 describe("reconcileWithStatusline", () => {
-  it("leaves usage untouched when there is no feed at all", () => {
+  test("leaves usage untouched when there is no feed at all", () => {
     const usage = { five_hour: { utilization: 10 } };
     expect(reconcileWithStatusline(usage, API_FETCHED_AT, null)).toBe(usage);
     expect(reconcileWithStatusline(usage, API_FETCHED_AT, undefined)).toBe(usage);
   });
 
-  it("leaves usage untouched when the feed has no rate_limits", () => {
+  test("leaves usage untouched when the feed has no rate_limits", () => {
     const usage = { five_hour: { utilization: 10 } };
     const feed = { written_at: FRESHER, rate_limits: undefined } as unknown as StatuslineFeedWire;
     expect(reconcileWithStatusline(usage, API_FETCHED_AT, feed)).toBe(usage);
   });
 
-  it("leaves usage untouched when the feed is not newer than the API read", () => {
+  test("leaves usage untouched when the feed is not newer than the API read", () => {
     const usage = { five_hour: { utilization: 10 } };
     const sameAge = feedWith(
       { five_hour: { used_percentage: 99, resets_at: null } },
@@ -37,7 +37,7 @@ describe("reconcileWithStatusline", () => {
     expect(reconcileWithStatusline(usage, API_FETCHED_AT, older)).toEqual(usage);
   });
 
-  it("leaves a non-object usageRaw untouched", () => {
+  test("leaves a non-object usageRaw untouched", () => {
     const feed = feedWith({ five_hour: { used_percentage: 99, resets_at: null } });
     expect(reconcileWithStatusline(null, API_FETCHED_AT, feed)).toBeNull();
     expect(reconcileWithStatusline(undefined, API_FETCHED_AT, feed)).toBeUndefined();
@@ -71,7 +71,7 @@ describe("reconcileWithStatusline", () => {
       ],
     };
 
-    it("patches both session and weekly_all when both windows are fresher", () => {
+    test("patches both session and weekly_all when both windows are fresher", () => {
       const feed = feedWith({
         five_hour: { used_percentage: 45, resets_at: 1786899600 },
         seven_day: { used_percentage: 60, resets_at: 1787270400 },
@@ -85,7 +85,7 @@ describe("reconcileWithStatusline", () => {
       expect(weekly.resets_at).toBe(new Date(1787270400 * 1000).toISOString());
     });
 
-    it("never touches the per-model weekly_scoped window", () => {
+    test("never touches the per-model weekly_scoped window", () => {
       const feed = feedWith({
         five_hour: { used_percentage: 45, resets_at: null },
         seven_day: { used_percentage: 60, resets_at: null },
@@ -95,7 +95,7 @@ describe("reconcileWithStatusline", () => {
       expect(scoped.percent).toBe(8);
     });
 
-    it("only patches the window the feed actually reports (never invents one)", () => {
+    test("only patches the window the feed actually reports, never inventing one", () => {
       const feed = feedWith({
         five_hour: { used_percentage: 45, resets_at: null },
         seven_day: null,
@@ -107,7 +107,7 @@ describe("reconcileWithStatusline", () => {
       expect(weekly.percent).toBe(24); // untouched
     });
 
-    it("does not mutate the original usage object", () => {
+    test("does not mutate the original usage object", () => {
       const feed = feedWith({
         five_hour: { used_percentage: 45, resets_at: null },
         seven_day: null,
@@ -118,7 +118,7 @@ describe("reconcileWithStatusline", () => {
   });
 
   describe("fixed top-level shape", () => {
-    it("patches five_hour and seven_day when both are present objects", () => {
+    test("patches five_hour and seven_day when both are present objects", () => {
       const usage = {
         five_hour: { utilization: 2, resets_at: "2026-08-15T15:00:00Z" },
         seven_day: { utilization: 3, resets_at: "2026-08-20T00:00:00Z" },
@@ -132,7 +132,7 @@ describe("reconcileWithStatusline", () => {
       expect(result.seven_day.utilization).toBe(60);
     });
 
-    it("never synthesizes a window the API reported as null — no double-counting", () => {
+    test("never synthesizes a window the API reported as null, so nothing is double-counted", () => {
       const usage = { five_hour: null, seven_day: { utilization: 3, resets_at: null } };
       const feed = feedWith({
         five_hour: { used_percentage: 45, resets_at: null },
@@ -143,7 +143,7 @@ describe("reconcileWithStatusline", () => {
       expect(result.seven_day.utilization).toBe(60);
     });
 
-    it("leaves a window whose feed side is absent untouched", () => {
+    test("leaves a window whose feed side is absent untouched", () => {
       const usage = {
         five_hour: { utilization: 2, resets_at: null },
         seven_day: { utilization: 3, resets_at: null },
@@ -158,11 +158,8 @@ describe("reconcileWithStatusline", () => {
     });
   });
 
-  // F3: the ingest side only requires used_percentage, so a fresher feed
-  // reading with resets_at: null is routine — it must refresh the percent
-  // without blanking the reset time the API supplied for the same window.
-  describe("F3: a feed with no resets_at preserves the API's reset time", () => {
-    it("keeps the API's resets_at in the limits[] shape while the percent updates", () => {
+  describe("a feed with no resets_at preserves the API's reset time", () => {
+    test("keeps the API's resets_at in the limits[] shape while the percent updates", () => {
       const usage = {
         limits: [
           {
@@ -194,7 +191,7 @@ describe("reconcileWithStatusline", () => {
       expect(weekly.resets_at).toBe("2026-08-20T00:00:00Z");
     });
 
-    it("keeps the API's resets_at in the fixed top-level shape while the percent updates", () => {
+    test("keeps the API's resets_at in the fixed top-level shape while the percent updates", () => {
       const usage = {
         five_hour: { utilization: 2, resets_at: "2026-08-15T15:00:00Z" },
         seven_day: { utilization: 3, resets_at: "2026-08-20T00:00:00Z" },
@@ -210,7 +207,7 @@ describe("reconcileWithStatusline", () => {
       expect(result.seven_day.resets_at).toBe("2026-08-20T00:00:00Z");
     });
 
-    it("still lets a feed that supplies a reset time win over the API's", () => {
+    test("still lets a feed that supplies a reset time win over the API's", () => {
       const usage = {
         limits: [
           {

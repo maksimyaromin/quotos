@@ -1,10 +1,10 @@
 import type { LimitWindowEntity, Severity } from "../../types/entities";
 
-/** Friendly labels for the `limits[].kind` values seen in the wild (see
- * `data/quotos-source-s1/report.md`). Anything not listed here still
- * renders — just humanized from the kind string itself — because the API
- * ships no display name and window kinds churn (the report found internal
- * codenames like `nimbus_quill` mixed in with stable ones). */
+/** Friendly labels for the `limits[].kind` values seen in the wild.
+ * Anything not listed here still renders, humanized from the kind string
+ * itself, because the API ships no display name and window kinds churn,
+ * including internal codenames such as `nimbus_quill` alongside stable
+ * ones. */
 const KNOWN_KIND_LABELS: Record<string, string> = {
   session: "Session",
   weekly_all: "Weekly",
@@ -41,10 +41,11 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-/** v4: a window's id needs to be stable across re-reads (pinning keys off
- * it — see `LimitWindowEntity.id`) and unique within one subscription's own
- * window list. `kind` alone collides when more than one window shares it
- * (e.g. two `weekly_scoped` entries, one per model) — scope disambiguates. */
+/** A window's id must be stable across re-reads, since pinning keys off
+ * it, see `LimitWindowEntity.id`, and unique within one subscription's own
+ * window list. `kind` alone collides when more than one window shares it,
+ * for example two `weekly_scoped` entries, one per model, so scope
+ * disambiguates. */
 function windowId(kind: string, scope: string | null): string {
   return scope ? `${kind}:${scope}` : kind;
 }
@@ -74,7 +75,7 @@ function windowFromLimit(limit: RawLimit): LimitWindowEntity {
 }
 
 function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null {
-  // A null window means "the account has no such window" — hidden, not zero.
+  // A null window means the account has no such window. It is hidden, not zero.
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as { utilization?: unknown; resets_at?: unknown };
   return {
@@ -83,7 +84,7 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
     scope: null,
     used: clampPercent(record.utilization),
     resetsAt: asString(record.resets_at),
-    // The fixed top-level shape carries no is_active flag; treat every
+    // The fixed top-level shape carries no is_active flag. Treat every
     // present window as a headline candidate.
     isActive: true,
   };
@@ -95,8 +96,8 @@ interface Headline {
   id: string | null;
 }
 
-/** Fallback headline when there's no account-wide weekly window in the
- * response at all: the most-consumed *active* window, as before R2-2. */
+/** Fallback headline when there is no account-wide weekly window in the
+ * response at all: the most-consumed active window. */
 function pickMostConsumed(windows: LimitWindowEntity[]): Headline {
   const candidates = windows.filter((w) => w.isActive && w.used !== null);
   const pool = candidates.length > 0 ? candidates : windows.filter((w) => w.used !== null);
@@ -105,15 +106,16 @@ function pickMostConsumed(windows: LimitWindowEntity[]): Headline {
   return { used: binding.used, resetsAt: binding.resetsAt, id: binding.id };
 }
 
-/** R2-2: the headline is the account-wide weekly window — `weekly_all` from
- * `limits[]`, or `seven_day` from the fixed top-level shape — never simply
- * the most-consumed window (that let a per-model weekly like Fable's 17%
- * outrank the account weekly's 15% and become the headline, which the
- * captain called out directly). Reads the raw response rather than the
- * already-built `windows` list because `windowFromLimit`/`windowFromFixed`
- * don't retain the raw `kind`/key needed to identify "the account-wide one"
- * specifically. Returns `null` when no such window exists at all, so the
- * caller can fall back to the old most-consumed behaviour. */
+/** The headline is the account-wide weekly window, `weekly_all` from
+ * `limits[]` or `seven_day` from the fixed top-level shape, never simply
+ * the most-consumed window. Selecting by consumption alone would let a
+ * per-model weekly outrank the account-wide total, for example a 17%
+ * per-model window outranking a 15% account weekly. This reads the raw
+ * response rather than the already-built `windows` list, because
+ * `windowFromLimit` and `windowFromFixed` do not retain the raw `kind` or
+ * key needed to identify the account-wide window specifically. Returns
+ * `null` when no such window exists at all, so the caller can fall back to
+ * `pickMostConsumed`. */
 function pickAccountWideWeekly(
   usage: Record<string, unknown>,
 ): { used: number; resetsAt: string | null; id: string } | null {
@@ -141,11 +143,11 @@ function pickAccountWideWeekly(
   return null;
 }
 
-/** R2-2: `critical` when *any* window (active or not — a session at 85%
- * still matters even while the weekly headline reads 20%) is >=90% used,
- * `warn` when any is >=75%, otherwise `healthy`. Thresholds mirror the
- * design system's `--cap-critical`/`--cap-warn` tokens exactly; this is the
- * only place they're encoded for Claude. */
+/** `critical` when any window, active or not, is at least 90% used. A
+ * session at 85% still matters even while the weekly headline reads 20%.
+ * `warn` when any window is at least 75% used, otherwise `healthy`. These
+ * thresholds mirror the design system's `--cap-critical` and `--cap-warn`
+ * tokens exactly, and this is the only place they are encoded for Claude. */
 function computeSeverity(windows: LimitWindowEntity[]): Severity {
   let severity: Severity = "healthy";
   for (const w of windows) {
@@ -173,10 +175,11 @@ const EMPTY: NormalizedUsage = {
   headlineWindowId: null,
 };
 
-/** Turn a raw `/api/oauth/usage` response into the generic window list plus
- * headline — everywhere in "percent consumed" terms (I2), never "remaining".
- * Defensive throughout: tolerates unknown keys, absent fields, non-array
- * `limits`, and a completely empty/null response — never throws. */
+/** Turns a raw `/api/oauth/usage` response into the generic window list
+ * plus headline, everywhere in percent-consumed terms, never remaining.
+ * Defensive throughout: tolerates unknown keys, absent fields, a
+ * non-array `limits`, and a completely empty or null response. Never
+ * throws. */
 export function normalizeUsage(raw: unknown): NormalizedUsage {
   if (raw === null || raw === undefined || typeof raw !== "object") {
     return EMPTY;
