@@ -24,6 +24,16 @@ use std::time::{Duration, Instant};
 /// adaptive, never slower when idle.
 pub const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
+/// How long until the next automatic read, given what the last attempt
+/// returned. A rate-limited `retry_after` under one minute is floored at
+/// `AUTO_REFRESH_INTERVAL`: retrying earlier would spend another slot on
+/// a guaranteed second failure.
+fn next_wait(retry_after: Option<Duration>) -> Duration {
+    retry_after
+        .unwrap_or(AUTO_REFRESH_INTERVAL)
+        .max(AUTO_REFRESH_INTERVAL)
+}
+
 pub struct Scheduler {
     next_due: Mutex<HashMap<String, Instant>>,
     pass_running: AtomicBool,
@@ -93,9 +103,7 @@ impl Scheduler {
     /// still-active rate limit would spend another slot on a guaranteed
     /// second failure.
     pub fn mark_attempted(&self, account_id: &str, retry_after: Option<Duration>) {
-        let wait = retry_after
-            .unwrap_or(AUTO_REFRESH_INTERVAL)
-            .max(AUTO_REFRESH_INTERVAL);
+        let wait = next_wait(retry_after);
         let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");
         next_due.insert(account_id.to_string(), Instant::now() + wait);
     }
@@ -127,23 +135,24 @@ mod tests {
     }
 
     #[test]
-    fn a_rate_limited_retry_after_overrides_the_plain_minute_when_longer() {
-        let scheduler = Scheduler::new();
-        scheduler.mark_attempted("claude:claude", Some(Duration::from_secs(214)));
-        // Instant cannot be fast-forwarded directly in a unit test, so
-        // this asserts the invariant that matters: the account is not due
-        // right after marking, well before the plain 60 seconds would have
-        // elapsed.
-        assert!(!scheduler.is_due("claude:claude"));
+    fn next_wait_uses_retry_after_when_it_exceeds_the_plain_minute() {
+        assert_eq!(
+            next_wait(Some(Duration::from_secs(214))),
+            Duration::from_secs(214)
+        );
     }
 
     #[test]
-    fn a_short_retry_after_still_floors_at_one_minute() {
-        let scheduler = Scheduler::new();
-        // A retry_after under 60s must never make the account due sooner
-        // than the fixed one-per-minute cadence.
-        scheduler.mark_attempted("claude:claude", Some(Duration::from_secs(5)));
-        assert!(!scheduler.is_due("claude:claude"));
+    fn next_wait_floors_a_short_retry_after_at_one_minute() {
+        assert_eq!(
+            next_wait(Some(Duration::from_secs(5))),
+            AUTO_REFRESH_INTERVAL
+        );
+    }
+
+    #[test]
+    fn next_wait_with_no_retry_after_is_the_plain_minute() {
+        assert_eq!(next_wait(None), AUTO_REFRESH_INTERVAL);
     }
 
     #[test]

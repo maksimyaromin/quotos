@@ -1232,6 +1232,19 @@ mod tests {
             GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX,
             "a group boundary must add exactly the gutter+hairline width"
         );
+
+        // The reserved width alone does not prove the hairline was
+        // actually painted into it, only that space was left for it.
+        let (buf, w, h) = two_groups;
+        let gutter_x =
+            SIDE_PAD_PX + GLYPH_PX + GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX + GROUP_GUTTER_PRE_PX;
+        let mid_row = h / 2;
+        let painted = (gutter_x..gutter_x + HAIRLINE_WIDTH_PX)
+            .any(|x| buf[(((mid_row * w) + x) * 4 + 3) as usize] > 0);
+        assert!(
+            painted,
+            "expected hairline pixels within the reserved gutter"
+        );
     }
 
     // group_start on the very first segment, where there is no prior

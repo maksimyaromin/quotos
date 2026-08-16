@@ -4,6 +4,14 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+/// Whether a reservation this old has aged out of the window. An entry
+/// exactly one window old counts as expired, not one instant later:
+/// otherwise five reservations spaced evenly across the window never
+/// admit a sixth once the window is full.
+fn is_expired(age: Duration, window: Duration) -> bool {
+    age >= window
+}
+
 /// One account's current standing against the shared request budget. The
 /// `debug_rate_limit_snapshot` command in `accounts.rs` exposes this to the
 /// frontend's developer-only state dump.
@@ -42,13 +50,7 @@ impl RateLimiter {
         let now = Instant::now();
         let entry = windows.entry(key.to_string()).or_default();
         while let Some(&front) = entry.front() {
-            // The prune uses >=, not >. Five reservations spaced 60 seconds
-            // apart under the scheduler's one-read-per-minute cadence age
-            // the oldest entry to exactly 300 seconds old. A strict > would
-            // keep counting it for one more instant and wrongly refuse the
-            // sixth request, which would make this limiter refuse a read
-            // the schedule expects to succeed.
-            if now.duration_since(front) >= self.window {
+            if is_expired(now.duration_since(front), self.window) {
                 entry.pop_front();
             } else {
                 break;
@@ -73,9 +75,7 @@ impl RateLimiter {
         let mut out = HashMap::new();
         for (key, entry) in windows.iter_mut() {
             while let Some(&front) = entry.front() {
-                // Prunes the same way try_acquire does, so a snapshot never
-                // reports a stale reservation as still active.
-                if now.duration_since(front) >= self.window {
+                if is_expired(now.duration_since(front), self.window) {
                     entry.pop_front();
                 } else {
                     break;
@@ -116,6 +116,13 @@ impl RateLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_entry_exactly_one_window_old_is_expired() {
+        let window = Duration::from_secs(300);
+        assert!(is_expired(window, window));
+        assert!(!is_expired(window - Duration::from_nanos(1), window));
+    }
 
     #[test]
     fn admits_a_sixth_request_once_the_oldest_is_exactly_one_window_old() {
