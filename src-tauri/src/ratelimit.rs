@@ -4,21 +4,24 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-/// One account's current standing against the budget — the read-only view
-/// exposed to the dev state dump (see `debug_state.rs`).
+/// One account's current standing against the shared request budget. The
+/// `debug_rate_limit_snapshot` command in `accounts.rs` exposes this to the
+/// frontend's developer-only state dump.
 #[derive(Serialize, Clone, Debug)]
 pub struct RateLimitStatus {
     pub used: usize,
     pub max: usize,
-    /// `None` when under budget; `Some(secs)` when the account is currently
-    /// blocked and this is how long until the oldest reservation ages out.
+    /// `None` when the account is under budget. `Some(secs)` when the
+    /// account is currently blocked, naming how long until the oldest
+    /// reservation ages out.
     pub retry_after_secs: Option<u64>,
 }
 
-/// Per-account sliding-window limiter matching the measured provider limit:
-/// 5 requests per 300 seconds, shared with the official client. One
-/// instance guards the frontier so refresh timing lives in exactly one
-/// place, not scattered across timers.
+/// This limiter tracks each account's standing in a sliding window against
+/// the measured provider limit of 5 requests per 300 seconds, shared with
+/// Claude Code's own client. One instance guards the whole frontier so
+/// refresh timing lives in exactly one place instead of being scattered
+/// across timers.
 pub struct RateLimiter {
     windows: Mutex<HashMap<String, VecDeque<Instant>>>,
     max_requests: usize,
@@ -41,12 +44,12 @@ impl RateLimiter {
         let now = Instant::now();
         let entry = windows.entry(key.to_string()).or_default();
         while let Some(&front) = entry.front() {
-            // R2-4: >= , not > . At exactly the window boundary (t=300s for
-            // five 60-second-spaced entries under the new 1/min schedule),
-            // the oldest entry has fully aged out and must be pruned so the
-            // 6th request is admitted — with a strict `>` it stays counted
-            // for one more instant and the read is wrongly refused, which
-            // would make our own limiter fight our own schedule.
+            // The prune uses >=, not >. Five reservations spaced 60 seconds
+            // apart under the scheduler's one-read-per-minute cadence age
+            // the oldest entry to exactly 300 seconds old. A strict > would
+            // keep counting it for one more instant and wrongly refuse the
+            // sixth request, which would make this limiter refuse a read
+            // the schedule expects to succeed.
             if now.duration_since(front) >= self.window {
                 entry.pop_front();
             } else {
@@ -63,16 +66,17 @@ impl RateLimiter {
         Ok(())
     }
 
-    /// Read-only snapshot of every account's current standing, for the dev
-    /// state dump. Prunes expired entries first so the count reflects
-    /// reality, same as `try_acquire` — but never reserves a slot.
+    /// Returns a read-only snapshot of every account's current standing.
+    /// Prunes expired entries first, the same way `try_acquire` does, but
+    /// never reserves a slot.
     pub fn snapshot(&self) -> HashMap<String, RateLimitStatus> {
         let mut windows = self.windows.lock().expect("ratelimit mutex poisoned");
         let now = Instant::now();
         let mut out = HashMap::new();
         for (key, entry) in windows.iter_mut() {
             while let Some(&front) = entry.front() {
-                // R2-4: mirrors the same >= fix in try_acquire, above.
+                // Prunes the same way try_acquire does, so a snapshot never
+                // reports a stale reservation as still active.
                 if now.duration_since(front) >= self.window {
                     entry.pop_front();
                 } else {
@@ -98,7 +102,7 @@ impl RateLimiter {
         out
     }
 
-    /// Test-only: back-date every reservation for `key` by `age`, so the
+    /// Back-dates every reservation for `key` by `age`, so the
     /// window-boundary behavior can be exercised without a real sleep.
     #[cfg(test)]
     fn age_entries_by(&self, key: &str, age: Duration) {
@@ -115,12 +119,6 @@ impl RateLimiter {
 mod tests {
     use super::*;
 
-    /// R2-4: five requests spaced exactly 60s apart (the new schedule) must
-    /// not deadlock the budget — once the oldest is exactly 300s old, it
-    /// must be prunable so a 6th request is admitted. This is the exact
-    /// off-by-one the brief called out: with a strict `>` prune condition,
-    /// the oldest entry at precisely t=300s is not yet pruned and the read
-    /// is wrongly refused.
     #[test]
     fn admits_a_sixth_request_once_the_oldest_is_exactly_one_window_old() {
         let limiter = RateLimiter::new(5, Duration::from_secs(300));
