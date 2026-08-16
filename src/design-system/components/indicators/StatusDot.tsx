@@ -17,7 +17,6 @@ export interface StatusDotProps {
   state?: SubscriptionState;
   /** Diameter in pixels. Defaults to 7. */
   size?: number;
-  /** Extra class for a caller's own layout, composed alongside the dot's own class. */
   className?: string;
   style?: React.CSSProperties;
 }
