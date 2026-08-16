@@ -44,61 +44,42 @@ export interface Subscription {
   provider: string;
   providerName: string;
   label: string;
-  /** Set once the user has renamed the subscription inline. Overrides the
-   * provider-derived label whenever present. */
+  /** Overrides the provider-derived label whenever set. */
   labelOverride: string | null;
   account: string | null;
   state: SubscriptionState;
-  /** Provider-computed from every window. Drives the color of the headline
-   * number, its bar, and the tray digits, never the headline percentage's
-   * own magnitude. A failed or rate-limited read leaves it untouched. Only
-   * a successful read updates it, the same as `used` and `windows` below. */
+  /** Computed from every window, not just the headline one, so a healthy
+   * headline percent does not mask a near-exhausted window elsewhere.
+   * Untouched by a failed or rate-limited read. */
   severity: Severity;
-  /** Percent of the headline window consumed, 0 to 100. The headline is the
-   * account-wide weekly window, not simply the most-consumed one. Selection
-   * is provider-owned, see `providers/claude/normalizeUsage.ts`. */
+  /** Percent of the headline window consumed, 0 to 100. The headline is
+   * the account-wide weekly window, not the most-consumed one, see
+   * `providers/claude/normalizeUsage.ts`. */
   used: number | null;
   resetsAt: string | null;
   lastReadAt: string | null;
   windows: LimitWindowEntity[];
   reason: string | null;
-  /** Whether signing in is genuinely what this subscription needs,
-   * provider-classified, see `providers/claude/index.ts`'s `mapOutcome`.
-   * Deliberately separate from `state`, since `broken` alone driving the
-   * "Needs sign-in" badge would make an offline launch or an HTTP 403 look
-   * like a signed-out account. This flag also silences the rate-budget
-   * wait, because a retry timer is meaningless on a row whose answer is
-   * sign in. */
+  /** Provider-classified, see `providers/claude/index.ts`'s `mapOutcome`.
+   * Separate from `state` so a stale credential or a network failure never
+   * reads as a sign-in problem. */
   needsSignIn: boolean;
-  /** Pinning is per limit window, not per subscription. This is the
-   * persisted set of pinned window ids, see `LimitWindowEntity.id`, any
-   * number from any number of subscriptions. Order does not matter here.
-   * The tray's own figure order comes from `windows`' own order, filtered
-   * to whichever ids are in this list, see `lib/traySegments.ts`. */
+  /** Per limit window, not per subscription, see `LimitWindowEntity.id`.
+   * Order does not matter: figure order in the status item comes from
+   * `windows`' own order, see `lib/statusItemSegments.ts`. */
   pinnedWindowIds: string[];
-  /** Which of this subscription's current `windows` is the headline, the
-   * same window `used` and `resetsAt` are drawn from. Recomputed by the
-   * provider on every read, see `NormalizedRead.headlineWindowId`. Null
-   * before any read, or when a read had no windows to point at. This is
-   * what the "…" menu's "Show/Hide in menu bar" toggles: it pins or unpins
-   * this one window id rather than the whole subscription. */
+  /** Which of this subscription's current `windows` is the headline, see
+   * `NormalizedRead.headlineWindowId`. Null before any read. */
   headlineWindowId: string | null;
   configDir: string;
-  /** Set while the app's own rate budget, not the subscription's health, is
-   * the only thing blocking a read. Null once it is free to poll again.
-   * This must never replace `state`. It is rendered as a quiet fact
-   * alongside whatever health state already holds. */
+  /** Set while the app's own rate budget, not health, blocks a read.
+   * Never replaces `state`. */
   rateLimitedUntil: string | null;
-  /** A `claude setup-token` session is running for this account.
-   * Shell-owned UI state, not provider data, see `signin.rs`. Drives
-   * whether the panel shows the code-paste field for this row. */
+  /** A `claude setup-token` session is running for this account, see
+   * `signin.rs`. */
   signInInProgress: boolean;
-  /** Set while "Stop tracking" has been pressed and the undo window is
-   * still open. The account is already untracked as far as every consumer,
-   * including persistence, the tray and the Subscriptions screen, is
-   * concerned. This flag exists only so the panel can keep the row's slot
-   * in the list and draw the Undo row there. Never persisted, see
-   * `useSubscriptions`'s save effect, which filters on it. */
+  /** Set while "Stop tracking" is pending its undo window. The account is
+   * already untracked everywhere except the panel's own row slot. */
   pendingRemoval: boolean;
 }
 
@@ -224,21 +205,15 @@ export interface SignInFinishedEvent {
   success: boolean;
 }
 
-/** One colored piece of the tray title. `tray-icon` v0.24.2's macOS
- * `set_title` takes a plain string with no color channel, verified by
- * reading the crate's `platform_impl/macos/mod.rs`. The real implementation
- * composites a bitmap on the Rust side in `src-tauri/src/tray_render.rs` so
- * each pinned window's digits can carry their own color. The mock client
- * has no real tray to update, so it is a no-op there instead of a stub
- * export. One figure exists per pinned window, not per pinned subscription.
- * `lib/traySegments.ts` builds this list in panel order, rows top to
- * bottom, then in each subscription's own window order, left to right,
- * matching the bar's own order in the panel. */
-export interface TraySegment {
+/** One colored piece of the status item's title. `tray-icon`'s macOS
+ * `set_title` takes a plain string with no color channel, so the native
+ * side composites a bitmap from these segments instead. One figure per
+ * pinned window, in panel order, then each subscription's own window
+ * order. */
+export interface StatusItemSegment {
   text: string;
   color: "neutral" | "amber" | "red";
-  /** True for the first segment of a new subscription's group. The Rust
-   * side in `tray_render.rs` draws its hairline immediately before any
-   * segment with this set, never before the very first segment overall. */
+  /** True for the first segment of a new subscription's group, so the
+   * native side knows where to draw the hairline between groups. */
   groupStart: boolean;
 }

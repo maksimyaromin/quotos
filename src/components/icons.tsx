@@ -57,10 +57,8 @@ export function DebugIcon() {
   );
 }
 
-/** Folds a detached window back under the tray icon: an upward arrow
- * reading as "send this back up to the menu bar". There is no detach
- * button, since dragging the header is the only way to tear the panel off,
- * so this is the only affordance this pair needs. */
+/** Folds a detached window back under the status item: an upward arrow
+ * reading as "send this back up to the menu bar". */
 export function SnapBackIcon() {
   return (
     <svg

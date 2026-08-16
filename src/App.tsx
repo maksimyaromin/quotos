@@ -22,18 +22,13 @@ import "./app.css";
 
 const NOW_TICK_MS = 30_000;
 
-// Beak offset in pixels from the panel's own left edge. The native side
-// computes and pushes the real value on every dock and re-dock, see
-// `compute_docked_layout` in src-tauri/src/shell.rs, since it depends on
-// the tray icon's actual position and how much the panel got clamped off
-// it, so it cannot be a fixed constant there.
-//
-// This exists only for the browser mock harness, which has no real tray
-// glyph to measure. The native build deliberately starts at `null`
-// instead. If the `panel-beak-offset` event were ever missed, falling
-// back to a hardcoded number would draw the beak confidently in a place
-// that is right on nobody's screen. Drawing no beak for a frame is the
-// honest failure.
+// The native side computes and pushes the real beak offset on every dock
+// and re-dock, since it depends on the status item's actual position, see
+// `compute_docked_layout` in src-tauri/src/shell.rs. This fallback exists
+// only for the browser mock harness, which has no real status item to
+// measure. The native build starts at `null` instead: a hardcoded fallback
+// there would draw the beak confidently in the wrong place if the
+// `panel-beak-offset` event were ever missed.
 const BEAK_LEFT_MOCK_FALLBACK = 24;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -70,7 +65,6 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [beakLeft, setBeakLeft] = useState<number | null>(isTauri ? null : BEAK_LEFT_MOCK_FALLBACK);
 
-  // Keeps the beak centered under the real tray glyph position.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -84,11 +78,8 @@ export default function App() {
     };
   }, []);
 
-  // Escape dismisses the innermost transient layer first. An open "…" menu
-  // closes and the panel stays up. Only a bare Escape hides the panel. The
-  // rename and sign-in fields own their layer the same way: their
-  // handlers call stopPropagation, so the key never reaches this window
-  // listener.
+  // The rename and sign-in fields stopPropagation, so Escape there never
+  // reaches this listener.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -102,17 +93,10 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openMenuId]);
 
-  // Panel visibility drives two resets. On hide, the "…" menu must not
-  // still be hanging open when the panel comes back, matching the
-  // prototype's own reset-on-every-open. On show, the `now` clock is
-  // re-read immediately. macOS suspends a hidden WKWebView's timers, the
-  // same suspension that moved the refresh cadence into scheduler.rs, so
-  // the NOW_TICK interval below simply does not run while the panel is
-  // closed. A panel reopened hours later would otherwise paint "Last read
-  // 2 min ago", stale "Resets today at …" copy, and wrong rate-budget
-  // waits until the first post-resume tick. The mock harness fires an
-  // initial visible=true at subscribe time, and re-reading the clock then
-  // is harmless.
+  // macOS suspends a hidden WKWebView's timers, so the NOW_TICK interval
+  // below does not run while the panel is closed. Re-reading `now` on show
+  // avoids painting stale relative times after a long-closed panel
+  // reopens.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -129,24 +113,15 @@ export default function App() {
     };
   }, []);
 
-  // Keeps relative "ago" text, exact reset copy, and rate-limit
-  // availability fresh while the panel sits open. Otherwise these would
-  // only update on the next data refresh, minutes later.
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
     return () => clearInterval(interval);
   }, []);
 
-  // The "…" menu closes on any click outside itself or its trigger, never
-  // on interaction with them, see data-quotos-menu-scope in
-  // SubscriptionRow.jsx. Registered on the window's capture phase, and the
-  // dismissing click is consumed there, before React's delegated handlers
-  // ever see it. Pointer dismissal follows the same innermost-layer-first
-  // rule as Escape above, matching the prototype's own row guard, which
-  // returns without expanding. It must never also expand a row or press
-  // whatever control sits under the pointer, since the worst case is "Open
-  // Claude Code" spawning a sign-in session. This only ever closes, never
-  // reopens, so it cannot race the trigger button's own toggle.
+  // Registered on the window's capture phase, consuming the dismissing
+  // click there before React's delegated handlers see it, so it can never
+  // also expand a row or press whatever sits under the pointer, such as
+  // spawning a sign-in session. Only ever closes, never reopens.
   useEffect(() => {
     if (!openMenuId) return;
     const onClickCapture = (event: MouseEvent) => {
@@ -178,21 +153,10 @@ export default function App() {
     }
   };
 
-  // Dragging the header is the only way to detach. There is no detach
-  // button. The visible detach, losing the beak, gaining the snap-back
-  // arrow, and no longer closing on click-away, only happens on the first
-  // real movement, not the mousedown itself, so a plain click on the
-  // header does nothing.
-  //
-  // Each `mousemove` after a gesture starts calls `dragWindowStep()`, and
-  // the Rust side sets the window's frame directly from the live cursor
-  // delta, see `drag_window_step`'s doc comment in
-  // `src-tauri/src/shell.rs`. Relocating the window's frame at all while a
-  // mouse-down gesture is live over it also reactivates the app for as
-  // long as the mouse stays down.
-  //
-  // Calling this only after the first real movement, not on the mousedown
-  // itself, is what keeps a plain click from detaching the panel.
+  // There is no detach button; dragging the header is the only way to
+  // detach. Relocating the window's frame at all while a mouse-down
+  // gesture is live over it reactivates the app for as long as the mouse
+  // stays down, see `drag_window_step` in `src-tauri/src/shell.rs`.
   const handleHeaderPointerDown = (event: React.MouseEvent) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
@@ -270,11 +234,8 @@ export default function App() {
   };
 
   const nowDate = new Date(now);
-  // Same exclusion the rows use, lib/rowPresentation.ts: a subscription
-  // whose answer is sign in is not waiting on the rate budget, so it must
-  // not make the header claim everything is. These summaries describe
-  // what is tracked, so a row inside its undo window is out of all of
-  // them.
+  // A subscription whose answer is sign in is not waiting on the rate
+  // budget, matching lib/rowPresentation.ts's own exclusion.
   const blockedSubs = trackedSubscriptions.filter(
     (s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now),
   );
@@ -288,12 +249,9 @@ export default function App() {
           : min,
       ).rateLimitedUntil
     : null;
-  // The wait is a tooltip, never a disabled control. Disabling this button
-  // while a wait is pending would remove the last way to re-test a wrong
-  // diagnosis, and the wait itself can be a consequence of that wrong
-  // diagnosis. Pressing it during a wait is harmless: the Rust limiter
-  // refuses without spending anything, and the first press after the
-  // budget frees up reads for real.
+  // The wait is a tooltip, never a disabled control: the Rust limiter
+  // refuses a press without spending anything, so this stays the only way
+  // to re-test a diagnosis once the budget frees up.
   const refreshLabel = refreshing
     ? "Reading…"
     : allBlocked
@@ -366,9 +324,8 @@ export default function App() {
       }
     >
       {screen === "manage" ? (
-        // The tracked list, not the panel's row list. A row inside its
-        // "Stop tracking" undo window is already untracked, and this
-        // screen must not go on offering [Remove] for it.
+        // The tracked list, not the panel's row list: a row inside its
+        // undo window is already untracked.
         <SubscriptionsScreen
           tracked={trackedSubscriptions}
           onAdd={addSubscription}
@@ -390,13 +347,6 @@ export default function App() {
               />
             );
           }
-          // A row that needs signing in offers Claude Code's own sign-in,
-          // signin.rs, instead of retrying the same failed read. Once a
-          // session is running, the row shows the paste-code field instead
-          // of this button, see SubscriptionRow's signInInProgress. Badge,
-          // action and footer note are decided together, see
-          // lib/rowPresentation.ts for the two rules that keep them from
-          // contradicting each other.
           const presentation = presentRow(sub, now);
           const label = sub.labelOverride ?? sub.label;
           const windows = sub.windows.map((w) => ({

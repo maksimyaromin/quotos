@@ -153,12 +153,9 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
           profile: buildProfilePayload("Recovered demo", "claude_pro"),
         });
       }
-      // The first read surfaces the real, diagnosable failure, an expired
-      // login. Every read after that comes back rate_limited instead,
-      // simulating the shared rate budget running dry from repeated
-      // automatic retries. The health state must not decay into a waiting
-      // state. It must still read as broken with the expired-login reason
-      // on the second, third and later calls.
+      // The first read surfaces an expired login. Every read after that
+      // comes back rate_limited, simulating a dry retry budget, and the
+      // health state must still read broken, not decay into waiting.
       if (n === 1) {
         return fail({
           kind: "unauthorized",
@@ -217,11 +214,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         profile: buildProfilePayload("No limits demo", "claude_pro"),
       });
     case "claude:demo-severity":
-      // The account-wide weekly headline is low at 20%, but the session is
-      // nearly out at 85%. The headline number, bar, and tray digit if
-      // pinned must all read amber from severity, even though 20% alone
-      // would otherwise stay neutral. Exercises the case none of the other
-      // demo accounts do: headline and severity disagreeing.
+      // Exercises headline and severity disagreeing: the weekly headline is
+      // a healthy 20%, but the session is nearly out at 85%.
       return delay({
         account_id: account.id,
         provider: "claude",
@@ -348,13 +342,9 @@ export function onSignInFinished(
   });
 }
 
-// Browser-only simulation of the statusline opt-in's install, status and
-// remove lifecycle, keyed by config dir. Mirrors statusline.rs closely
-// enough for the offer, conflict, replace and remove UI to be reviewed end
-// to end here, without ever touching a real settings.json. The team account
-// starts with a foreign statusLine already configured, so the conflict
-// path, showing what is there and requiring an explicit replace, is
-// reachable in a plain browser too.
+// Keyed by config dir. The team account starts with a foreign statusLine
+// already configured, so the conflict path is reachable in a plain browser
+// too.
 const statuslineState = new Map<string, StatuslineIntegrationStatus>([
   ["~/.claude-team", { kind: "conflict", existing_command: "~/.claude-team/my-own-statusline.sh" }],
 ]);

@@ -45,7 +45,7 @@ vi.mock("./lib/tauriClient", () => ({
   cancelSignIn: () => Promise.resolve(),
   forgetSignIn: () => Promise.resolve(),
   onSignInFinished: () => Promise.resolve(() => {}),
-  setTrayStatus: () => Promise.resolve(),
+  renderStatusItem: () => Promise.resolve(),
   onQuotaRefresh: () => Promise.resolve(() => {}),
   kickScheduler: () => Promise.resolve(),
   statuslineStatus: () => Promise.resolve({ kind: "not_installed" }),

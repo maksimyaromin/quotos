@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { LimitWindowEntity, Subscription } from "../types/entities";
 import {
-  buildTraySegments,
-  buildTrayTooltip,
+  buildStatusItemSegments,
+  buildStatusItemTooltip,
   computeWorstActiveLimitPercent,
-} from "./traySegments";
+} from "./statusItemSegments";
 
 function window(overrides: Partial<LimitWindowEntity> & { id: string }): LimitWindowEntity {
   return { name: "Window", used: null, resetsAt: null, scope: null, isActive: true, ...overrides };
@@ -35,10 +35,10 @@ function subscription(overrides: Partial<Subscription> & { id: string }): Subscr
   };
 }
 
-describe("buildTraySegments", () => {
+describe("buildStatusItemSegments", () => {
   test("emits nothing when nothing is pinned", () => {
     const subs = [subscription({ id: "a", windows: [window({ id: "session", used: 10 })] })];
-    expect(buildTraySegments(subs)).toEqual([]);
+    expect(buildStatusItemSegments(subs)).toEqual([]);
   });
 
   test("skips a pinned window with no numeric value yet, never rendering '!' or '…'", () => {
@@ -49,7 +49,7 @@ describe("buildTraySegments", () => {
         windows: [window({ id: "session", used: null })],
       }),
     ];
-    expect(buildTraySegments(subs)).toEqual([]);
+    expect(buildStatusItemSegments(subs)).toEqual([]);
   });
 
   test("skips a pinned id whose window no longer exists in the latest read", () => {
@@ -60,10 +60,10 @@ describe("buildTraySegments", () => {
         windows: [window({ id: "session", used: 10 })],
       }),
     ];
-    expect(buildTraySegments(subs)).toEqual([]);
+    expect(buildStatusItemSegments(subs)).toEqual([]);
   });
 
-  test("orders figures in panel order then provider (window list) order, marking group starts", () => {
+  test("orders figures in panel order, then each subscription's own window order, marking group starts", () => {
     const subs = [
       subscription({
         id: "a",
@@ -76,7 +76,7 @@ describe("buildTraySegments", () => {
         windows: [window({ id: "weekly_all", used: 52 })],
       }),
     ];
-    expect(buildTraySegments(subs)).toEqual([
+    expect(buildStatusItemSegments(subs)).toEqual([
       { text: "61%", color: "neutral", groupStart: false },
       { text: "74%", color: "neutral", groupStart: false },
       { text: "52%", color: "neutral", groupStart: true },
@@ -84,9 +84,6 @@ describe("buildTraySegments", () => {
   });
 
   test("colors a figure from its own window's used%, not the subscription's aggregate severity", () => {
-    // The subscription is "warn" overall because some other window sits at
-    // 85%, but the pinned figure itself is a healthy 20%. It must read
-    // neutral, not amber.
     const subs = [
       subscription({
         id: "a",
@@ -95,7 +92,9 @@ describe("buildTraySegments", () => {
         windows: [window({ id: "session", used: 85 }), window({ id: "weekly_all", used: 20 })],
       }),
     ];
-    expect(buildTraySegments(subs)).toEqual([{ text: "20%", color: "neutral", groupStart: false }]);
+    expect(buildStatusItemSegments(subs)).toEqual([
+      { text: "20%", color: "neutral", groupStart: false },
+    ]);
   });
 
   test("colors past 75 amber and past 90 red", () => {
@@ -103,7 +102,7 @@ describe("buildTraySegments", () => {
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 80 })] }),
       subscription({ id: "b", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 95 })] }),
     ];
-    expect(buildTraySegments(subs).map((s) => s.color)).toEqual(["amber", "red"]);
+    expect(buildStatusItemSegments(subs).map((s) => s.color)).toEqual(["amber", "red"]);
   });
 
   test("turns every contributing figure amber when any contributing subscription is stale", () => {
@@ -116,7 +115,7 @@ describe("buildTraySegments", () => {
         windows: [window({ id: "w", used: 20 })],
       }),
     ];
-    expect(buildTraySegments(subs).map((s) => s.color)).toEqual(["amber", "amber"]);
+    expect(buildStatusItemSegments(subs).map((s) => s.color)).toEqual(["amber", "amber"]);
   });
 
   test("a stale subscription with nothing pinned doesn't taint the bar", () => {
@@ -129,16 +128,17 @@ describe("buildTraySegments", () => {
         windows: [window({ id: "w", used: 99 })],
       }),
     ];
-    expect(buildTraySegments(subs)).toEqual([{ text: "10%", color: "neutral", groupStart: false }]);
+    expect(buildStatusItemSegments(subs)).toEqual([
+      { text: "10%", color: "neutral", groupStart: false },
+    ]);
   });
 });
 
-describe("buildTrayTooltip", () => {
+describe("buildStatusItemTooltip", () => {
   test("is just the product name when nothing contributes a figure", () => {
-    expect(buildTrayTooltip([])).toBe("Quotos");
-    // A pinned window with no number contributes no segment and never a "!"
-    // placeholder, so it contributes no tooltip line either. The two
-    // surfaces must agree.
+    expect(buildStatusItemTooltip([])).toBe("Quotos");
+    // The segment builder and the tooltip builder must agree on what
+    // counts as a contributing figure.
     const subs = [
       subscription({
         id: "a",
@@ -146,7 +146,7 @@ describe("buildTrayTooltip", () => {
         windows: [window({ id: "session", used: null })],
       }),
     ];
-    expect(buildTrayTooltip(subs)).toBe("Quotos");
+    expect(buildStatusItemTooltip(subs)).toBe("Quotos");
   });
 
   test("names each contributing figure, one line per subscription, in bar order", () => {
@@ -168,7 +168,7 @@ describe("buildTrayTooltip", () => {
         windows: [window({ id: "weekly_scoped:Opus", name: "Weekly", scope: "Opus", used: 55 })],
       }),
     ];
-    expect(buildTrayTooltip(subs)).toBe(
+    expect(buildStatusItemTooltip(subs)).toBe(
       "Quotos\nClaude Max: Session 70% · Weekly 40%\nClaude Pro: Weekly (Opus) 55%",
     );
   });
@@ -183,7 +183,7 @@ describe("buildTrayTooltip", () => {
         windows: [window({ id: "w", name: "Weekly", used: 40 })],
       }),
     ];
-    expect(buildTrayTooltip(subs)).toBe("Quotos\nWork: Weekly 40%");
+    expect(buildStatusItemTooltip(subs)).toBe("Quotos\nWork: Weekly 40%");
   });
 
   test("marks only the stale subscription's own line, in the row badge's words", () => {
@@ -202,7 +202,7 @@ describe("buildTrayTooltip", () => {
         windows: [window({ id: "w", name: "Weekly", used: 55 })],
       }),
     ];
-    expect(buildTrayTooltip(subs)).toBe(
+    expect(buildStatusItemTooltip(subs)).toBe(
       "Quotos\nClaude Max: Weekly 40% — not current\nClaude Pro: Weekly 55%",
     );
   });

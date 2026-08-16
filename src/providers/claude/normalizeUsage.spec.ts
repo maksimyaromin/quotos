@@ -229,8 +229,6 @@ describe("normalizeUsage", () => {
     });
 
     test("is warn when any window is at least 75%, even if it's not the headline", () => {
-      // A weekly headline at 20% with a session nearly out at 85% must
-      // still read amber for the tray and the headline alike.
       const result = normalizeUsage({
         limits: [
           { kind: "session", percent: 85, is_active: true },

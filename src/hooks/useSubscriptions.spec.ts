@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const fetchSnapshot = vi.fn();
-const setTrayStatus = vi.fn();
+const renderStatusItem = vi.fn();
 const onQuotaRefresh = vi.fn();
 const kickScheduler = vi.fn();
 const startSignIn = vi.fn();
@@ -13,7 +13,7 @@ const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.
 
 vi.mock("../lib/tauriClient", () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
-  setTrayStatus: (...args: unknown[]) => setTrayStatus(...args),
+  renderStatusItem: (...args: unknown[]) => renderStatusItem(...args),
   onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
   kickScheduler: (...args: unknown[]) => kickScheduler(...args),
   startSignIn: (...args: unknown[]) => startSignIn(...args),
@@ -54,7 +54,7 @@ describe("useSubscriptions refresh policy in the browser mock harness path", () 
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     fetchSnapshot.mockResolvedValue({
       account_id: "claude:claude",
       provider: "claude",
@@ -150,7 +150,7 @@ describe("useSubscriptions shared per-account in-flight guard", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     loadTracked.mockResolvedValue(TRACKED);
     fetchSnapshot.mockResolvedValue(SNAPSHOT);
   });
@@ -282,7 +282,7 @@ describe("useSubscriptions refresh policy on the native path", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     kickScheduler.mockReset();
     onQuotaRefresh.mockReset();
     quotaRefreshCallback = undefined;
@@ -369,7 +369,7 @@ describe("useSubscriptions refresh policy on the native path", () => {
 describe("useSubscriptions health vs. rate-limit precedence on the manual refresh path", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     fetchSnapshot.mockReset();
   });
 
@@ -424,7 +424,7 @@ describe("useSubscriptions health vs. rate-limit precedence on the manual refres
 describe("useSubscriptions revival while a rate-limit wait is pending", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     fetchSnapshot.mockReset();
   });
 
@@ -550,9 +550,9 @@ describe("useSubscriptions revival while a rate-limit wait is pending", () => {
 });
 
 // A broken pin must never show "!" and a numberless pin must never show
-// "…", only be absent. If any pinned value is stale, every digit in the
-// tray turns amber, not just that account's.
-describe("useSubscriptions tray segments", () => {
+// "…", only be absent. If any pinned value is stale, every digit turns
+// amber, not just that account's.
+describe("useSubscriptions status item segments", () => {
   const TWO_PINNED = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
     {
@@ -567,7 +567,7 @@ describe("useSubscriptions tray segments", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     loadTracked.mockResolvedValue(TWO_PINNED);
   });
 
@@ -601,10 +601,10 @@ describe("useSubscriptions tray segments", () => {
     renderHook(() => useSubscriptions());
     await flush();
 
-    const calls = setTrayStatus.mock.calls;
+    const calls = renderStatusItem.mock.calls;
     const lastCall = calls[calls.length - 1]?.[0];
     expect(lastCall).toEqual([{ text: "40%", color: "neutral", groupStart: false }]);
-    for (const call of setTrayStatus.mock.calls) {
+    for (const call of renderStatusItem.mock.calls) {
       for (const segment of call[0]) {
         expect(segment.text).not.toBe("!");
         expect(segment.text).not.toContain("…");
@@ -643,7 +643,7 @@ describe("useSubscriptions tray segments", () => {
 
     const { result } = renderHook(() => useSubscriptions());
     await flush();
-    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual(
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual(
       expect.arrayContaining([
         { text: "10%", color: "neutral", groupStart: false },
         { text: "20%", color: "neutral", groupStart: true },
@@ -658,8 +658,8 @@ describe("useSubscriptions tray segments", () => {
       await result.current.refreshAccountById("claude:team");
     });
 
-    const trayCalls = setTrayStatus.mock.calls;
-    const segments = trayCalls[trayCalls.length - 1]?.[0];
+    const statusItemCalls = renderStatusItem.mock.calls;
+    const segments = statusItemCalls[statusItemCalls.length - 1]?.[0];
     expect(segments).toEqual(
       expect.arrayContaining([
         { text: "10%", color: "amber", groupStart: false },
@@ -670,7 +670,7 @@ describe("useSubscriptions tray segments", () => {
     // The same call carries the tooltip that names those bare digits, and
     // the amber-everywhere rule stays digits-only: only the stale account's
     // own tooltip line says "not current".
-    const tooltip = trayCalls[trayCalls.length - 1]?.[2];
+    const tooltip = statusItemCalls[statusItemCalls.length - 1]?.[2];
     expect(tooltip).toMatch(/^Quotos\n/);
     expect(tooltip).toContain("Weekly 10%");
     expect(tooltip).toContain("Weekly 20% — not current");
@@ -685,7 +685,7 @@ describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     saveTracked.mockReset();
   });
 
@@ -722,7 +722,7 @@ describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
 
     expect(result.current.subscriptions[0].headlineWindowId).toBe("weekly_all");
     expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(["weekly_all"]);
-    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual([
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([
       { text: "33%", color: "neutral", groupStart: false },
     ]);
   });
@@ -754,7 +754,7 @@ describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
     await flush();
 
     expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([]);
-    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toEqual([]);
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([]);
   });
 
   test("a pending migration survives a failed first read and completes on the next successful one", async () => {
@@ -805,7 +805,7 @@ describe("useSubscriptions sign-in flow", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     startSignIn.mockReset();
     submitSignInCode.mockReset();
     cancelSignIn.mockReset();
@@ -904,7 +904,7 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     saveTracked.mockReset();
     cancelSignIn.mockReset();
     loadTracked.mockResolvedValue(TWO);
@@ -955,15 +955,19 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude"]);
   });
 
-  test("drops a pinned account's tray digits immediately", async () => {
+  test("drops a pinned account's status item digits immediately", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
-    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toHaveLength(2);
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toHaveLength(
+      2,
+    );
 
     act(() => result.current.stopTracking("claude:claude-team"));
     await flush();
 
-    expect(setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0]).toHaveLength(1);
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toHaveLength(
+      1,
+    );
   });
 
   test("undo restores it in its original slot, with its data intact", async () => {
@@ -1084,10 +1088,9 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
   });
 });
 
-// "Move up" and "Move down" in the row menu. Panel order is the one order
-// everywhere, since the persisted list and the tray's digit order both
-// derive from `subscriptions`' own array order, so a swap must show up in
-// all three, and an impossible move must change nothing, not even a save.
+// Panel order is the one order everywhere, since the persisted list and
+// the status item's digit order both derive from `subscriptions`' own
+// array order.
 describe("useSubscriptions reordering", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
@@ -1103,7 +1106,7 @@ describe("useSubscriptions reordering", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     saveTracked.mockReset();
     loadTracked.mockResolvedValue(TWO);
     fetchSnapshot.mockImplementation(async (account: { id: string; config_dir: string }) => ({
@@ -1180,16 +1183,16 @@ describe("useSubscriptions reordering", () => {
     expect(saveTracked).not.toHaveBeenCalled();
   });
 
-  test("reorders the tray digits with it", async () => {
+  test("reorders the status item digits with it", async () => {
     const { result } = renderHook(() => useSubscriptions());
     await flush();
-    const before = setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0];
+    const before = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0];
     expect(before.map((s: { text: string }) => s.text)).toEqual(["40%", "70%"]);
 
     act(() => result.current.moveSubscription("claude:claude", "down"));
     await flush();
 
-    const after = setTrayStatus.mock.calls[setTrayStatus.mock.calls.length - 1]?.[0];
+    const after = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0];
     expect(after.map((s: { text: string }) => s.text)).toEqual(["70%", "40%"]);
   });
 });
@@ -1199,7 +1202,7 @@ describe("useSubscriptions display names are consistent between the panel and th
   beforeEach(() => {
     vi.useFakeTimers();
     fetchSnapshot.mockReset();
-    setTrayStatus.mockReset();
+    renderStatusItem.mockReset();
     loadTracked.mockResolvedValue(TRACKED);
   });
 
