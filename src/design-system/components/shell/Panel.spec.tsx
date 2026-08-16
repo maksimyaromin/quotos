@@ -1,6 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import panelStylesheet from "./Panel.module.css?raw";
 import {
   BEAK_BASE_HALF,
   BEAK_HEIGHT,
@@ -10,6 +9,7 @@ import {
   Panel,
   type PanelProps,
 } from "./Panel";
+import panelStylesheet from "./Panel.module.css?raw";
 
 afterEach(() => {
   cleanup();

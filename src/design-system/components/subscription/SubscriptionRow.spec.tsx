@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import rowStylesheet from "./SubscriptionRow.module.css?raw";
 import { SubscriptionRow } from "./SubscriptionRow";
+import rowStylesheet from "./SubscriptionRow.module.css?raw";
 
 afterEach(() => {
   cleanup();

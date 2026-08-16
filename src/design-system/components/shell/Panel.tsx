@@ -1,5 +1,5 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
 import type * as React from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { joinClassNames } from "../../joinClassNames";
 import styles from "./Panel.module.css";
 
