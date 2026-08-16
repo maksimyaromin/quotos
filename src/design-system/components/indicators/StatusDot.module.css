@@ -1,0 +1,48 @@
+.dot {
+  display: inline-block;
+  border-radius: var(--radius-pill);
+  background-clip: border-box;
+  opacity: 1;
+}
+
+.dot[data-state="idle"] {
+  background-color: var(--status-idle);
+  box-shadow: inset 0 0 0 1.5px var(--status-idle);
+  background-clip: content-box;
+  opacity: 0.9;
+}
+
+.dot[data-state="connecting"] {
+  background-color: var(--status-progress);
+}
+
+.dot[data-state="working"] {
+  background-color: var(--status-working);
+}
+
+.dot[data-state="reading"] {
+  background-color: var(--status-progress);
+}
+
+.dot[data-state="behind"] {
+  background-color: var(--status-behind);
+}
+
+.dot[data-state="broken"] {
+  background-color: var(--status-broken);
+}
+
+.dot[data-state="connecting"],
+.dot[data-state="reading"] {
+  animation: quotos-pulse 1.4s var(--ease-standard) infinite;
+}
+
+@keyframes quotos-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}

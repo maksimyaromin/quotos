@@ -1,17 +1,24 @@
 import type * as React from "react";
+import styles from "./CapacityBar.module.css";
+
+type CapacityLevel = "healthy" | "warn" | "critical";
+
+function capacityLevel(used: number): CapacityLevel {
+  if (used >= 90) return "critical";
+  if (used >= 75) return "warn";
+  return "healthy";
+}
+
+function levelColor(level: CapacityLevel): string {
+  if (level === "critical") return "var(--cap-critical)";
+  if (level === "warn") return "var(--cap-warn)";
+  return "var(--cap-healthy)";
+}
 
 /** Thresholds must match `providers/claude/normalizeUsage.ts`'s severity
  *  calculation exactly. */
 export function capacityColor(used: number): string {
-  if (used >= 90) return "var(--cap-critical)";
-  if (used >= 75) return "var(--cap-warn)";
-  return "var(--cap-healthy)";
-}
-
-function severityColor(severity: "healthy" | "warn" | "critical"): string {
-  if (severity === "critical") return "var(--cap-critical)";
-  if (severity === "warn") return "var(--cap-warn)";
-  return "var(--cap-healthy)";
+  return levelColor(capacityLevel(used));
 }
 
 export interface CapacityBarProps {
@@ -24,7 +31,7 @@ export interface CapacityBarProps {
   /** When given, overrides `used`-based color for the subscription's own
    * headline bar, colored by the worst of every window. Omit for a single
    * window's own bar, which colors from its own `used` instead. */
-  severity?: "healthy" | "warn" | "critical" | null;
+  severity?: CapacityLevel | null;
   /** Overrides the bar height. Defaults to `--cap-bar-height`, 4px. */
   height?: string;
   style?: React.CSSProperties;
@@ -44,48 +51,16 @@ export function CapacityBar({
   style,
 }: CapacityBarProps) {
   const fill = Math.max(0, Math.min(100, used));
-  const color = severity ? severityColor(severity) : capacityColor(used);
+  const level = severity ?? capacityLevel(used);
   return (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        height: height || "var(--cap-bar-height)",
-        background: "var(--cap-track)",
-        borderRadius: "var(--radius-pill)",
-        overflow: "hidden",
-        ...style,
-      }}
-    >
+    <div className={styles.track} style={{ height, ...style }}>
       <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: `${fill}%`,
-          background: color,
-          borderRadius: "var(--radius-pill)",
-          opacity: stale ? 0.4 : 1,
-          transition:
-            "width var(--dur-slow) var(--ease-out), background var(--dur-base), opacity var(--dur-base)",
-        }}
+        className={styles.fill}
+        data-color={level}
+        data-stale={stale ? "true" : undefined}
+        style={{ width: `${fill}%` }}
       />
-      {reading ? (
-        // data-quotos-shimmer lets tokens/elevation.css hide this overlay
-        // under prefers-reduced-motion, where a stopped gradient would sit
-        // as a static white stripe instead of a moving glint.
-        <div
-          data-quotos-shimmer=""
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent)",
-            backgroundSize: "40% 100%",
-            backgroundRepeat: "no-repeat",
-            animation: "quotos-shimmer 1.1s var(--ease-standard) infinite",
-          }}
-        />
-      ) : null}
-      <style>{`@keyframes quotos-shimmer{0%{background-position:-40% 0}100%{background-position:140% 0}}`}</style>
+      {reading ? <div data-quotos-shimmer="" className={styles.shimmer} /> : null}
     </div>
   );
 }

@@ -1,0 +1,90 @@
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1-5) 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.pinButton {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-quaternary);
+  cursor: pointer;
+}
+
+.pinButton[data-pinned="true"] {
+  background: var(--bg-selected);
+  color: var(--text-accent);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* text-overflow only applies to block containers, and Badge is itself a
+   flex container, so overflow:hidden on it hard-clips the tag
+   mid-character with no ellipsis. The badge keeps only the layout
+   constraints, and scopeInner, a block span, owns the truncation. */
+.scopeBadge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 120px;
+}
+
+.scopeInner {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--numeral-sm);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quaternary);
+  min-width: 34px;
+  text-align: right;
+}
+
+.value[data-level="critical"] {
+  color: var(--red);
+}
+
+.value[data-level="warn"] {
+  color: var(--amber);
+}
+
+.value[data-level="neutral"] {
+  color: var(--text-primary);
+}
+
+.resetLabel {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding-left: 26px;
+}

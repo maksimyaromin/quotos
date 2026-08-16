@@ -1,11 +1,12 @@
 import type * as React from "react";
 import type { SubscriptionState } from "../indicators/StatusDot";
+import styles from "./MenuBarTile.module.css";
 
 /** The placeholder quota-ring glyph. Not a logo, since Quotos has none. A
  *  functional macOS template mark, monochrome via currentColor. */
 export function QuotaGlyph({ size = 15 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flex: "0 0 auto" }}>
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={styles.glyph}>
       <circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeWidth="1.4" opacity="0.28" />
       <path
         d="M4.46 12.02a5.4 5.4 0 1 1 7.08 0"
@@ -51,54 +52,32 @@ export interface MenuBarTileProps {
   style?: React.CSSProperties;
 }
 
+function tintLevel(pin: PinnedFigure): "amber" | "red" | null {
+  if (pin.state === "broken" || pin.state === "behind") return "amber";
+  if (typeof pin.used === "number" && pin.used >= 90) return "red";
+  if (typeof pin.used === "number" && pin.used >= 75) return "amber";
+  return null;
+}
+
 /** The status item's representation: the glyph plus optional pinned
  *  figures. Monochrome by macOS convention, so a pinned figure only takes
  *  a warning tint, amber or red, when it actually needs attention. Broken
  *  pins show a small mark instead of a stale number. Renders on a mock
  *  menu-bar strip for preview. */
 export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: MenuBarTileProps) {
-  const tintFor = (p: PinnedFigure): string => {
-    if (p.state === "broken" || p.state === "behind") return "var(--amber)";
-    if (typeof p.used === "number" && p.used >= 90) return "var(--red)";
-    if (typeof p.used === "number" && p.used >= 75) return "var(--amber)";
-    return "inherit";
-  };
-
   const tile = (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--space-1-5)",
-        height: 22,
-        padding: "0 var(--space-1-5)",
-        border: 0,
-        borderRadius: "var(--radius-xs)",
-        background: "transparent",
-        cursor: "pointer",
-        color: showStrip ? "rgba(255,255,255,0.92)" : "var(--text-primary)",
-        fontFamily: "var(--font-mono)",
-        fontSize: "12px",
-        fontWeight: "var(--weight-medium)",
-        fontVariantNumeric: "tabular-nums",
-      }}
-    >
+    <button type="button" onClick={onClick} className={styles.tile}>
       <QuotaGlyph />
-      {pins.map((p, i) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: pins carry no stable id yet.
-          key={i}
-          style={{ display: "inline-flex", alignItems: "center", gap: 3, color: tintFor(p) }}
-        >
-          {p.state === "broken" ? (
+      {pins.map((pin, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: PinnedFigure has no stable id, and each pin's span carries no internal state, so index-keyed reuse is safe.
+        <span key={i} className={styles.pin} data-attention={tintLevel(pin) ?? undefined}>
+          {pin.state === "broken" ? (
             <AttentionMark />
           ) : (
             <>
-              {typeof p.used === "number" ? `${p.used}%` : "—"}
-              {p.state === "behind" ? (
-                <span style={{ opacity: 0.7 }}>
+              {typeof pin.used === "number" ? `${pin.used}%` : "—"}
+              {pin.state === "behind" ? (
+                <span className={styles.behindMark}>
                   <AttentionMark />
                 </span>
               ) : null}
@@ -112,32 +91,10 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: Men
   if (!showStrip) return <span style={style}>{tile}</span>;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-4)",
-        height: 24,
-        padding: "0 var(--space-2)",
-        background: "rgba(30,32,36,0.72)",
-        backdropFilter: "saturate(160%) blur(20px)",
-        WebkitBackdropFilter: "saturate(160%) blur(20px)",
-        borderRadius: "var(--radius-sm)",
-        ...style,
-      }}
-    >
+    <div className={styles.stripWrapper} style={style}>
       {tile}
-      {/* faint neighbors, to show it living among other menu-bar items */}
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 3,
-          color: "rgba(255,255,255,0.6)",
-          fontFamily: "var(--font-sans)",
-          fontSize: 12,
-        }}
-      >
+      {/* Faint neighbors, to show it living among other menu-bar items. */}
+      <span className={styles.neighborBattery}>
         100%
         <svg width="22" height="12" viewBox="0 0 26 13" fill="none">
           <rect x="0.5" y="0.5" width="22" height="12" rx="3" stroke="currentColor" opacity="0.7" />
@@ -145,11 +102,7 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: Men
           <rect x="23.5" y="4" width="2" height="5" rx="1" fill="currentColor" opacity="0.7" />
         </svg>
       </span>
-      <span
-        style={{ color: "rgba(255,255,255,0.82)", fontFamily: "var(--font-sans)", fontSize: 12 }}
-      >
-        Mon 9:41
-      </span>
+      <span className={styles.neighborClock}>Mon 9:41</span>
     </div>
   );
 }

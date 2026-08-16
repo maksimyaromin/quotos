@@ -23,12 +23,16 @@ export default defineConfig(async () => ({
 
   test: {
     environment: "jsdom",
-    // Vitest mocks every CSS import to an empty string by default, `?raw`
-    // requests included, since it normally cannot tell a style-injection
-    // import from a text one. Opting `?raw` in here is what lets a spec
-    // read a stylesheet's real text the way Vite already serves it.
+    // Vitest mocks every CSS import to an empty string by default, since it
+    // normally cannot tell a style-injection import from a text one. `?raw`
+    // is opted in here so a spec can read a stylesheet's real text the way
+    // Vite already serves it, and `.module.css` is opted in so a spec that
+    // renders a component gets that component's real class-scoped rules
+    // applied in jsdom, not an empty stylesheet, letting `getComputedStyle`
+    // assertions verify actual CSS Modules behavior instead of a component's
+    // now-removed inline `style` objects.
     css: {
-      include: [/\?raw$/],
+      include: [/\?raw$/, /\.module\.css$/],
     },
   },
 

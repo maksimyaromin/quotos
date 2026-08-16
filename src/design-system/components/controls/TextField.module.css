@@ -1,0 +1,40 @@
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.labelText {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.input {
+  height: var(--control-height-lg);
+  padding: 0 var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  outline: none;
+  box-shadow: none;
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+
+.input[data-mono="true"] {
+  font-family: var(--font-mono);
+}
+
+.input:focus:not([data-invalid="true"]) {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-focus);
+}
+
+.input[data-invalid="true"] {
+  border-color: var(--red);
+}

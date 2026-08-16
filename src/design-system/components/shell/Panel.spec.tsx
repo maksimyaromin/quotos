@@ -1,5 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import panelStylesheet from "./Panel.module.css?raw";
 import {
   BEAK_BASE_HALF,
   BEAK_HEIGHT,
@@ -177,6 +178,16 @@ describe("Panel's docked beak rendering", () => {
       /backdrop-filter/i.test(el.getAttribute("style") ?? ""),
     );
     expect(offenders).toHaveLength(0);
+  });
+
+  // The fill layer's own background and box-shadow stay inline, since they
+  // ride along with its measured, per-render geometry, but the rest of the
+  // panel's chrome, header, body and footer, moved to Panel.module.css.
+  // This guards that stylesheet the same way the inline scan above guards
+  // the fill layer, so the invariant holds regardless of which layer a
+  // future change touches.
+  test("Panel.module.css never declares a backdrop filter", () => {
+    expect(panelStylesheet).not.toMatch(/backdrop-filter/i);
   });
 
   test("detached (no beak) still renders the same single-layer shape", () => {

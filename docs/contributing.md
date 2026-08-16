@@ -41,6 +41,29 @@ stable unless it is genuinely unprofessional, since an external design
 tool regenerates that surface; flag a naming concern there instead of
 renaming around it.
 
+## Design system styling
+
+Every component styles itself with a sibling CSS Module,
+`ComponentName.module.css`, that reads the token layer under
+`src/design-system/tokens/` through `var()`. `src/design-system/tokens/`
+stays the one source of truth for a value; a component's stylesheet only
+ever references a token, never restates one.
+
+A prop that selects among a closed, small set of variants, a tone, a
+size, a boolean flag such as `pinned` or `expanded`, becomes a
+`data-*` attribute on the styled element, matched in the module CSS with
+an attribute selector: `[data-variant="primary"]`. A state the platform
+already tracks, hover, active, focus, disabled, is a real pseudo-class in
+the module CSS, never a `useState` plus mouse handlers standing in for
+one. A value that is genuinely per-render, a measured height, a computed
+menu position, a percentage fill width, stays an inline `style`, since
+neither a CSS Module class nor a token layer can express something only
+known at render time. `joinClassNames` (`src/design-system/joinClassNames.ts`)
+composes a component's own module class with a caller-supplied
+`className`, so a consumer can layer its own layout constraints in CSS
+rather than only through the `style` prop. See [Testing](#testing) below
+for how a spec verifies a CSS Module's rules rather than an inline style.
+
 ## TypeScript configuration
 
 The tree is a solution-style set of project references. The root
@@ -134,7 +157,13 @@ than Node's `fs`, for example `import elevation from
 "./tokens/elevation.css?raw"` in `reducedMotion.spec.tsx`. That keeps the
 spec inside the same DOM-only project as every other file under `src`.
 `vite.config.ts`'s `test.css.include` is what makes Vitest serve that
-import's real content instead of its usual empty-string stub for CSS.
+import's real content instead of its usual empty-string stub for CSS; the
+same option also covers plain `.module.css` imports, so a spec that
+renders a component gets that component's real CSS Module rules applied
+in jsdom, and `getComputedStyle` reflects them rather than the browser's
+initial values. jsdom cannot parse a multi-value `transition` shorthand
+back into its longhand computed properties, so a spec pinning one still
+reads the stylesheet's own text through `?raw`, the same as a token file.
 
 ## App icons
 

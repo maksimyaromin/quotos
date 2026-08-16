@@ -1,5 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type * as React from "react";
+import { joinClassNames } from "../../joinClassNames";
+import styles from "./Panel.module.css";
 
 // Mirrors --panel-width in tokens/spacing.css, duplicated as a plain number
 // because the SVG path math below needs concrete units, not a CSS custom
@@ -184,10 +186,7 @@ export function Panel({
   const beakBoxHeight = contentHeight + NOTCH_RESERVE;
 
   return (
-    <div
-      data-quotos-panel="true"
-      style={{ position: "relative", width: "var(--panel-width)", ...detachedFixed, ...style }}
-    >
+    <div data-quotos-panel="true" className={styles.root} style={{ ...detachedFixed, ...style }}>
       {pathD ? (
         <>
           {/* The fill layer is clipped to the same path the stroke traces,
@@ -208,6 +207,7 @@ export function Panel({
             </defs>
           </svg>
           <div
+            data-quotos-panel-fill="true"
             style={{
               position: "absolute",
               top: -NOTCH_RESERVE,
@@ -222,71 +222,23 @@ export function Panel({
           />
         </>
       ) : null}
-      <div
-        ref={contentRef}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          position: "relative",
-          borderRadius: "var(--radius-xl)",
-          overflow: "hidden",
-        }}
-      >
+      <div ref={contentRef} className={styles.content}>
         <div
           onMouseDown={onHeaderPointerDown}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-1)",
-            padding: "var(--space-2-5) var(--space-2) var(--space-2-5) var(--space-3)",
-            borderBottom: "0.5px solid var(--border-subtle)",
-            cursor: dragging ? "grabbing" : "grab",
-            userSelect: "none",
-          }}
+          data-dragging={dragging ? "true" : undefined}
+          className={styles.header}
         >
           {leading}
-          <span
-            style={{
-              flex: 1,
-              fontFamily: "var(--font-sans)",
-              fontSize: "var(--text-base)",
-              fontWeight: "var(--weight-semibold)",
-              color: "var(--text-primary)",
-              letterSpacing: "var(--tracking-tight)",
-            }}
-          >
-            {title}
-          </span>
+          <span className={styles.title}>{title}</span>
           {headerActions}
         </div>
-        {/* No reserved scrollbar gutter: app.css hides the track outright,
-            so there is nothing to reserve space for. */}
         <div
-          className="quotos-scroll"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--space-0-5)",
-            padding: "var(--space-1-5)",
-            maxHeight: maxBodyHeight,
-            overflowY: "auto",
-          }}
+          className={joinClassNames("quotos-scroll", styles.body)}
+          style={{ maxHeight: maxBodyHeight }}
         >
           {children}
         </div>
-        {footer ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              padding: "var(--space-1-5) var(--space-2)",
-              borderTop: "0.5px solid var(--border-subtle)",
-            }}
-          >
-            {footer}
-          </div>
-        ) : null}
+        {footer ? <div className={styles.footer}>{footer}</div> : null}
       </div>
       {pathD ? (
         // Painted after the content box, so the content's own edge does
@@ -298,20 +250,10 @@ export function Panel({
           width={PANEL_WIDTH}
           height={beakBoxHeight}
           viewBox={`0 0 ${PANEL_WIDTH} ${beakBoxHeight}`}
-          style={{
-            position: "absolute",
-            top: -NOTCH_RESERVE,
-            left: 0,
-            overflow: "visible",
-            pointerEvents: "none",
-          }}
+          style={{ top: -NOTCH_RESERVE }}
+          className={styles.strokeLayer}
         >
-          <path
-            d={pathD}
-            fill="none"
-            style={{ stroke: "var(--border-strong)" }}
-            strokeWidth={0.5}
-          />
+          <path d={pathD} fill="none" className={styles.strokePath} strokeWidth={0.5} />
         </svg>
       ) : null}
     </div>

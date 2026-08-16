@@ -1,0 +1,97 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  font-family: var(--font-sans);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast),
+    transform var(--dur-instant);
+}
+
+.button[data-size="sm"] {
+  height: 22px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.button[data-size="base"] {
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  font-size: var(--text-base);
+}
+
+.button[data-size="lg"] {
+  height: var(--control-height-lg);
+  padding: 0 var(--space-4);
+  font-size: var(--text-md);
+}
+
+.button[data-variant="primary"] {
+  background: var(--teal);
+  color: var(--text-on-accent);
+  border-color: color-mix(in oklch, var(--teal) 70%, black);
+}
+
+.button[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--teal-bright);
+}
+
+.button[data-variant="secondary"] {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.button[data-variant="secondary"]:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+}
+
+.button[data-variant="ghost"] {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+
+.button[data-variant="ghost"]:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+}
+
+.button[data-variant="danger"] {
+  background: transparent;
+  color: var(--red);
+  border-color: var(--border-default);
+}
+
+.button[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--red-muted);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(0.5px);
+  opacity: 0.9;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+.icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}

@@ -1,14 +1,12 @@
 import type * as React from "react";
 import { Badge } from "../indicators/Badge";
 import { CapacityBar } from "../indicators/CapacityBar";
+import styles from "./LimitWindow.module.css";
 
-// Mirrors SubscriptionRow's headline-number rule: red from 90%, amber from
-// 75%, neutral below, evaluated on this window's own `used` since there is
-// no subscription-wide `severity` to read from here.
-function numberColor(used: number): string {
-  if (used >= 90) return "var(--red)";
-  if (used >= 75) return "var(--amber)";
-  return "var(--text-primary)";
+function numberLevel(used: number): "critical" | "warn" | "neutral" {
+  if (used >= 90) return "critical";
+  if (used >= 75) return "warn";
+  return "neutral";
 }
 
 // Filled means pinned to the menu bar, ghost means not. Matches
@@ -66,16 +64,8 @@ export function LimitWindow({
 }: LimitWindowProps) {
   const hasPct = typeof used === "number";
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--space-1)",
-        padding: "var(--space-1-5) 0",
-        ...style,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1-5)" }}>
+    <div className={styles.row} style={style}>
+      <div className={styles.header}>
         <button
           type="button"
           title={pinned ? "Remove from menu bar" : "Show in menu bar"}
@@ -85,84 +75,23 @@ export function LimitWindow({
             e.stopPropagation();
             if (id !== undefined) onTogglePin?.(id);
           }}
-          style={{
-            flex: "0 0 auto",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 20,
-            height: 20,
-            padding: 0,
-            border: 0,
-            borderRadius: "var(--radius-xs)",
-            background: pinned ? "var(--bg-selected)" : "transparent",
-            color: pinned ? "var(--text-accent)" : "var(--text-quaternary)",
-            cursor: "pointer",
-          }}
+          data-pinned={pinned ? "true" : undefined}
+          className={styles.pinButton}
         >
           <PinGlyph />
         </button>
-        <span
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--text-sm)",
-            color: "var(--text-secondary)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {name}
-        </span>
+        <span className={styles.name}>{name}</span>
         {scope ? (
-          // text-overflow only applies to block containers, and Badge is
-          // itself a flex container, so overflow:hidden on it hard-clips
-          // the tag mid-character with no ellipsis. The badge keeps only
-          // the layout constraints, and an inner block span owns the
-          // truncation.
-          <Badge tone="neutral" style={{ flex: "0 1 auto", minWidth: 0, maxWidth: 120 }}>
-            <span
-              style={{
-                display: "block",
-                minWidth: 0,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {scope}
-            </span>
+          <Badge tone="neutral" className={styles.scopeBadge}>
+            <span className={styles.scopeInner}>{scope}</span>
           </Badge>
         ) : null}
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--numeral-sm)",
-            fontWeight: "var(--weight-medium)",
-            fontVariantNumeric: "tabular-nums",
-            color: hasPct ? numberColor(used) : "var(--text-quaternary)",
-            minWidth: 34,
-            textAlign: "right",
-          }}
-        >
+        <span className={styles.value} data-level={hasPct ? numberLevel(used) : undefined}>
           {hasPct ? `${used}%` : "—"}
         </span>
       </div>
       {hasPct ? <CapacityBar used={used} stale={stale} height="3px" /> : null}
-      {resetLabel ? (
-        <span
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: "var(--text-xs)",
-            color: "var(--text-tertiary)",
-            paddingLeft: 26,
-          }}
-        >
-          {resetLabel}
-        </span>
-      ) : null}
+      {resetLabel ? <span className={styles.resetLabel}>{resetLabel}</span> : null}
     </div>
   );
 }

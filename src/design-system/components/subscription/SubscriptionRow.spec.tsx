@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import rowStylesheet from "./SubscriptionRow.module.css?raw";
 import { SubscriptionRow } from "./SubscriptionRow";
 
 afterEach(() => {
@@ -54,7 +55,7 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     const menu = screen
       .getByText("Stop tracking")
       .closest<HTMLElement>("[data-quotos-menu-scope]")!;
-    expect(menu.style.position).toBe("fixed");
+    expect(getComputedStyle(menu).position).toBe("fixed");
   });
 
   test("hangs below the '…' button it belongs to", () => {
@@ -405,8 +406,8 @@ describe("committing a rename without editing keeps an existing custom name", ()
 });
 
 // visibility: hidden is what removes clipped content from the tab order.
-// jsdom computes no focusability from style, so these pin the style itself
-// rather than simulating Tab.
+// jsdom computes no focusability from style, so these pin the computed
+// style itself rather than simulating Tab.
 describe("a collapsed row's pin buttons are out of reach, not just out of sight", () => {
   const windows = [
     { id: "w1", name: "Session", used: 40 },
@@ -422,7 +423,7 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
     render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} />);
     const detail = detailContainer();
     expect(detail.getAttribute("aria-hidden")).toBe("true");
-    expect(detail.style.visibility).toBe("hidden");
+    expect(getComputedStyle(detail).visibility).toBe("hidden");
   });
 
   test("shows it again when expanded", () => {
@@ -431,13 +432,15 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
     );
     const detail = detailContainer();
     expect(detail.getAttribute("aria-hidden")).toBe("false");
-    expect(detail.style.visibility).toBe("visible");
+    expect(getComputedStyle(detail).visibility).toBe("visible");
   });
 
-  test("transitions visibility on the duration token, so content stays visible while the row closes", () => {
-    render(
-      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
-    );
-    expect(detailContainer().style.transition).toContain("visibility var(--dur-base)");
+  // jsdom's CSS engine cannot parse a multi-value transition shorthand back
+  // into its longhand computed properties, so this reads the rule's actual
+  // text instead of getComputedStyle, the same way reducedMotion.spec.tsx
+  // reads a stylesheet's real text for a fact jsdom cannot compute.
+  test("transitions visibility on the same duration token as grid-template-rows, so content stays visible while the row closes", () => {
+    expect(rowStylesheet).toContain("grid-template-rows var(--dur-base)");
+    expect(rowStylesheet).toContain("visibility var(--dur-base)");
   });
 });

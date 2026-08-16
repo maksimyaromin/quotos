@@ -1,4 +1,6 @@
-import * as React from "react";
+import type * as React from "react";
+import { joinClassNames } from "../../joinClassNames";
+import styles from "./IconButton.module.css";
 
 export interface IconButtonProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
@@ -22,45 +24,24 @@ export function IconButton({
   label,
   onClick,
   children,
+  className,
   style,
   ...rest
 }: IconButtonProps) {
-  const [hover, setHover] = React.useState(false);
-  const composed: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: size,
-    height: size,
-    padding: 0,
-    border: 0,
-    borderRadius: "var(--radius-sm)",
-    background: hover && !disabled ? "var(--bg-row-hover)" : "transparent",
-    color: active ? "var(--text-accent)" : "var(--text-secondary)",
-    cursor: disabled ? "default" : "pointer",
-    opacity: disabled ? 0.35 : 1,
-    transition: "background var(--dur-fast) var(--ease-standard), color var(--dur-fast)",
-    ...style,
-  };
+  const glyphSize = Math.round(size * 0.6);
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
       disabled={disabled}
-      onClick={disabled ? undefined : onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={composed}
+      onClick={onClick}
+      data-active={active ? "true" : undefined}
+      className={joinClassNames(styles.button, className)}
+      style={{ width: size, height: size, ...style }}
       {...rest}
     >
-      <span
-        style={{
-          display: "inline-flex",
-          width: Math.round(size * 0.6),
-          height: Math.round(size * 0.6),
-        }}
-      >
+      <span className={styles.glyph} style={{ width: glyphSize, height: glyphSize }}>
         {children}
       </span>
     </button>
