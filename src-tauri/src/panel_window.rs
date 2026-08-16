@@ -48,12 +48,11 @@ use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
 #[cfg(target_os = "macos")]
 use objc2::{msg_send, sel};
 
-/// The runtime-registered `NSPanel` subclass' name, and the idempotency
-/// check: a window already of this class is left alone.
+/// Also the idempotency check: a window already of this class is left
+/// alone.
 #[cfg(target_os = "macos")]
 const PANEL_CLASS_NAME: &std::ffi::CStr = c"QuotosNonActivatingPanel";
 
-/// `NSWindowStyleMaskNonactivatingPanel`. Honored only on an `NSPanel`.
 #[cfg(target_os = "macos")]
 const NS_WINDOW_STYLE_MASK_NONACTIVATING_PANEL: usize = 1 << 7;
 
@@ -103,11 +102,9 @@ fn panel_class() -> Option<&'static AnyClass> {
     Some(builder.register())
 }
 
-/// Turns the panel window into a non-activating `NSPanel`, in place.
-/// Idempotent, and safe to call on every show. Returns whether the window
-/// is now a non-activating panel. `false` means the show path must keep
-/// using the old activate-the-app route rather than silently ending up
-/// with a window that can never take keyboard focus.
+/// Idempotent, and safe to call on every show. `false` means the show path
+/// must keep using the old activate-the-app route rather than silently
+/// ending up with a window that can never take keyboard focus.
 #[cfg(target_os = "macos")]
 pub fn make_nonactivating_panel(window: &tauri::WebviewWindow) -> bool {
     use objc2_app_kit::NSWindow;
@@ -132,18 +129,12 @@ pub fn make_nonactivating_panel(window: &tauri::WebviewWindow) -> bool {
     let object: &AnyObject = unsafe { &*(ptr as *const AnyObject) };
     log_class_before_conversion(object);
     if !std::ptr::eq(object.class(), class) {
-        // object_setClass is only safe when the new class does not grow
-        // the allocation. A future AppKit where NSPanel gained storage
-        // would fail closed here rather than corrupt memory.
         if class.instance_size() > object.class().instance_size() {
             return false;
         }
         unsafe { objc2::ffi::object_setClass(ptr as *mut AnyObject, class) };
-        // A KVO isa-swizzle can put the original class back between
-        // calls, so the swap is confirmed by reading the class back
-        // rather than assumed; the style-mask write below aborts the
-        // process if the non-activating bit lands on anything but a
-        // real panel.
+        // A KVO isa-swizzle can put the original class back between calls,
+        // so the swap is confirmed by reading it back rather than assumed.
         if !std::ptr::eq(object.class(), class) {
             return false;
         }
