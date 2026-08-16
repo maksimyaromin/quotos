@@ -22,17 +22,18 @@ import "./app.css";
 
 const NOW_TICK_MS = 30_000;
 
-// Beak offset (px) from the panel's own left edge. B3/B5: the native side
-// computes and pushes the real value on every dock/re-dock (see
-// `compute_docked_layout` in src-tauri/src/shell.rs — it depends on the tray
-// icon's actual position and how much the panel got clamped off it, so it
-// can't be a fixed constant there).
+// Beak offset in pixels from the panel's own left edge. The native side
+// computes and pushes the real value on every dock and re-dock, see
+// `compute_docked_layout` in src-tauri/src/shell.rs, since it depends on
+// the tray icon's actual position and how much the panel got clamped off
+// it, so it cannot be a fixed constant there.
 //
-// This exists *only* for the browser mock harness, which has no real tray
-// glyph to measure. The native build deliberately starts at `null` instead:
-// if the `panel-beak-offset` event were ever missed, falling back to a
-// hardcoded number would draw the beak confidently in a place that is right
-// on nobody's screen. Drawing no beak for a frame is the honest failure.
+// This exists only for the browser mock harness, which has no real tray
+// glyph to measure. The native build deliberately starts at `null`
+// instead. If the `panel-beak-offset` event were ever missed, falling
+// back to a hardcoded number would draw the beak confidently in a place
+// that is right on nobody's screen. Drawing no beak for a frame is the
+// honest failure.
 const BEAK_LEFT_MOCK_FALLBACK = 24;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -69,7 +70,7 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [beakLeft, setBeakLeft] = useState<number | null>(isTauri ? null : BEAK_LEFT_MOCK_FALLBACK);
 
-  // B3/B5: keep the beak centered under the real tray glyph position.
+  // Keeps the beak centered under the real tray glyph position.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -83,10 +84,11 @@ export default function App() {
     };
   }, []);
 
-  // Escape dismisses the innermost transient layer first: an open "…" menu
-  // closes and the panel stays up; only a bare Escape hides the panel. The
-  // rename and sign-in fields own their layer the same way — their handlers
-  // stopPropagation, so the key never reaches this window listener.
+  // Escape dismisses the innermost transient layer first. An open "…" menu
+  // closes and the panel stays up. Only a bare Escape hides the panel. The
+  // rename and sign-in fields own their layer the same way: their
+  // handlers call stopPropagation, so the key never reaches this window
+  // listener.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -101,16 +103,16 @@ export default function App() {
   }, [openMenuId]);
 
   // Panel visibility drives two resets. On hide, the "…" menu must not
-  // still be hanging open when the panel comes back — the prototype resets
-  // it on every open for the same reason. On show, the `now` clock is
-  // re-read immediately: macOS suspends a hidden WKWebView's timers (the
-  // same suspension that moved the refresh cadence into scheduler.rs), so
+  // still be hanging open when the panel comes back, matching the
+  // prototype's own reset-on-every-open. On show, the `now` clock is
+  // re-read immediately. macOS suspends a hidden WKWebView's timers, the
+  // same suspension that moved the refresh cadence into scheduler.rs, so
   // the NOW_TICK interval below simply does not run while the panel is
-  // closed, and a panel reopened hours later would otherwise paint "Last
-  // read 2 min ago", stale "Resets today at …" copy, and wrong rate-budget
+  // closed. A panel reopened hours later would otherwise paint "Last read
+  // 2 min ago", stale "Resets today at …" copy, and wrong rate-budget
   // waits until the first post-resume tick. The mock harness fires an
-  // initial visible=true at subscribe time; re-reading the clock then is
-  // harmless.
+  // initial visible=true at subscribe time, and re-reading the clock then
+  // is harmless.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -127,24 +129,24 @@ export default function App() {
     };
   }, []);
 
-  // Keeps relative "ago" text, exact reset copy, and rate-limit availability
-  // fresh while the panel sits open — otherwise these would only update on
-  // the next data refresh, minutes later.
+  // Keeps relative "ago" text, exact reset copy, and rate-limit
+  // availability fresh while the panel sits open. Otherwise these would
+  // only update on the next data refresh, minutes later.
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
     return () => clearInterval(interval);
   }, []);
 
-  // The "…" menu closes on any click outside itself or its trigger — never
-  // on interaction with them (see data-quotos-menu-scope in
-  // SubscriptionRow.jsx). Registered on the window's capture phase and the
+  // The "…" menu closes on any click outside itself or its trigger, never
+  // on interaction with them, see data-quotos-menu-scope in
+  // SubscriptionRow.jsx. Registered on the window's capture phase, and the
   // dismissing click is consumed there, before React's delegated handlers
-  // ever see it: pointer dismissal follows the same innermost-layer-first
-  // rule as Escape above (and the prototype's own row guard, which returns
-  // without expanding) — it must never also expand a row or press whatever
-  // control sits under the pointer, worst case "Open Claude Code" spawning
-  // a sign-in session (F6). Only ever closes, never (re)opens, so it can't
-  // race the trigger button's own toggle.
+  // ever see it. Pointer dismissal follows the same innermost-layer-first
+  // rule as Escape above, matching the prototype's own row guard, which
+  // returns without expanding. It must never also expand a row or press
+  // whatever control sits under the pointer, since the worst case is "Open
+  // Claude Code" spawning a sign-in session. This only ever closes, never
+  // reopens, so it cannot race the trigger button's own toggle.
   useEffect(() => {
     if (!openMenuId) return;
     const onClickCapture = (event: MouseEvent) => {
@@ -176,37 +178,21 @@ export default function App() {
     }
   };
 
-  // Dragging the header is the only way to detach — there is no detach
-  // button. The *visible* detach (losing the beak, gaining the snap-back
-  // arrow, no longer closing on click-away) still only happens on the first
-  // real movement, not the mousedown itself, so a plain click on the header
-  // does nothing — that part is unchanged.
+  // Dragging the header is the only way to detach. There is no detach
+  // button. The visible detach, losing the beak, gaining the snap-back
+  // arrow, and no longer closing on click-away, only happens on the first
+  // real movement, not the mousedown itself, so a plain click on the
+  // header does nothing.
   //
-  // R3-3 tried firing Tauri's own `startDragging()` (native
-  // `performWindowDragWithEvent:`) synchronously on mousedown, reasoning
-  // that the earlier `mousemove`-deferred version missed the live event.
-  // That reasoning was sound but the fix wasn't enough on its own — a real
-  // hand-drag still did nothing, because `startDragging()`'s IPC call was
-  // silently denied by Tauri's ACL (no `core:window:allow-start-dragging`
-  // capability was ever granted). That part is a real, closed bug fix.
+  // Each `mousemove` after a gesture starts calls `dragWindowStep()`, and
+  // the Rust side sets the window's frame directly from the live cursor
+  // delta, see `drag_window_step`'s doc comment in
+  // `src-tauri/src/shell.rs`. Relocating the window's frame at all while a
+  // mouse-down gesture is live over it also reactivates the app for as
+  // long as the mouse stays down.
   //
-  // Dragging now moves the window by hand instead of through
-  // `startDragging()`: `dragWindowStep()` is invoked on every `mousemove`
-  // once a gesture has started, and the Rust side sets the window's frame
-  // directly from the live cursor delta (see `drag_window_step`'s doc
-  // comment in `src-tauri/src/shell.rs`). That doc comment also records a
-  // deliberate, captain-approved tradeoff: live-following the cursor this
-  // way reactivates the app for as long as the mouse stays down, same as
-  // `performWindowDragWithEvent:` did — measured to be a property of
-  // relocating the window's frame *at all* while a mouse-down gesture is
-  // live over it, not specific to either API, and not something the R4-1
-  // non-activating panel can be asked to fix by itself. Escalated rather
-  // than shipped silently; the captain chose live-follow, reactivation
-  // scoped to the physical gesture only, over the alternatives on offer.
-  //
-  // Calling this only after the first real movement (not on the mousedown
-  // itself) is what keeps C3 ("a plain click does not detach") true —
-  // unchanged from before.
+  // Calling this only after the first real movement, not on the mousedown
+  // itself, is what keeps a plain click from detaching the panel.
   const handleHeaderPointerDown = (event: React.MouseEvent) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
@@ -262,10 +248,10 @@ export default function App() {
   };
   const goList = () => setScreen("list");
 
-  // P7 stretch: a dev-only way to print the app's resolved state as JSON —
-  // discovered/tracked subscriptions, parsed windows, last-read times, and
-  // the rate budget — without needing screenshots. Gated on Vite's DEV flag
-  // so it never appears in a production build's UI.
+  // A dev-only way to print the app's resolved state as JSON: discovered
+  // and tracked subscriptions, parsed windows, last-read times, and the
+  // rate budget, without needing screenshots. Gated on Vite's DEV flag so
+  // it never appears in a production build's UI.
   const handleDebugDump = async () => {
     const rateLimit = await debugRateLimitSnapshot();
     const dump = {
@@ -278,16 +264,17 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(json);
     } catch {
-      // Clipboard permission can be finicky in a dev webview; the console
+      // Clipboard permission can be finicky in a dev webview. The console
       // log above is the fallback, not this.
     }
   };
 
   const nowDate = new Date(now);
-  // Same exclusion the rows use (lib/rowPresentation.ts): a subscription
-  // whose answer is "sign in" is not waiting on the rate budget, so it must
-  // not make the header claim everything is. R4-3: and the summaries describe
-  // what is *tracked*, so a row inside its undo window is out of all of them.
+  // Same exclusion the rows use, lib/rowPresentation.ts: a subscription
+  // whose answer is sign in is not waiting on the rate budget, so it must
+  // not make the header claim everything is. These summaries describe
+  // what is tracked, so a row inside its undo window is out of all of
+  // them.
   const blockedSubs = trackedSubscriptions.filter(
     (s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now),
   );
@@ -301,12 +288,12 @@ export default function App() {
           : min,
       ).rateLimitedUntil
     : null;
-  // R3-4: the wait is a tooltip, never a disabled control. Disabling this
-  // button while a wait was pending removed the last way to re-test a wrong
-  // diagnosis — and the wait itself was a consequence of the wrong
-  // diagnosis, so the captain had no way out of the loop at all. Pressing it
-  // during a wait is harmless: the Rust limiter refuses without spending
-  // anything, and the first press after the budget frees up reads for real.
+  // The wait is a tooltip, never a disabled control. Disabling this button
+  // while a wait is pending would remove the last way to re-test a wrong
+  // diagnosis, and the wait itself can be a consequence of that wrong
+  // diagnosis. Pressing it during a wait is harmless: the Rust limiter
+  // refuses without spending anything, and the first press after the
+  // budget frees up reads for real.
   const refreshLabel = refreshing
     ? "Reading…"
     : allBlocked
@@ -379,10 +366,9 @@ export default function App() {
       }
     >
       {screen === "manage" ? (
-        // R4-3: the *tracked* list, not the panel's row list — a row inside
-        // its "Stop tracking" undo window is already untracked, and this
-        // screen must not go on offering [Remove] for it (the desync in the
-        // captain's 2026-08-15 screencast).
+        // The tracked list, not the panel's row list. A row inside its
+        // "Stop tracking" undo window is already untracked, and this
+        // screen must not go on offering [Remove] for it.
         <SubscriptionsScreen
           tracked={trackedSubscriptions}
           onAdd={addSubscription}
@@ -404,11 +390,11 @@ export default function App() {
               />
             );
           }
-          // R2-6: a row that needs signing in offers Claude Code's own
-          // sign-in (signin.rs) instead of retrying the same failed read —
-          // once a session is running, the row shows the paste-code field
-          // instead of this button (see SubscriptionRow's signInInProgress).
-          // R3-4: badge, action and footer note are decided together — see
+          // A row that needs signing in offers Claude Code's own sign-in,
+          // signin.rs, instead of retrying the same failed read. Once a
+          // session is running, the row shows the paste-code field instead
+          // of this button, see SubscriptionRow's signInInProgress. Badge,
+          // action and footer note are decided together, see
           // lib/rowPresentation.ts for the two rules that keep them from
           // contradicting each other.
           const presentation = rowPresentation(sub, now);
