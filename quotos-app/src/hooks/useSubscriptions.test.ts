@@ -126,6 +126,95 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
   });
 });
 
+// F4: the header's refresh-everything and a row's own "Read now" are two UI
+// paths to the same account — they must share one per-account in-flight
+// guard, or pressing both spends two of the shared 5-per-300s budget slots
+// on a single account and the next scheduled read gets refused early.
+describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
+  const SNAPSHOT = {
+    account_id: "claude:claude",
+    provider: "claude",
+    config_dir: "~/.claude",
+    fetched_at: new Date().toISOString(),
+    usage: { limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }] },
+    profile: null,
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchSnapshot.mockReset();
+    setTrayStatus.mockReset();
+    loadTracked.mockResolvedValue(TRACKED);
+    fetchSnapshot.mockResolvedValue(SNAPSHOT);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    loadTracked.mockResolvedValue(TRACKED);
+  });
+
+  it("refreshAll joins an account's in-flight read instead of double-fetching it", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+
+    let release!: (value: unknown) => void;
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+
+    await act(async () => {
+      const readNow = result.current.refreshAccountById("claude:claude");
+      const readAll = result.current.refreshAll();
+      // The slow row read is the only fetch in flight — refreshAll joined it.
+      expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+      release(SNAPSHOT);
+      await Promise.all([readNow, readAll]);
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it("a row's read during a slow refreshAll joins the in-flight read", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+
+    let release!: (value: unknown) => void;
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+
+    await act(async () => {
+      const readAll = result.current.refreshAll();
+      const readNow = result.current.refreshAccountById("claude:claude");
+      expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+      release(SNAPSHOT);
+      await Promise.all([readNow, readAll]);
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it("joining one in-flight account never skips the other accounts", async () => {
+    loadTracked.mockResolvedValue([
+      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: false },
+      { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: false },
+    ]);
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+
+    let release!: (value: unknown) => void;
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+
+    await act(async () => {
+      const readNow = result.current.refreshAccountById("claude:claude");
+      const readAll = result.current.refreshAll();
+      release(SNAPSHOT);
+      await Promise.all([readNow, readAll]);
+    });
+    // Mount (2) + the row read (1) + refreshAll fetching only the *other*
+    // account (1): the joined account is not refetched, the rest still are.
+    expect(fetchSnapshot).toHaveBeenCalledTimes(4);
+    expect(fetchSnapshot.mock.calls[3]?.[0]).toEqual(expect.objectContaining({ id: "claude:claude-team" }));
+  });
+});
+
 // R2-4: on the native path, automatic reads arrive as pushed `quota-refresh`
 // events from the Rust scheduler, not as JS-initiated fetches — this proves
 // the hook applies a pushed event exactly like a direct fetch result, and

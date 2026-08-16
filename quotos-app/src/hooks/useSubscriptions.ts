@@ -279,14 +279,32 @@ export function useSubscriptions() {
     [patch, applyRefreshResult],
   );
 
-  // R2-4: "the manual refresh control is debounced" — guards refreshAll and
-  // refreshAccountById so they can't be double-fired regardless of what UI
-  // calls them (the header button already disables itself while its own
-  // promise is pending, but that's a courtesy, not the source of truth).
-  // Concurrent calls collapse into the single in-flight one instead of
-  // starting a second fetch.
+  // R2-4: "the manual refresh control is debounced" — concurrent calls
+  // collapse into the single in-flight one instead of starting a second
+  // fetch (the header button already disables itself while its own promise
+  // is pending, but that's a courtesy, not the source of truth).
   const refreshAllInFlight = useRef<Promise<void> | null>(null);
   const refreshOneInFlight = useRef<Map<string, Promise<void>>>(new Map());
+
+  // F4: the per-account guard itself. Every path that spends a real fetch
+  // on one account — a row's "Read now", the header refresh's per-account
+  // fan-out, the launch read — goes through here, so two of them hitting
+  // the same account at once join one in-flight read instead of spending
+  // two of the shared 5-per-300s budget slots on it.
+  const refreshOneGuarded = useCallback(
+    async (account: AccountDescriptor) => {
+      const inFlight = refreshOneInFlight.current.get(account.id);
+      if (inFlight) return inFlight;
+      const run = refreshOne(account);
+      refreshOneInFlight.current.set(account.id, run);
+      try {
+        await run;
+      } finally {
+        refreshOneInFlight.current.delete(account.id);
+      }
+    },
+    [refreshOne],
+  );
 
   // R3-4: no local "is it blocked?" filter here any more. Skipping
   // rate-limited subscriptions client-side is what left the captain with no
@@ -302,7 +320,7 @@ export function useSubscriptions() {
       // R4-3: a row inside its "Stop tracking" undo window is untracked
       // already — never spend a read on it.
       const targets = subscriptionsRef.current.filter((s) => !s.pendingRemoval);
-      await Promise.allSettled(targets.map((s) => refreshOne({ id: s.id, provider: s.provider, config_dir: s.configDir })));
+      await Promise.allSettled(targets.map((s) => refreshOneGuarded({ id: s.id, provider: s.provider, config_dir: s.configDir })));
     })();
     refreshAllInFlight.current = run;
     try {
@@ -310,23 +328,15 @@ export function useSubscriptions() {
     } finally {
       refreshAllInFlight.current = null;
     }
-  }, [refreshOne]);
+  }, [refreshOneGuarded]);
 
   const refreshAccountById = useCallback(
     async (id: string) => {
-      const inFlight = refreshOneInFlight.current.get(id);
-      if (inFlight) return inFlight;
       const sub = subscriptionsRef.current.find((s) => s.id === id);
       if (!sub || sub.pendingRemoval) return;
-      const run = refreshOne({ id: sub.id, provider: sub.provider, config_dir: sub.configDir });
-      refreshOneInFlight.current.set(id, run);
-      try {
-        await run;
-      } finally {
-        refreshOneInFlight.current.delete(id);
-      }
+      return refreshOneGuarded({ id: sub.id, provider: sub.provider, config_dir: sub.configDir });
     },
-    [refreshOne],
+    [refreshOneGuarded],
   );
 
   // v4: pinning is per-window (design/NOTES.md §2) — `windowId` is either a
@@ -544,7 +554,7 @@ export function useSubscriptions() {
 
       if (!isTauri) {
         void Promise.allSettled(
-          loaded.map((s) => refreshOne({ id: s.id, provider: s.provider, config_dir: s.configDir })),
+          loaded.map((s) => refreshOneGuarded({ id: s.id, provider: s.provider, config_dir: s.configDir })),
         );
         return;
       }

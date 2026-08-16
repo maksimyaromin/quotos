@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**316 automated tests pass** (195 vitest, 121 `cargo test`); `tsc --noEmit`,
+**319 automated tests pass** (198 vitest, 121 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -366,6 +366,19 @@ clean.
     then leaves the tab order). Fixed identically in both design-system
     copies, bundle regenerated, pinned by 3 regression tests that fail
     against the old component.
+
+33. **The header refresh and a row's "Read now" can no longer double-spend
+    the budget on one account.** `refreshAll` fanned out to `refreshOne`
+    directly, bypassing the per-account in-flight map that `refreshAccountById`
+    used — so pressing both at once spent two of the shared 5-per-300s
+    request slots on the same account, and the next scheduled read got
+    refused a minute early. Every fetch-spending path (header refresh,
+    row read, launch read) now funnels through one guarded helper: a
+    concurrent request for an account already being read joins the in-flight
+    read, while other accounts still fetch normally. Pinned by 3 regression
+    tests proven to fail against the old hook. (This also removes the main
+    route into F5's stale-restore race — the full re-capture fix is still
+    open.)
 
 ## Honest gaps, still open
 
