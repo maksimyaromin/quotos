@@ -73,7 +73,9 @@ describe("persistence (native path — migration, followup-3)", () => {
   it("never clears or overwrites the legacy localStorage key after migrating", async () => {
     const raw = JSON.stringify({ version: 1, tracked: [SAMPLE] });
     window.localStorage.setItem(LEGACY_KEY, raw);
-    invoke.mockImplementation((cmd: string) => (cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve()));
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve(),
+    );
 
     await loadTracked();
 
@@ -85,7 +87,9 @@ describe("persistence (native path — migration, followup-3)", () => {
   it("migrates once, never twice: a non-empty native store is never overwritten from stale localStorage", async () => {
     const nativeAlready: TrackedAccount = { ...SAMPLE, label: "Already Native" };
     window.localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 1, tracked: [SAMPLE] }));
-    invoke.mockImplementation((cmd: string) => (cmd === "load_tracked" ? Promise.resolve([nativeAlready]) : Promise.resolve()));
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "load_tracked" ? Promise.resolve([nativeAlready]) : Promise.resolve(),
+    );
 
     const loaded = await loadTracked();
 
@@ -94,7 +98,9 @@ describe("persistence (native path — migration, followup-3)", () => {
   });
 
   it("stays empty when the legacy key is absent — a fresh install migrates nothing", async () => {
-    invoke.mockImplementation((cmd: string) => (cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve()));
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve(),
+    );
 
     const loaded = await loadTracked();
 
@@ -104,7 +110,9 @@ describe("persistence (native path — migration, followup-3)", () => {
 
   it("stays empty when the legacy key is corrupt JSON, without throwing", async () => {
     window.localStorage.setItem(LEGACY_KEY, "{ not valid json");
-    invoke.mockImplementation((cmd: string) => (cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve()));
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "load_tracked" ? Promise.resolve([]) : Promise.resolve(),
+    );
 
     const loaded = await loadTracked();
 
@@ -113,7 +121,9 @@ describe("persistence (native path — migration, followup-3)", () => {
   });
 
   it("loadTracked falls back to empty if the native invoke itself fails", async () => {
-    invoke.mockImplementation((cmd: string) => (cmd === "load_tracked" ? Promise.reject(new Error("no such command")) : Promise.resolve()));
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "load_tracked" ? Promise.reject(new Error("no such command")) : Promise.resolve(),
+    );
 
     const loaded = await loadTracked();
 

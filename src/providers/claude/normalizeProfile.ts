@@ -27,6 +27,7 @@ export function normalizeProfile(raw: unknown): NormalizedProfile {
   }
   const record = org as Record<string, unknown>;
   const name = typeof record.name === "string" && record.name.length > 0 ? record.name : null;
-  const orgType = typeof record.organization_type === "string" ? humanizeOrgType(record.organization_type) : null;
+  const orgType =
+    typeof record.organization_type === "string" ? humanizeOrgType(record.organization_type) : null;
   return { label: name, account: orgType };
 }

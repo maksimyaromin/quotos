@@ -1,11 +1,11 @@
 import * as React from "react";
 
 export type SubscriptionState =
-  | "idle"        // not connected
+  | "idle" // not connected
   | "connecting"
   | "working"
-  | "reading"     // refresh in flight
-  | "behind"      // stale data held
+  | "reading" // refresh in flight
+  | "behind" // stale data held
   | "broken";
 // Note: "waiting on our own rate budget" is deliberately NOT a health state
 // (see B6/B5) — it is tracked separately as a rate-limit fact that never

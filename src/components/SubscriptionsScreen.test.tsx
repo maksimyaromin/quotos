@@ -25,12 +25,25 @@ vi.mock("../lib/tauriClient", () => ({
 // vi.mock is hoisted, so this static import safely resolves against it.
 import { SubscriptionsScreen } from "./SubscriptionsScreen";
 
-const ACCOUNT_A: AccountDescriptor = { id: "claude:claude", provider: "claude", config_dir: "/Users/x/.claude" };
-const ACCOUNT_B: AccountDescriptor = { id: "claude:claude-work", provider: "claude", config_dir: "/Users/x/.claude-work" };
+const ACCOUNT_A: AccountDescriptor = {
+  id: "claude:claude",
+  provider: "claude",
+  config_dir: "/Users/x/.claude",
+};
+const ACCOUNT_B: AccountDescriptor = {
+  id: "claude:claude-work",
+  provider: "claude",
+  config_dir: "/Users/x/.claude-work",
+};
 
 function renderScreen() {
   return render(
-    <SubscriptionsScreen tracked={[]} onAdd={() => {}} onRemove={() => {}} displayLabelFor={(a) => a.id} />,
+    <SubscriptionsScreen
+      tracked={[]}
+      onAdd={() => {}}
+      onRemove={() => {}}
+      displayLabelFor={(a) => a.id}
+    />,
   );
 }
 

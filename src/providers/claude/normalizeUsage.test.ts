@@ -6,7 +6,14 @@ describe("normalizeUsage", () => {
     const result = normalizeUsage({
       five_hour: { utilization: 99, resets_at: "2026-08-11T23:20:00Z" },
       limits: [
-        { kind: "session", group: "session", percent: 2, resets_at: "2026-08-11T23:20:00Z", scope: null, is_active: false },
+        {
+          kind: "session",
+          group: "session",
+          percent: 2,
+          resets_at: "2026-08-11T23:20:00Z",
+          scope: null,
+          is_active: false,
+        },
       ],
     });
     expect(result.windows).toHaveLength(1);
@@ -30,7 +37,15 @@ describe("normalizeUsage", () => {
 
   it("renders a window kind it has never seen before, using humanized provider wording", () => {
     const result = normalizeUsage({
-      limits: [{ kind: "nimbus_quill_experimental", percent: 12, resets_at: null, scope: null, is_active: true }],
+      limits: [
+        {
+          kind: "nimbus_quill_experimental",
+          percent: 12,
+          resets_at: null,
+          scope: null,
+          is_active: true,
+        },
+      ],
     });
     expect(result.windows[0].name).toBe("Nimbus Quill Experimental");
     expect(result.windows[0].used).toBe(12);
@@ -148,7 +163,13 @@ describe("normalizeUsage", () => {
       const result = normalizeUsage({
         limits: [
           { kind: "session", percent: 2, resets_at: null, scope: null, is_active: true },
-          { kind: "weekly_all", percent: 15, resets_at: "2026-08-17T10:00:00Z", scope: null, is_active: true },
+          {
+            kind: "weekly_all",
+            percent: 15,
+            resets_at: "2026-08-17T10:00:00Z",
+            scope: null,
+            is_active: true,
+          },
           {
             kind: "weekly_scoped",
             percent: 17,
@@ -166,7 +187,13 @@ describe("normalizeUsage", () => {
       const result = normalizeUsage({
         limits: [
           { kind: "session", percent: 70, resets_at: null, scope: null, is_active: false },
-          { kind: "weekly_all", percent: 20, resets_at: "2026-08-17T10:00:00Z", scope: null, is_active: false },
+          {
+            kind: "weekly_all",
+            percent: 20,
+            resets_at: "2026-08-17T10:00:00Z",
+            scope: null,
+            is_active: false,
+          },
         ],
       });
       expect(result.used).toBe(20);

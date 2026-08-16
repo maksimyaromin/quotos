@@ -34,7 +34,9 @@ describe("LimitWindow scope badge", () => {
 
   it("truncates a long scope tag via an inner block span, where text-overflow actually applies", () => {
     const longName = "Claude Opus 4.5 (extended thinking, research preview)";
-    const { getByText } = render(<LimitWindow name="Extended thinking" used={61} scope={longName} />);
+    const { getByText } = render(
+      <LimitWindow name="Extended thinking" used={61} scope={longName} />,
+    );
     const inner = getByText(longName);
     const style = getComputedStyle(inner);
     expect(style.display).toBe("block");

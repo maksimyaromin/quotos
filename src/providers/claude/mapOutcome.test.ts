@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mapOutcome } from "./index";
 import type { NormalizedRead } from "../../types/entities";
+import { mapOutcome } from "./index";
 
 const OK_READ: NormalizedRead = {
   label: "Personal",
   account: "Max",
-  windows: [{ id: "session", name: "Session", used: 2, resetsAt: null, scope: null, isActive: true }],
+  windows: [
+    { id: "session", name: "Session", used: 2, resetsAt: null, scope: null, isActive: true },
+  ],
   used: 2,
   resetsAt: null,
   severity: "healthy",
@@ -37,11 +39,16 @@ describe("claude mapOutcome", () => {
   });
 
   it("unauthorized is 'broken' on a first read, 'behind' once real data existed, with F17's exact reason", () => {
-    const err = { kind: "unauthorized" as const, message: "still unauthorized after refreshing the credential" };
+    const err = {
+      kind: "unauthorized" as const,
+      message: "still unauthorized after refreshing the credential",
+    };
     const first = mapOutcome({ kind: "error", error: err }, false);
     expect(first.state).toBe("broken");
     // F17, handoff's exact wording — character for character, not just "mentions sign-in".
-    expect(first.reason).toBe("The sign-in expired. Log in again in Claude Code and Quotos will pick it up.");
+    expect(first.reason).toBe(
+      "The sign-in expired. Log in again in Claude Code and Quotos will pick it up.",
+    );
     expect(mapOutcome({ kind: "error", error: err }, true).state).toBe("behind");
   });
 
@@ -60,7 +67,10 @@ describe("claude mapOutcome", () => {
     const fixed = "The provider didn't answer. These numbers are from the last successful read.";
     const cases = [
       { kind: "not_connected" as const, message: "no credentials" },
-      { kind: "unauthorized" as const, message: "still unauthorized after refreshing the credential" },
+      {
+        kind: "unauthorized" as const,
+        message: "still unauthorized after refreshing the credential",
+      },
       { kind: "network" as const, message: "the connection timed out" },
     ];
     for (const err of cases) {
@@ -86,7 +96,8 @@ describe("claude mapOutcome — what really needs a sign-in", () => {
   it("credential_stale is never a sign-in warning: the account is signed in, its token just aged out", () => {
     const err = {
       kind: "credential_stale" as const,
-      message: "This account's access token has expired and Quotos couldn't renew it here. Use Claude Code for this account once and Quotos will pick it up.",
+      message:
+        "This account's access token has expired and Quotos couldn't renew it here. Use Claude Code for this account once and Quotos will pick it up.",
     };
     const result = mapOutcome({ kind: "error", error: err }, false);
     expect(result.needsSignIn).toBe(false);
@@ -96,12 +107,18 @@ describe("claude mapOutcome — what really needs a sign-in", () => {
   });
 
   it("unauthorized still asks for a sign-in — the genuinely signed-out account keeps its warning", () => {
-    const err = { kind: "unauthorized" as const, message: "the stored sign-in is no longer accepted" };
+    const err = {
+      kind: "unauthorized" as const,
+      message: "the stored sign-in is no longer accepted",
+    };
     expect(mapOutcome({ kind: "error", error: err }, false).needsSignIn).toBe(true);
   });
 
   it("not_connected — no credential at all — asks for a sign-in", () => {
-    const err = { kind: "not_connected" as const, message: "Claude Code isn't signed in for this account." };
+    const err = {
+      kind: "not_connected" as const,
+      message: "Claude Code isn't signed in for this account.",
+    };
     const result = mapOutcome({ kind: "error", error: err }, false);
     expect(result.state).toBe("idle");
     expect(result.needsSignIn).toBe(true);
@@ -109,7 +126,10 @@ describe("claude mapOutcome — what really needs a sign-in", () => {
 
   it("a transport failure or a 403 never asks for a sign-in", () => {
     const network = { kind: "network" as const, message: "The provider answered with HTTP 503." };
-    const refused = { kind: "other" as const, message: "The provider refused this request (HTTP 403)." };
+    const refused = {
+      kind: "other" as const,
+      message: "The provider refused this request (HTTP 403).",
+    };
     expect(mapOutcome({ kind: "error", error: network }, false).needsSignIn).toBe(false);
     expect(mapOutcome({ kind: "error", error: refused }, false).needsSignIn).toBe(false);
   });

@@ -6,15 +6,28 @@ import { Button } from "../design-system/components/controls/Button";
  * cursor the way the old trash-icon confirm-to-remove did. */
 export function UndoRow({ label, onUndo }: { label: string; onUndo: () => void }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: "var(--space-2)",
-      padding: "var(--space-3)", borderRadius: "var(--radius-md)",
-    }}>
-      <span style={{
-        flex: 1, fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
-        color: "var(--text-tertiary)",
-      }}>{label} is no longer tracked</span>
-      <Button variant="ghost" size="sm" onClick={onUndo}>Undo</Button>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-2)",
+        padding: "var(--space-3)",
+        borderRadius: "var(--radius-md)",
+      }}
+    >
+      <span
+        style={{
+          flex: 1,
+          fontFamily: "var(--font-sans)",
+          fontSize: "var(--text-sm)",
+          color: "var(--text-tertiary)",
+        }}
+      >
+        {label} is no longer tracked
+      </span>
+      <Button variant="ghost" size="sm" onClick={onUndo}>
+        Undo
+      </Button>
     </div>
   );
 }

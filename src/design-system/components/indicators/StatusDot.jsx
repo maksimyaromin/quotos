@@ -1,5 +1,3 @@
-import React from "react";
-
 const STATE_COLOR = {
   idle: "var(--status-idle)",
   connecting: "var(--status-progress)",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { rowPresentation } from "./rowPresentation";
 import type { Subscription } from "../types/entities";
+import { rowPresentation } from "./rowPresentation";
 
 const NOW = new Date("2026-08-15T14:00:00Z").getTime();
 const IN_AN_HOUR = new Date(NOW + 59 * 60 * 1000).toISOString();
@@ -40,7 +40,13 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
 describe("rowPresentation — failure states are mutually exclusive", () => {
   it("a row that needs signing in never also shows a rate-budget wait", () => {
     const result = rowPresentation(
-      sub({ state: "broken", needsSignIn: true, used: null, lastReadAt: null, rateLimitedUntil: IN_AN_HOUR }),
+      sub({
+        state: "broken",
+        needsSignIn: true,
+        used: null,
+        lastReadAt: null,
+        rateLimitedUntil: IN_AN_HOUR,
+      }),
       NOW,
     );
     expect(result.badge).toBe("Needs sign-in");
@@ -67,14 +73,19 @@ describe("rowPresentation — failure states are mutually exclusive", () => {
 
 describe("rowPresentation — the badge tells the truth", () => {
   it("only a row that really needs signing in gets the sign-in badge", () => {
-    expect(rowPresentation(sub({ state: "broken", needsSignIn: true }), NOW).badge).toBe("Needs sign-in");
+    expect(rowPresentation(sub({ state: "broken", needsSignIn: true }), NOW).badge).toBe(
+      "Needs sign-in",
+    );
   });
 
   it("a broken row that does not need signing in gets no sign-in badge", () => {
     // Offline at launch, an HTTP 403, or a credential Quotos couldn't renew
     // — all `broken`, none of them a sign-in problem. The old row inferred
     // the badge from `state === "broken"` and accused all three.
-    const offline = rowPresentation(sub({ state: "broken", needsSignIn: false, used: null, lastReadAt: null }), NOW);
+    const offline = rowPresentation(
+      sub({ state: "broken", needsSignIn: false, used: null, lastReadAt: null }),
+      NOW,
+    );
     expect(offline.badge).toBeNull();
     expect(offline.actionLabel).toBe("Try again");
   });
@@ -91,7 +102,10 @@ describe("rowPresentation — the badge tells the truth", () => {
   });
 
   it("a sign-in in progress owns the row body — no competing action", () => {
-    const result = rowPresentation(sub({ state: "broken", needsSignIn: true, signInInProgress: true }), NOW);
+    const result = rowPresentation(
+      sub({ state: "broken", needsSignIn: true, signInInProgress: true }),
+      NOW,
+    );
     expect(result.actionLabel).toBeNull();
     expect(result.footerNote).toBeNull();
   });

@@ -17,11 +17,15 @@ export function TextField({
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", ...style }}>
       {label ? (
-        <span style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: "var(--text-sm)",
-          color: "var(--text-secondary)",
-        }}>{label}</span>
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--text-sm)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          {label}
+        </span>
       ) : null}
       <input
         value={value}

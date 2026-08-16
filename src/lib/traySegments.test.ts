@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "./traySegments";
 import type { LimitWindowEntity, Subscription } from "../types/entities";
+import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "./traySegments";
 
 function window(overrides: Partial<LimitWindowEntity> & { id: string }): LimitWindowEntity {
   return { name: "Window", used: null, resetsAt: null, scope: null, isActive: true, ...overrides };
@@ -49,7 +49,13 @@ describe("buildTraySegments", () => {
   });
 
   it("skips a pinned id whose window no longer exists in the latest read", () => {
-    const subs = [subscription({ id: "a", pinnedWindowIds: ["gone"], windows: [window({ id: "session", used: 10 })] })];
+    const subs = [
+      subscription({
+        id: "a",
+        pinnedWindowIds: ["gone"],
+        windows: [window({ id: "session", used: 10 })],
+      }),
+    ];
     expect(buildTraySegments(subs)).toEqual([]);
   });
 
@@ -98,7 +104,12 @@ describe("buildTraySegments", () => {
   it("turns every contributing figure amber when any contributing subscription is stale", () => {
     const subs = [
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 10 })] }),
-      subscription({ id: "b", state: "behind", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 20 })] }),
+      subscription({
+        id: "b",
+        state: "behind",
+        pinnedWindowIds: ["w"],
+        windows: [window({ id: "w", used: 20 })],
+      }),
     ];
     expect(buildTraySegments(subs).map((s) => s.color)).toEqual(["amber", "amber"]);
   });
@@ -106,7 +117,12 @@ describe("buildTraySegments", () => {
   it("a stale subscription with nothing pinned doesn't taint the bar", () => {
     const subs = [
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 10 })] }),
-      subscription({ id: "b", state: "behind", pinnedWindowIds: [], windows: [window({ id: "w", used: 99 })] }),
+      subscription({
+        id: "b",
+        state: "behind",
+        pinnedWindowIds: [],
+        windows: [window({ id: "w", used: 99 })],
+      }),
     ];
     expect(buildTraySegments(subs)).toEqual([{ text: "10%", color: "neutral", groupStart: false }]);
   });
@@ -195,7 +211,13 @@ describe("worstActiveLimitPercent", () => {
   it("is the max used% across every active window, pinned or not", () => {
     const subs = [
       subscription({ id: "a", windows: [window({ id: "w1", used: 61, isActive: true })] }),
-      subscription({ id: "b", windows: [window({ id: "w2", used: 74, isActive: true }), window({ id: "w3", used: 99, isActive: false })] }),
+      subscription({
+        id: "b",
+        windows: [
+          window({ id: "w2", used: 74, isActive: true }),
+          window({ id: "w3", used: 99, isActive: false }),
+        ],
+      }),
     ];
     expect(worstActiveLimitPercent(subs)).toBe(74);
   });

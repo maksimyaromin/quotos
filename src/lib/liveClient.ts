@@ -40,7 +40,9 @@ export function onPanelBeakOffset(callback: (offsetPx: number) => void): Promise
 
 /** R2-4: the Rust-side scheduler's once-a-minute automatic reads arrive
  * here, one event per attempt — see `src-tauri/src/scheduler.rs`. */
-export function onQuotaRefresh(callback: (event: ScheduledRefreshEvent) => void): Promise<() => void> {
+export function onQuotaRefresh(
+  callback: (event: ScheduledRefreshEvent) => void,
+): Promise<() => void> {
   return listen<ScheduledRefreshEvent>("quota-refresh", (event) => callback(event.payload));
 }
 
@@ -117,7 +119,9 @@ export async function forgetSignIn(accountId: string): Promise<void> {
 }
 
 /** R2-6: fires once when the sign-in process for `accountId` exits. */
-export function onSignInFinished(callback: (event: SignInFinishedEvent) => void): Promise<() => void> {
+export function onSignInFinished(
+  callback: (event: SignInFinishedEvent) => void,
+): Promise<() => void> {
   return listen<SignInFinishedEvent>("sign-in-finished", (event) => callback(event.payload));
 }
 
@@ -131,7 +135,10 @@ export async function statuslineStatus(configDir: string): Promise<StatuslineInt
 /** S2: the explicit in-app opt-in write. Rejects with a typed
  * `StatuslineError` (see types/entities.ts) — in particular `conflict` when
  * a different `statusLine` is already configured and `force` wasn't set. */
-export async function statuslineInstall(configDir: string, force: boolean): Promise<{ replaced_existing: boolean }> {
+export async function statuslineInstall(
+  configDir: string,
+  force: boolean,
+): Promise<{ replaced_existing: boolean }> {
   return invoke("statusline_install", { configDir, force });
 }
 

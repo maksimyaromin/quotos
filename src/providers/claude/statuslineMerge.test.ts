@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { reconcileWithStatusline } from "./statuslineMerge";
 import type { StatuslineFeedWire } from "../../types/entities";
+import { reconcileWithStatusline } from "./statuslineMerge";
 
 const API_FETCHED_AT = "2026-08-15T12:00:00.000Z";
 const FRESHER = "2026-08-15T12:00:30.000Z"; // 30s after the API read
 const OLDER = "2026-08-15T11:59:00.000Z"; // before the API read
 
-function feedWith(rateLimits: StatuslineFeedWire["rate_limits"], writtenAt = FRESHER): StatuslineFeedWire {
+function feedWith(
+  rateLimits: StatuslineFeedWire["rate_limits"],
+  writtenAt = FRESHER,
+): StatuslineFeedWire {
   return { written_at: writtenAt, rate_limits: rateLimits };
 }
 
@@ -25,7 +28,10 @@ describe("reconcileWithStatusline", () => {
 
   it("leaves usage untouched when the feed is not newer than the API read", () => {
     const usage = { five_hour: { utilization: 10 } };
-    const sameAge = feedWith({ five_hour: { used_percentage: 99, resets_at: null } }, API_FETCHED_AT);
+    const sameAge = feedWith(
+      { five_hour: { used_percentage: 99, resets_at: null } },
+      API_FETCHED_AT,
+    );
     const older = feedWith({ five_hour: { used_percentage: 99, resets_at: null } }, OLDER);
     expect(reconcileWithStatusline(usage, API_FETCHED_AT, sameAge)).toEqual(usage);
     expect(reconcileWithStatusline(usage, API_FETCHED_AT, older)).toEqual(usage);
@@ -41,8 +47,20 @@ describe("reconcileWithStatusline", () => {
   describe("limits[] shape", () => {
     const usage = {
       limits: [
-        { kind: "session", percent: 12, resets_at: "2026-08-15T15:00:00Z", scope: null, is_active: true },
-        { kind: "weekly_all", percent: 24, resets_at: "2026-08-20T00:00:00Z", scope: null, is_active: false },
+        {
+          kind: "session",
+          percent: 12,
+          resets_at: "2026-08-15T15:00:00Z",
+          scope: null,
+          is_active: true,
+        },
+        {
+          kind: "weekly_all",
+          percent: 24,
+          resets_at: "2026-08-20T00:00:00Z",
+          scope: null,
+          is_active: false,
+        },
         {
           kind: "weekly_scoped",
           percent: 8,
@@ -78,7 +96,10 @@ describe("reconcileWithStatusline", () => {
     });
 
     it("only patches the window the feed actually reports (never invents one)", () => {
-      const feed = feedWith({ five_hour: { used_percentage: 45, resets_at: null }, seven_day: null });
+      const feed = feedWith({
+        five_hour: { used_percentage: 45, resets_at: null },
+        seven_day: null,
+      });
       const result = reconcileWithStatusline(usage, API_FETCHED_AT, feed) as typeof usage;
       const session = result.limits.find((l) => l.kind === "session")!;
       const weekly = result.limits.find((l) => l.kind === "weekly_all")!;
@@ -87,7 +108,10 @@ describe("reconcileWithStatusline", () => {
     });
 
     it("does not mutate the original usage object", () => {
-      const feed = feedWith({ five_hour: { used_percentage: 45, resets_at: null }, seven_day: null });
+      const feed = feedWith({
+        five_hour: { used_percentage: 45, resets_at: null },
+        seven_day: null,
+      });
       reconcileWithStatusline(usage, API_FETCHED_AT, feed);
       expect(usage.limits.find((l) => l.kind === "session")!.percent).toBe(12);
     });
@@ -120,8 +144,14 @@ describe("reconcileWithStatusline", () => {
     });
 
     it("leaves a window whose feed side is absent untouched", () => {
-      const usage = { five_hour: { utilization: 2, resets_at: null }, seven_day: { utilization: 3, resets_at: null } };
-      const feed = feedWith({ five_hour: { used_percentage: 45, resets_at: null }, seven_day: null });
+      const usage = {
+        five_hour: { utilization: 2, resets_at: null },
+        seven_day: { utilization: 3, resets_at: null },
+      };
+      const feed = feedWith({
+        five_hour: { used_percentage: 45, resets_at: null },
+        seven_day: null,
+      });
       const result = reconcileWithStatusline(usage, API_FETCHED_AT, feed) as typeof usage;
       expect(result.five_hour.utilization).toBe(45);
       expect(result.seven_day.utilization).toBe(3);
@@ -135,8 +165,20 @@ describe("reconcileWithStatusline", () => {
     it("keeps the API's resets_at in the limits[] shape while the percent updates", () => {
       const usage = {
         limits: [
-          { kind: "session", percent: 12, resets_at: "2026-08-15T15:00:00Z", scope: null, is_active: true },
-          { kind: "weekly_all", percent: 24, resets_at: "2026-08-20T00:00:00Z", scope: null, is_active: false },
+          {
+            kind: "session",
+            percent: 12,
+            resets_at: "2026-08-15T15:00:00Z",
+            scope: null,
+            is_active: true,
+          },
+          {
+            kind: "weekly_all",
+            percent: 24,
+            resets_at: "2026-08-20T00:00:00Z",
+            scope: null,
+            is_active: false,
+          },
         ],
       };
       const feed = feedWith({
@@ -170,7 +212,15 @@ describe("reconcileWithStatusline", () => {
 
     it("still lets a feed that supplies a reset time win over the API's", () => {
       const usage = {
-        limits: [{ kind: "session", percent: 12, resets_at: "2026-08-15T15:00:00Z", scope: null, is_active: true }],
+        limits: [
+          {
+            kind: "session",
+            percent: 12,
+            resets_at: "2026-08-15T15:00:00Z",
+            scope: null,
+            is_active: true,
+          },
+        ],
       };
       const feed = feedWith({ five_hour: { used_percentage: 45, resets_at: 1786899600 } });
       const result = reconcileWithStatusline(usage, API_FETCHED_AT, feed) as typeof usage;

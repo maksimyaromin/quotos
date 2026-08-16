@@ -114,7 +114,9 @@ function pickMostConsumed(windows: LimitWindowEntity[]): Headline {
  * don't retain the raw `kind`/key needed to identify "the account-wide one"
  * specifically. Returns `null` when no such window exists at all, so the
  * caller can fall back to the old most-consumed behaviour. */
-function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; resetsAt: string | null; id: string } | null {
+function pickAccountWideWeekly(
+  usage: Record<string, unknown>,
+): { used: number; resetsAt: string | null; id: string } | null {
   const rawLimits = usage.limits;
   // Mirrors the windows-building rule below: an empty limits[] is treated
   // the same as an absent one, falling through to the fixed top-level shape.
@@ -133,7 +135,8 @@ function pickAccountWideWeekly(usage: Record<string, unknown>): { used: number; 
   if (fixed && typeof fixed === "object") {
     const record = fixed as { utilization?: unknown; resets_at?: unknown };
     const used = clampPercent(record.utilization);
-    if (used !== null) return { used, resetsAt: asString(record.resets_at), id: windowId("seven_day", null) };
+    if (used !== null)
+      return { used, resetsAt: asString(record.resets_at), id: windowId("seven_day", null) };
   }
   return null;
 }
@@ -162,7 +165,13 @@ export interface NormalizedUsage {
   headlineWindowId: string | null;
 }
 
-const EMPTY: NormalizedUsage = { windows: [], used: null, resetsAt: null, severity: "healthy", headlineWindowId: null };
+const EMPTY: NormalizedUsage = {
+  windows: [],
+  used: null,
+  resetsAt: null,
+  severity: "healthy",
+  headlineWindowId: null,
+};
 
 /** Turn a raw `/api/oauth/usage` response into the generic window list plus
  * headline — everywhere in "percent consumed" terms (I2), never "remaining".

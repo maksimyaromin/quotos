@@ -1,20 +1,39 @@
 import React from "react";
+import { Badge } from "../indicators/Badge.jsx";
 import { CapacityBar } from "../indicators/CapacityBar.jsx";
 import { StatusDot } from "../indicators/StatusDot.jsx";
-import { Badge } from "../indicators/Badge.jsx";
 import { LimitWindow } from "./LimitWindow.jsx";
 
 // Minimal default affordance glyphs (generic UI arrows/marks, not brand icons).
 const Chevron = ({ open }) => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
-    strokeLinecap="round" strokeLinejoin="round"
-    style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform var(--dur-base) var(--ease-standard)" }}>
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{
+      transform: open ? "rotate(180deg)" : "none",
+      transition: "transform var(--dur-base) var(--ease-standard)",
+    }}
+  >
     <path d="M6 9l6 6 6-6" />
   </svg>
 );
 const PinGlyph = ({ size = 12 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-    strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
   </svg>
 );
@@ -26,12 +45,6 @@ const MenuDotsGlyph = () => (
   </svg>
 );
 
-const STATE_DOT_COLOR = {
-  working: "var(--status-working)",
-  behind: "var(--status-behind)",
-  broken: "var(--status-broken)",
-};
-
 // R4-5: the row menu's geometry, in viewport coordinates. It is `position:
 // fixed` rather than `position: absolute` inside the row, and that is a fix,
 // not a style choice — see the `useLayoutEffect` below.
@@ -42,16 +55,28 @@ const MENU_MIN_WIDTH = 168;
 function MenuItem({ danger, disabled, onClick, children }) {
   const [hover, setHover] = React.useState(false);
   return (
-    <button type="button" role="menuitem" disabled={disabled} onClick={onClick}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
-        display: "flex", alignItems: "center", height: 26, padding: "0 var(--space-2)",
-        border: 0, borderRadius: "var(--radius-sm)",
+        display: "flex",
+        alignItems: "center",
+        height: 26,
+        padding: "0 var(--space-2)",
+        border: 0,
+        borderRadius: "var(--radius-sm)",
         background: hover && !disabled ? "var(--bg-row-hover)" : "transparent",
-        fontFamily: "var(--font-sans)", fontSize: "var(--text-base)",
+        fontFamily: "var(--font-sans)",
+        fontSize: "var(--text-base)",
         color: disabled ? "var(--text-quaternary)" : danger ? "var(--red)" : "var(--text-primary)",
-        textAlign: "left", cursor: disabled ? "default" : "pointer",
-      }}>
+        textAlign: "left",
+        cursor: disabled ? "default" : "pointer",
+      }}
+    >
       {children}
     </button>
   );
@@ -243,15 +268,16 @@ export function SubscriptionRow({
   const numColor = stale
     ? "var(--amber)"
     : severity === "critical"
-    ? "var(--red)"
-    : severity === "warn"
-    ? "var(--amber)"
-    : "var(--text-primary)";
-
-  const dotColor = STATE_DOT_COLOR[stale ? "behind" : state] || "var(--status-progress)";
+      ? "var(--red)"
+      : severity === "warn"
+        ? "var(--amber)"
+        : "var(--text-primary)";
 
   const handleRowClick = () => {
-    if (menuOpen) { onToggleMenu?.(); return; }
+    if (menuOpen) {
+      onToggleMenu?.();
+      return;
+    }
     if (renaming) return;
     onToggleExpand?.();
   };
@@ -273,13 +299,18 @@ export function SubscriptionRow({
     if (items.length === 0) return;
     e.preventDefault();
     const current = items.indexOf(document.activeElement);
-    const next = e.key === "Home"
-      ? 0
-      : e.key === "End"
-      ? items.length - 1
-      : e.key === "ArrowDown"
-      ? (current < 0 ? 0 : (current + 1) % items.length)
-      : current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
+    const next =
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? items.length - 1
+          : e.key === "ArrowDown"
+            ? current < 0
+              ? 0
+              : (current + 1) % items.length
+            : current < 0
+              ? items.length - 1
+              : (current - 1 + items.length) % items.length;
     items[next].focus();
   };
 
@@ -289,7 +320,9 @@ export function SubscriptionRow({
       onKeyDown={handleMenuKeyDown}
       style={{
         position: "relative",
-        display: "flex", flexDirection: "column", gap: "var(--space-2)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-2)",
         padding: "var(--space-3)",
         borderRadius: "var(--radius-md)",
         background: expanded || menuOpen ? "var(--bg-row-hover)" : "transparent",
@@ -318,29 +351,50 @@ export function SubscriptionRow({
                 }
               }}
               style={{
-                width: "100%", font: "inherit",
-                fontFamily: "var(--font-sans)", fontSize: "var(--text-md)",
-                fontWeight: "var(--weight-semibold)", color: "var(--text-primary)",
+                width: "100%",
+                font: "inherit",
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-md)",
+                fontWeight: "var(--weight-semibold)",
+                color: "var(--text-primary)",
                 letterSpacing: "var(--tracking-tight)",
-                background: "var(--bg-input)", border: "0.5px solid var(--border-focus)",
-                borderRadius: "var(--radius-xs)", padding: "1px 4px", margin: "-1px -4px",
+                background: "var(--bg-input)",
+                border: "0.5px solid var(--border-focus)",
+                borderRadius: "var(--radius-xs)",
+                padding: "1px 4px",
+                margin: "-1px -4px",
                 outline: "none",
               }}
             />
           ) : (
-            <div style={{
-              fontFamily: "var(--font-sans)", fontSize: "var(--text-md)",
-              fontWeight: "var(--weight-semibold)", color: "var(--text-primary)",
-              letterSpacing: "var(--tracking-tight)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>{label}</div>
+            <div
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-md)",
+                fontWeight: "var(--weight-semibold)",
+                color: "var(--text-primary)",
+                letterSpacing: "var(--tracking-tight)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {label}
+            </div>
           )}
-          {(provider || account) ? (
-            <div style={{
-              fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
-              color: "var(--text-tertiary)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>{[account, provider].filter(Boolean).join(" · ")}</div>
+          {provider || account ? (
+            <div
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-sm)",
+                color: "var(--text-tertiary)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {[account, provider].filter(Boolean).join(" · ")}
+            </div>
           ) : null}
         </div>
         {pinnedCount > 0 ? (
@@ -350,20 +404,38 @@ export function SubscriptionRow({
           </Badge>
         ) : null}
         {badge ? (
-          <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>{badge}</Badge>
+          <Badge tone={stale ? "warn" : "danger"} style={{ marginTop: 2, flex: "0 0 auto" }}>
+            {badge}
+          </Badge>
         ) : null}
-        <button type="button" title="More" aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen}
+        <button
+          type="button"
+          title="More"
+          aria-label="More"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           data-quotos-menu-scope="true"
           ref={menuButtonRef}
-          onClick={(e) => { e.stopPropagation(); onToggleMenu?.(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMenu?.();
+          }}
           style={{
-            flex: "0 0 auto", display: "inline-flex", alignItems: "center", justifyContent: "center",
-            width: 20, height: 20, margin: "1px -4px 0 0", padding: 0, border: 0,
+            flex: "0 0 auto",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
+            height: 20,
+            margin: "1px -4px 0 0",
+            padding: 0,
+            border: 0,
             borderRadius: "var(--radius-xs)",
             background: menuOpen ? "var(--bg-row-hover)" : "transparent",
             color: menuOpen ? "var(--text-primary)" : "var(--text-quaternary)",
             cursor: "pointer",
-          }}>
+          }}
+        >
           <MenuDotsGlyph />
         </button>
       </div>
@@ -375,13 +447,20 @@ export function SubscriptionRow({
         // relay whatever code comes back. Replaces the reason text while
         // active; the row's own action button is hidden by the caller.
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-          <div style={{
-            fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
-            lineHeight: "var(--leading-snug)", color: "var(--text-secondary)",
-          }}>
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-sm)",
+              lineHeight: "var(--leading-snug)",
+              color: "var(--text-secondary)",
+            }}
+          >
             Finish signing in in the browser, then paste the code here.
           </div>
-          <div style={{ display: "flex", gap: "var(--space-2)" }} onClick={(e) => e.stopPropagation()}>
+          <div
+            style={{ display: "flex", gap: "var(--space-2)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <input
               ref={codeInputRef}
               value={codeDraft}
@@ -396,43 +475,94 @@ export function SubscriptionRow({
               }}
               placeholder="Paste code"
               style={{
-                flex: 1, font: "inherit",
-                fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)",
+                flex: 1,
+                font: "inherit",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-sm)",
                 color: "var(--text-primary)",
-                background: "var(--bg-input)", border: "0.5px solid var(--border-focus)",
-                borderRadius: "var(--radius-xs)", padding: "3px 6px",
+                background: "var(--bg-input)",
+                border: "0.5px solid var(--border-focus)",
+                borderRadius: "var(--radius-xs)",
+                padding: "3px 6px",
                 outline: "none",
               }}
             />
-            <button type="button" onClick={submitCode} disabled={codeDraft.trim().length === 0}
+            <button
+              type="button"
+              onClick={submitCode}
+              disabled={codeDraft.trim().length === 0}
               style={{
-                padding: "0 10px", border: 0, borderRadius: "var(--radius-xs)",
+                padding: "0 10px",
+                border: 0,
+                borderRadius: "var(--radius-xs)",
                 background: "var(--bg-selected)",
-                color: codeDraft.trim().length === 0 ? "var(--text-quaternary)" : "var(--text-accent)",
-                fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", fontWeight: "var(--weight-medium)",
+                color:
+                  codeDraft.trim().length === 0 ? "var(--text-quaternary)" : "var(--text-accent)",
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--weight-medium)",
                 cursor: codeDraft.trim().length === 0 ? "default" : "pointer",
-              }}>Submit</button>
-            <button type="button" onClick={() => onCancelSignIn?.()}
+              }}
+            >
+              Submit
+            </button>
+            <button
+              type="button"
+              onClick={() => onCancelSignIn?.()}
               style={{
-                padding: "0 8px", border: 0, borderRadius: "var(--radius-xs)",
-                background: "transparent", color: "var(--text-tertiary)",
-                fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", cursor: "pointer",
-              }}>Cancel</button>
+                padding: "0 8px",
+                border: 0,
+                borderRadius: "var(--radius-xs)",
+                background: "transparent",
+                color: "var(--text-tertiary)",
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-sm)",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       ) : hasData ? (
         <>
           <div style={{ display: "flex", alignItems: "flex-end", gap: "var(--space-2)" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-1)", flex: 1 }}>
-              <span style={{
-                fontFamily: "var(--font-mono)", fontSize: "var(--numeral-lg)",
-                fontWeight: "var(--weight-medium)", fontVariantNumeric: "tabular-nums",
-                lineHeight: 1, color: numColor, letterSpacing: "var(--tracking-tighter)",
-              }}>{used}<span style={{ fontSize: "18px" }}>%</span></span>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", color: "var(--text-tertiary)" }}>used</span>
+            <div
+              style={{ display: "flex", alignItems: "baseline", gap: "var(--space-1)", flex: 1 }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--numeral-lg)",
+                  fontWeight: "var(--weight-medium)",
+                  fontVariantNumeric: "tabular-nums",
+                  lineHeight: 1,
+                  color: numColor,
+                  letterSpacing: "var(--tracking-tighter)",
+                }}
+              >
+                {used}
+                <span style={{ fontSize: "18px" }}>%</span>
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-sm)",
+                  color: "var(--text-tertiary)",
+                }}
+              >
+                used
+              </span>
             </div>
             {resetLabel ? (
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)", paddingBottom: 3 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text-tertiary)",
+                  paddingBottom: 3,
+                }}
+              >
                 {resetLabel}
               </span>
             ) : null}
@@ -440,31 +570,59 @@ export function SubscriptionRow({
           <CapacityBar used={used} reading={reading} stale={stale} severity={severity} />
         </>
       ) : (
-        <div style={{
-          fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)",
-          lineHeight: "var(--leading-snug)", color: "var(--text-secondary)",
-        }}>
+        <div
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--text-sm)",
+            lineHeight: "var(--leading-snug)",
+            color: "var(--text-secondary)",
+          }}
+        >
           {reason || "No limits reported yet."}
         </div>
       )}
 
       {/* footer */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 20 }}>
-        <span style={{
-          flex: 1, fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)",
-          color: stale ? "var(--amber)" : "var(--text-tertiary)",
-        }}>
-          {reading ? "Reading…" : footerNote ? footerNote : lastRead ? `Read ${lastRead}` : "Not read yet"}
+        <span
+          style={{
+            flex: 1,
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--text-xs)",
+            color: stale ? "var(--amber)" : "var(--text-tertiary)",
+          }}
+        >
+          {reading
+            ? "Reading…"
+            : footerNote
+              ? footerNote
+              : lastRead
+                ? `Read ${lastRead}`
+                : "Not read yet"}
         </span>
         {actionLabel ? (
-          <button type="button" title={actionLabel}
-            onClick={(e) => { e.stopPropagation(); if (!actionDisabled) onAction?.(); }}
+          <button
+            type="button"
+            title={actionLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!actionDisabled) onAction?.();
+            }}
             style={{
-              height: 20, padding: "0 6px", border: 0, borderRadius: "var(--radius-xs)",
-              background: "transparent", fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)",
-              fontWeight: "var(--weight-medium)", cursor: actionDisabled ? "default" : "pointer",
+              height: 20,
+              padding: "0 6px",
+              border: 0,
+              borderRadius: "var(--radius-xs)",
+              background: "transparent",
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-xs)",
+              fontWeight: "var(--weight-medium)",
+              cursor: actionDisabled ? "default" : "pointer",
               color: actionDisabled ? "var(--text-quaternary)" : "var(--text-accent)",
-            }}>{actionLabel}</button>
+            }}
+          >
+            {actionLabel}
+          </button>
         ) : null}
         {windows && windows.length > 0 ? (
           // R6: a real button, not a span — the row div's own onClick is the
@@ -472,14 +630,27 @@ export function SubscriptionRow({
           // to the accessibility tree, so this is the row's only focusable
           // expand control. stopPropagation keeps the row's click from
           // toggling it straight back.
-          <button type="button" aria-expanded={expanded}
-            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand?.();
+            }}
             style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              margin: 0, padding: 0, border: 0, background: "transparent",
-              fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-tertiary)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              margin: 0,
+              padding: 0,
+              border: 0,
+              background: "transparent",
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-xs)",
+              color: "var(--text-tertiary)",
               cursor: "pointer",
-            }}>
+            }}
+          >
             {windows.length} {windows.length === 1 ? "limit" : "limits"}
             <Chevron open={expanded} />
           </button>
@@ -501,18 +672,31 @@ export function SubscriptionRow({
           display: "grid",
           gridTemplateRows: expanded && windows && windows.length > 0 ? "1fr" : "0fr",
           visibility: expanded && windows && windows.length > 0 ? "visible" : "hidden",
+          // biome-ignore format: reducedMotion.test.jsx scans this line for a --dur token; keep it on one line.
           transition: "grid-template-rows var(--dur-base) var(--ease-standard), visibility var(--dur-base) var(--ease-standard)",
         }}
       >
         <div style={{ overflow: "hidden", minHeight: 0 }}>
           {windows && windows.length > 0 ? (
-            <div style={{
-              borderTop: "0.5px solid var(--border-subtle)",
-              paddingTop: "var(--space-1)", marginTop: "var(--space-0-5)",
-            }}>
+            <div
+              style={{
+                borderTop: "0.5px solid var(--border-subtle)",
+                paddingTop: "var(--space-1)",
+                marginTop: "var(--space-0-5)",
+              }}
+            >
               {windows.map((w, i) => (
-                <LimitWindow key={w.id ?? i} {...w} stale={stale} onTogglePin={onToggleWindowPin}
-                  style={i < windows.length - 1 ? { borderBottom: "0.5px solid var(--border-subtle)" } : null} />
+                <LimitWindow
+                  key={w.id ?? i}
+                  {...w}
+                  stale={stale}
+                  onTogglePin={onToggleWindowPin}
+                  style={
+                    i < windows.length - 1
+                      ? { borderBottom: "0.5px solid var(--border-subtle)" }
+                      : null
+                  }
+                />
               ))}
             </div>
           ) : null}
@@ -534,21 +718,76 @@ export function SubscriptionRow({
             top: menuPos ? menuPos.top : 0,
             left: menuPos ? menuPos.left : 0,
             visibility: menuPos ? "visible" : "hidden",
-            zIndex: 30, minWidth: MENU_MIN_WIDTH,
-            padding: "var(--space-1)", borderRadius: "var(--radius-lg)",
-            background: "var(--bg-elevated)", border: "0.5px solid var(--border-default)",
-            boxShadow: "var(--shadow-menu)", display: "flex", flexDirection: "column",
+            zIndex: 30,
+            minWidth: MENU_MIN_WIDTH,
+            padding: "var(--space-1)",
+            borderRadius: "var(--radius-lg)",
+            background: "var(--bg-elevated)",
+            border: "0.5px solid var(--border-default)",
+            boxShadow: "var(--shadow-menu)",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          <MenuItem onClick={() => { onToggleMenu?.(); onReadNow?.(); }}>Read now</MenuItem>
-          <MenuItem onClick={() => { onToggleMenu?.(); setRenaming(true); }}>Rename</MenuItem>
-          <MenuItem onClick={() => { onToggleMenu?.(); onTogglePin?.(); }}>
+          <MenuItem
+            onClick={() => {
+              onToggleMenu?.();
+              onReadNow?.();
+            }}
+          >
+            Read now
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onToggleMenu?.();
+              setRenaming(true);
+            }}
+          >
+            Rename
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onToggleMenu?.();
+              onTogglePin?.();
+            }}
+          >
             {headlinePinned ? "Hide from menu bar" : "Show in menu bar"}
           </MenuItem>
-          <MenuItem disabled={!canMoveUp} onClick={() => { onToggleMenu?.(); onMoveUp?.(); }}>Move up</MenuItem>
-          <MenuItem disabled={!canMoveDown} onClick={() => { onToggleMenu?.(); onMoveDown?.(); }}>Move down</MenuItem>
-          <div role="separator" style={{ height: "0.5px", margin: "var(--space-1) var(--space-2)", background: "var(--border-default)" }} />
-          <MenuItem danger onClick={() => { onToggleMenu?.(); onStopTracking?.(); }}>Stop tracking</MenuItem>
+          <MenuItem
+            disabled={!canMoveUp}
+            onClick={() => {
+              onToggleMenu?.();
+              onMoveUp?.();
+            }}
+          >
+            Move up
+          </MenuItem>
+          <MenuItem
+            disabled={!canMoveDown}
+            onClick={() => {
+              onToggleMenu?.();
+              onMoveDown?.();
+            }}
+          >
+            Move down
+          </MenuItem>
+          <div
+            role="separator"
+            style={{
+              height: "0.5px",
+              margin: "var(--space-1) var(--space-2)",
+              background: "var(--border-default)",
+            }}
+          />
+          <MenuItem
+            danger
+            onClick={() => {
+              onToggleMenu?.();
+              onStopTracking?.();
+            }}
+          >
+            Stop tracking
+          </MenuItem>
         </div>
       ) : null}
     </div>

@@ -52,8 +52,8 @@ export function rowPresentation(sub: Subscription, now: number): RowPresentation
   const actionLabel = sub.needsSignIn
     ? "Open Claude Code"
     : sub.state === "broken" || sub.state === "behind"
-    ? "Try again"
-    : null;
+      ? "Try again"
+      : null;
 
   return { badge, actionLabel, footerNote: null };
 }

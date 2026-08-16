@@ -98,7 +98,12 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => void enable(true)}>
             Replace with live updates
           </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setStatus({ kind: "not_installed" })}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => setStatus({ kind: "not_installed" })}
+          >
             Not now
           </Button>
         </div>

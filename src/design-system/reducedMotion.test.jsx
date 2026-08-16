@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanup, render } from "@testing-library/react";
@@ -26,7 +26,8 @@ function sourceFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) files.push(...sourceFiles(full));
-    else if (/\.(jsx|tsx|ts|css)$/.test(entry.name) && !/\.test\./.test(entry.name)) files.push(full);
+    else if (/\.(jsx|tsx|ts|css)$/.test(entry.name) && !/\.test\./.test(entry.name))
+      files.push(full);
   }
   return files;
 }
@@ -57,7 +58,9 @@ describe("prefers-reduced-motion contract", () => {
     for (const file of sourceFiles(srcDir)) {
       for (const line of readFileSync(file, "utf8").split("\n")) {
         if (/transition\s*:/.test(line)) {
-          expect(line, `${file} declares a transition without a --dur token`).toContain("var(--dur");
+          expect(line, `${file} declares a transition without a --dur token`).toContain(
+            "var(--dur",
+          );
         }
       }
     }

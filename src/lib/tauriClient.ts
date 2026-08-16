@@ -1,6 +1,6 @@
+import type { ScheduledRefreshEvent, TraySegment } from "../types/entities";
 import * as live from "./liveClient";
 import * as mock from "./mockClient";
-import type { ScheduledRefreshEvent, TraySegment } from "../types/entities";
 
 /** Real Tauri build vs. `npm run dev` opened directly in a browser for
  * visual QA. See mockClient.ts for why this seam exists. */
@@ -45,9 +45,9 @@ export const setTrayStatus: (
 
 /** R2-4: the mock harness has no Rust scheduler to push events from — the
  * browser path never calls back, matching setTrayStatus's pattern above. */
-export const onQuotaRefresh: (callback: (event: ScheduledRefreshEvent) => void) => Promise<() => void> = isTauri
-  ? live.onQuotaRefresh
-  : async () => () => {};
+export const onQuotaRefresh: (
+  callback: (event: ScheduledRefreshEvent) => void,
+) => Promise<() => void> = isTauri ? live.onQuotaRefresh : async () => () => {};
 
 /** R2-4: no-op in the browser harness — useSubscriptions.ts only calls this
  * on the native path, where a real scheduler exists to kick. */
@@ -64,6 +64,5 @@ export const statuslineRemove = client.statuslineRemove;
 /** B3/B5: no real tray glyph exists in the browser mock harness to compute
  * an offset from — App.tsx keeps its own static fallback constant for that
  * case, matching setTrayStatus's pattern above. */
-export const onPanelBeakOffset: (callback: (offsetPx: number) => void) => Promise<() => void> = isTauri
-  ? live.onPanelBeakOffset
-  : async () => () => {};
+export const onPanelBeakOffset: (callback: (offsetPx: number) => void) => Promise<() => void> =
+  isTauri ? live.onPanelBeakOffset : async () => () => {};

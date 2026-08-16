@@ -1,8 +1,8 @@
-import { normalizeUsage } from "./normalizeUsage";
-import { normalizeProfile } from "./normalizeProfile";
-import { reconcileWithStatusline } from "./statuslineMerge";
 import type { FetchError, NormalizedRead } from "../../types/entities";
-import type { ReadOutcome, OutcomeResult, NormalizeContext } from "../registry";
+import type { NormalizeContext, OutcomeResult, ReadOutcome } from "../registry";
+import { normalizeProfile } from "./normalizeProfile";
+import { normalizeUsage } from "./normalizeUsage";
+import { reconcileWithStatusline } from "./statuslineMerge";
 
 /** S2: reconciles the zero-cost statusline feed (`context.statuslineFeed`)
  * with the API payload before normalizing — see `statuslineMerge.ts` for
@@ -10,7 +10,12 @@ import type { ReadOutcome, OutcomeResult, NormalizeContext } from "../registry";
  * list. A context with no feed (or an older one) leaves `usageRaw`
  * untouched, so this is exactly today's behavior whenever nothing is
  * feeding the statusline. */
-export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel: string, context: NormalizeContext): NormalizedRead {
+export function normalize(
+  usageRaw: unknown,
+  profileRaw: unknown,
+  fallbackLabel: string,
+  context: NormalizeContext,
+): NormalizedRead {
   const reconciled = reconcileWithStatusline(usageRaw, context.fetchedAt, context.statuslineFeed);
   const usage = normalizeUsage(reconciled);
   const profile = normalizeProfile(profileRaw);
@@ -40,7 +45,11 @@ export function normalize(usageRaw: unknown, profileRaw: unknown, fallbackLabel:
 export function mapOutcome(outcome: ReadOutcome, hadGoodRead: boolean): OutcomeResult {
   if (outcome.kind === "ok") {
     const noLimits = outcome.normalized.used === null && outcome.normalized.windows.length === 0;
-    return { state: "working", reason: noLimits ? "No limits reported yet." : null, needsSignIn: false };
+    return {
+      state: "working",
+      reason: noLimits ? "No limits reported yet." : null,
+      needsSignIn: false,
+    };
   }
 
   const err = outcome.error;
@@ -94,7 +103,11 @@ function mapFetchError(err: FetchError, hadGoodRead: boolean): OutcomeResult {
     case "rate_limited":
       // Unreachable in practice — see the doc comment above. Handled here
       // only so this switch stays exhaustive over `FetchError["kind"]`.
-      return { state: "broken", reason: "Unexpected rate-limit outcome reached the provider mapper.", needsSignIn: false };
+      return {
+        state: "broken",
+        reason: "Unexpected rate-limit outcome reached the provider mapper.",
+        needsSignIn: false,
+      };
     default:
       return { state: "broken", reason: err.message, needsSignIn: false };
   }

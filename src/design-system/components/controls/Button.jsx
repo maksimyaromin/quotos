@@ -13,13 +13,22 @@ const base = {
   cursor: "pointer",
   userSelect: "none",
   whiteSpace: "nowrap",
+  // biome-ignore format: reducedMotion.test.jsx scans this line for a --dur token; keep it on one line.
   transition: "background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast), transform var(--dur-instant)",
 };
 
 const sizes = {
   sm: { height: "22px", padding: "0 var(--space-2)", fontSize: "var(--text-sm)" },
-  base: { height: "var(--control-height)", padding: "0 var(--space-3)", fontSize: "var(--text-base)" },
-  lg: { height: "var(--control-height-lg)", padding: "0 var(--space-4)", fontSize: "var(--text-md)" },
+  base: {
+    height: "var(--control-height)",
+    padding: "0 var(--space-3)",
+    fontSize: "var(--text-base)",
+  },
+  lg: {
+    height: "var(--control-height-lg)",
+    padding: "0 var(--space-4)",
+    fontSize: "var(--text-md)",
+  },
 };
 
 const variants = {
@@ -84,7 +93,10 @@ export function Button({
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => { setHover(false); setActive(false); }}
+      onMouseLeave={() => {
+        setHover(false);
+        setActive(false);
+      }}
       onMouseDown={() => setActive(true)}
       onMouseUp={() => setActive(false)}
       style={composed}

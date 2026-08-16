@@ -1,5 +1,10 @@
-import type { FetchError, NormalizedRead, StatuslineFeedWire, SubscriptionState } from "../types/entities";
-import { normalize as normalizeClaude, mapOutcome as mapOutcomeClaude } from "./claude";
+import type {
+  FetchError,
+  NormalizedRead,
+  StatuslineFeedWire,
+  SubscriptionState,
+} from "../types/entities";
+import { mapOutcome as mapOutcomeClaude, normalize as normalizeClaude } from "./claude";
 
 /** S2: everything a provider's normalizer needs about *this particular
  * read* beyond the raw usage/profile payloads — when it was fetched, and
@@ -11,7 +16,12 @@ export interface NormalizeContext {
   statuslineFeed?: StatuslineFeedWire | null;
 }
 
-export type Normalizer = (usage: unknown, profile: unknown, fallbackLabel: string, context: NormalizeContext) => NormalizedRead;
+export type Normalizer = (
+  usage: unknown,
+  profile: unknown,
+  fallbackLabel: string,
+  context: NormalizeContext,
+) => NormalizedRead;
 
 /** What a refresh attempt produced, for the provider's outcome→state
  * mapper. Deliberately excludes `rate_limited` — B5/B6: a self-imposed
@@ -78,10 +88,18 @@ export function normalizeFor(
   return normalizer(usage, profile, fallbackLabel, context);
 }
 
-export function mapOutcomeFor(provider: string, outcome: ReadOutcome, hadGoodRead: boolean): OutcomeResult {
+export function mapOutcomeFor(
+  provider: string,
+  outcome: ReadOutcome,
+  hadGoodRead: boolean,
+): OutcomeResult {
   const mapper = PROVIDER_OUTCOME_MAPPERS[provider];
   if (!mapper) {
-    return { state: hadGoodRead ? "behind" : "broken", reason: `No adapter for provider '${provider}'.`, needsSignIn: false };
+    return {
+      state: hadGoodRead ? "behind" : "broken",
+      reason: `No adapter for provider '${provider}'.`,
+      needsSignIn: false,
+    };
   }
   return mapper(outcome, hadGoodRead);
 }

@@ -25,7 +25,9 @@ vi.mock("./lib/tauriClient", () => ({
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }],
+      },
       profile: null,
     });
   },
@@ -55,7 +57,13 @@ vi.mock("./lib/tauriClient", () => ({
 vi.mock("./lib/persistence", () => ({
   loadTracked: () =>
     Promise.resolve([
-      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinnedWindowIds: [] },
+      {
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+        label: null,
+        pinnedWindowIds: [],
+      },
     ]),
   saveTracked: () => Promise.resolve(),
 }));
@@ -146,7 +154,9 @@ describe("pointer dismissal consumes the dismissing click (F6)", () => {
 
     dismissByClicking(screen.getByText("Claude"));
     dismissByClicking(screen.getByText("Claude"));
-    expect(screen.getByRole("button", { name: /1 limit/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /1 limit/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
   });
 
   it("a dismissing click on a button does not press it", async () => {

@@ -60,7 +60,9 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }],
+      },
       profile: null,
     });
   });
@@ -105,7 +107,11 @@ describe("useSubscriptions refresh policy (browser/mock harness path)", () => {
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await Promise.all([result.current.refreshAll(), result.current.refreshAll(), result.current.refreshAll()]);
+      await Promise.all([
+        result.current.refreshAll(),
+        result.current.refreshAll(),
+        result.current.refreshAll(),
+      ]);
     });
     // One initial (mount) + one from the three collapsed manual calls.
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
@@ -136,7 +142,9 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     provider: "claude",
     config_dir: "~/.claude",
     fetched_at: new Date().toISOString(),
-    usage: { limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }] },
+    usage: {
+      limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }],
+    },
     profile: null,
   };
 
@@ -192,8 +200,20 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
 
   it("joining one in-flight account never skips the other accounts", async () => {
     loadTracked.mockResolvedValue([
-      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: false },
-      { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: false },
+      {
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+        label: null,
+        pinned: false,
+      },
+      {
+        id: "claude:claude-team",
+        provider: "claude",
+        config_dir: "~/.claude-team",
+        label: null,
+        pinned: false,
+      },
     ]);
     const { result } = renderHook(() => useSubscriptions());
     await flush();
@@ -211,7 +231,9 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     // Mount (2) + the row read (1) + refreshAll fetching only the *other*
     // account (1): the joined account is not refetched, the rest still are.
     expect(fetchSnapshot).toHaveBeenCalledTimes(4);
-    expect(fetchSnapshot.mock.calls[3]?.[0]).toEqual(expect.objectContaining({ id: "claude:claude-team" }));
+    expect(fetchSnapshot.mock.calls[3]?.[0]).toEqual(
+      expect.objectContaining({ id: "claude:claude-team" }),
+    );
   });
 
   // Adding a subscription reads it once immediately (brief §5.3 step 4), and
@@ -230,7 +252,11 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
 
     await act(async () => {
-      result.current.addSubscription({ id: "claude:other", provider: "claude", config_dir: "~/.claude-other" });
+      result.current.addSubscription({
+        id: "claude:other",
+        provider: "claude",
+        config_dir: "~/.claude-other",
+      });
     });
     expect(fetchSnapshot).toHaveBeenCalledTimes(1);
 
@@ -292,7 +318,11 @@ describe("useSubscriptions refresh policy (native path)", () => {
           provider: "claude",
           config_dir: "~/.claude",
           fetched_at: new Date().toISOString(),
-          usage: { limits: [{ kind: "weekly_all", percent: 42, is_active: true, resets_at: null, scope: null }] },
+          usage: {
+            limits: [
+              { kind: "weekly_all", percent: 42, is_active: true, resets_at: null, scope: null },
+            ],
+          },
           profile: null,
         },
       });
@@ -311,7 +341,10 @@ describe("useSubscriptions refresh policy (native path)", () => {
       quotaRefreshCallback?.({
         kind: "err",
         account_id: "claude:claude",
-        error: { kind: "unauthorized", message: "still unauthorized after refreshing the credential" },
+        error: {
+          kind: "unauthorized",
+          message: "still unauthorized after refreshing the credential",
+        },
       });
     });
     expect(result.current.subscriptions[0].state).toBe("broken");
@@ -348,7 +381,10 @@ describe("useSubscriptions health vs. rate-limit precedence (B6, manual refresh 
 
   it("a rate-limited retry restores the prior Broken state instead of leaving it 'connecting'", async () => {
     fetchSnapshot
-      .mockRejectedValueOnce({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" })
+      .mockRejectedValueOnce({
+        kind: "unauthorized",
+        message: "still unauthorized after refreshing the credential",
+      })
       .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 214 });
 
     const { result } = renderHook(() => useSubscriptions());
@@ -404,14 +440,19 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     provider: "claude",
     config_dir: "~/.claude",
     fetched_at: new Date().toISOString(),
-    usage: { limits: [{ kind: "weekly_all", percent: 7, is_active: true, resets_at: null, scope: null }] },
+    usage: {
+      limits: [{ kind: "weekly_all", percent: 7, is_active: true, resets_at: null, scope: null }],
+    },
     profile: null,
   };
 
   it("'Read now' still attempts a read while a wait is pending, and revives the row when it succeeds", async () => {
     fetchSnapshot
       // Launch: an expired-looking credential reads as broken…
-      .mockRejectedValueOnce({ kind: "unauthorized", message: "the stored sign-in is no longer accepted" })
+      .mockRejectedValueOnce({
+        kind: "unauthorized",
+        message: "the stored sign-in is no longer accepted",
+      })
       // …then the account is throttled for an hour.
       .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
       // The next explicit press must still reach the provider.
@@ -463,7 +504,11 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
       result.current.removeSubscription("claude:claude");
     });
     await act(async () => {
-      result.current.addSubscription({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" });
+      result.current.addSubscription({
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+      });
     });
     await flush();
 
@@ -476,7 +521,10 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
     // The captain signs in externally while Quotos is running: the very next
     // read must clear the warning by itself.
     fetchSnapshot
-      .mockRejectedValueOnce({ kind: "unauthorized", message: "the stored sign-in is no longer accepted" })
+      .mockRejectedValueOnce({
+        kind: "unauthorized",
+        message: "the stored sign-in is no longer accepted",
+      })
       .mockResolvedValueOnce(goodRead);
 
     const { result } = renderHook(() => useSubscriptions());
@@ -512,7 +560,13 @@ describe("useSubscriptions revival while a rate-limit wait is pending (R3-4)", (
 describe("useSubscriptions tray segments (followup-2)", () => {
   const TWO_PINNED = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
-    { id: "claude:team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: true },
+    {
+      id: "claude:team",
+      provider: "claude",
+      config_dir: "~/.claude-team",
+      label: null,
+      pinned: true,
+    },
   ];
 
   beforeEach(() => {
@@ -530,14 +584,21 @@ describe("useSubscriptions tray segments (followup-2)", () => {
   it("a broken pin with no number contributes no segment at all — never '!'", async () => {
     fetchSnapshot.mockImplementation(async (account: { id: string }) => {
       if (account.id === "claude:claude") {
-        throw { kind: "unauthorized", message: "still unauthorized after refreshing the credential" };
+        throw {
+          kind: "unauthorized",
+          message: "still unauthorized after refreshing the credential",
+        };
       }
       return {
         account_id: account.id,
         provider: "claude",
         config_dir: "~/.claude-team",
         fetched_at: new Date().toISOString(),
-        usage: { limits: [{ kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null }] },
+        usage: {
+          limits: [
+            { kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null },
+          ],
+        },
         profile: null,
       };
     });
@@ -566,9 +627,23 @@ describe("useSubscriptions tray segments (followup-2)", () => {
         profile: null,
       };
       if (account.id === "claude:claude") {
-        return { ...base, usage: { limits: [{ kind: "weekly_all", percent: 10, is_active: true, resets_at: null, scope: null }] } };
+        return {
+          ...base,
+          usage: {
+            limits: [
+              { kind: "weekly_all", percent: 10, is_active: true, resets_at: null, scope: null },
+            ],
+          },
+        };
       }
-      return { ...base, usage: { limits: [{ kind: "weekly_all", percent: 20, is_active: true, resets_at: null, scope: null }] } };
+      return {
+        ...base,
+        usage: {
+          limits: [
+            { kind: "weekly_all", percent: 20, is_active: true, resets_at: null, scope: null },
+          ],
+        },
+      };
     });
 
     const { result } = renderHook(() => useSubscriptions());
@@ -626,14 +701,24 @@ describe("useSubscriptions v4 pin migration", () => {
 
   it("migrates a legacy pinned:true record to pinning its headline window, once a read reveals it", async () => {
     loadTracked.mockResolvedValue([
-      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+      {
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+        label: null,
+        pinned: true,
+      },
     ]);
     fetchSnapshot.mockResolvedValue({
       account_id: "claude:claude",
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [
+          { kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null },
+        ],
+      },
       profile: null,
     });
 
@@ -649,14 +734,24 @@ describe("useSubscriptions v4 pin migration", () => {
 
   it("a legacy pinned:false record migrates to nothing pinned, contributing no segment", async () => {
     loadTracked.mockResolvedValue([
-      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: false },
+      {
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+        label: null,
+        pinned: false,
+      },
     ]);
     fetchSnapshot.mockResolvedValue({
       account_id: "claude:claude",
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [
+          { kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null },
+        ],
+      },
       profile: null,
     });
 
@@ -669,7 +764,13 @@ describe("useSubscriptions v4 pin migration", () => {
 
   it("a pending migration survives a failed first read and completes on the next successful one", async () => {
     loadTracked.mockResolvedValue([
-      { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+      {
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+        label: null,
+        pinned: true,
+      },
     ]);
     fetchSnapshot
       .mockRejectedValueOnce({ kind: "network", message: "timed out" })
@@ -678,7 +779,11 @@ describe("useSubscriptions v4 pin migration", () => {
         provider: "claude",
         config_dir: "~/.claude",
         fetched_at: new Date().toISOString(),
-        usage: { limits: [{ kind: "weekly_all", percent: 8, is_active: true, resets_at: null, scope: null }] },
+        usage: {
+          limits: [
+            { kind: "weekly_all", percent: 8, is_active: true, resets_at: null, scope: null },
+          ],
+        },
         profile: null,
       });
 
@@ -698,7 +803,9 @@ describe("useSubscriptions v4 pin migration", () => {
 // session (success or failure) always triggers a real re-read rather than
 // trusting the process's exit status alone.
 describe("useSubscriptions sign-in flow", () => {
-  let signInFinishedCallback: ((event: { account_id: string; success: boolean }) => void) | undefined;
+  let signInFinishedCallback:
+    | ((event: { account_id: string; success: boolean }) => void)
+    | undefined;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -709,12 +816,17 @@ describe("useSubscriptions sign-in flow", () => {
     cancelSignIn.mockReset();
     forgetSignIn.mockReset();
     signInFinishedCallback = undefined;
-    onSignInFinished.mockImplementation((cb: (event: { account_id: string; success: boolean }) => void) => {
-      signInFinishedCallback = cb;
-      return Promise.resolve(() => {});
-    });
+    onSignInFinished.mockImplementation(
+      (cb: (event: { account_id: string; success: boolean }) => void) => {
+        signInFinishedCallback = cb;
+        return Promise.resolve(() => {});
+      },
+    );
     startSignIn.mockResolvedValue(undefined);
-    fetchSnapshot.mockRejectedValue({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" });
+    fetchSnapshot.mockRejectedValue({
+      kind: "unauthorized",
+      message: "still unauthorized after refreshing the credential",
+    });
   });
 
   afterEach(() => {
@@ -747,7 +859,9 @@ describe("useSubscriptions sign-in flow", () => {
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "weekly_all", percent: 5, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [{ kind: "weekly_all", percent: 5, is_active: true, resets_at: null, scope: null }],
+      },
       profile: null,
     });
 
@@ -788,7 +902,13 @@ describe("useSubscriptions sign-in flow", () => {
 describe("useSubscriptions stop-tracking is immediate everywhere but the panel's own slot (R4-3)", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
-    { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: true },
+    {
+      id: "claude:claude-team",
+      provider: "claude",
+      config_dir: "~/.claude-team",
+      label: null,
+      pinned: true,
+    },
   ];
 
   beforeEach(() => {
@@ -803,7 +923,11 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
       provider: "claude",
       config_dir: account.config_dir,
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [
+          { kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null },
+        ],
+      },
       profile: null,
     }));
   });
@@ -822,7 +946,10 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     // What the Subscriptions screen sees: gone, immediately.
     expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual(["claude:claude"]);
     // What the panel sees: still there, in its own slot, flagged for the Undo row.
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude",
+      "claude:claude-team",
+    ]);
     expect(result.current.subscriptions[1].pendingRemoval).toBe(true);
   });
 
@@ -857,7 +984,10 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
     act(() => result.current.stopTracking("claude:claude-team"));
     act(() => result.current.undoStopTracking("claude:claude-team"));
 
-    expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual([
+      "claude:claude",
+      "claude:claude-team",
+    ]);
     expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
     expect(result.current.subscriptions[1].used).toBe(before.used);
   });
@@ -888,7 +1018,10 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
       await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2);
     });
 
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude",
+      "claude:claude-team",
+    ]);
   });
 
   it("adding an account back during its undo window is the same as undoing it", async () => {
@@ -897,13 +1030,20 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
 
     act(() => result.current.stopTracking("claude:claude-team"));
     act(() =>
-      result.current.addSubscription({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" }),
+      result.current.addSubscription({
+        id: "claude:claude-team",
+        provider: "claude",
+        config_dir: "~/.claude-team",
+      }),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2);
     });
 
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude",
+      "claude:claude-team",
+    ]);
     expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
   });
 
@@ -960,7 +1100,13 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
 describe("useSubscriptions reordering (v5)", () => {
   const TWO = [
     { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
-    { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team", label: null, pinned: true },
+    {
+      id: "claude:claude-team",
+      provider: "claude",
+      config_dir: "~/.claude-team",
+      label: null,
+      pinned: true,
+    },
   ];
 
   beforeEach(() => {
@@ -1002,7 +1148,10 @@ describe("useSubscriptions reordering (v5)", () => {
     act(() => result.current.moveSubscription("claude:claude", "down"));
     await flush();
 
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude-team", "claude:claude"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude-team",
+      "claude:claude",
+    ]);
     const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0];
     expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude-team", "claude:claude"]);
   });
@@ -1012,10 +1161,16 @@ describe("useSubscriptions reordering (v5)", () => {
     await flush();
 
     act(() => result.current.moveSubscription("claude:claude-team", "up"));
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude-team", "claude:claude"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude-team",
+      "claude:claude",
+    ]);
 
     act(() => result.current.moveSubscription("claude:claude-team", "down"));
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude",
+      "claude:claude-team",
+    ]);
   });
 
   it("is a no-op at the edges — no reorder, no save", async () => {
@@ -1027,7 +1182,10 @@ describe("useSubscriptions reordering (v5)", () => {
     act(() => result.current.moveSubscription("claude:claude-team", "down"));
     await flush();
 
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude", "claude:claude-team"]);
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      "claude:claude",
+      "claude:claude-team",
+    ]);
     expect(saveTracked).not.toHaveBeenCalled();
   });
 
@@ -1061,11 +1219,15 @@ describe("useSubscriptions display names are consistent between the panel and th
   });
 
   it("titles the id-derived fallback the way every other name in the panel is titled", () => {
-    expect(accountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" })).toBe("Claude");
-    expect(accountLabel({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" })).toBe(
-      "Claude Team",
+    expect(accountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" })).toBe(
+      "Claude",
     );
-    expect(accountLabel({ id: "claude:work_eu", provider: "claude", config_dir: "~/.claude-work_eu" })).toBe("Work Eu");
+    expect(
+      accountLabel({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" }),
+    ).toBe("Claude Team");
+    expect(
+      accountLabel({ id: "claude:work_eu", provider: "claude", config_dir: "~/.claude-work_eu" }),
+    ).toBe("Work Eu");
   });
 
   it("keeps the provider's own name for an account after it stops being tracked", async () => {
@@ -1074,7 +1236,11 @@ describe("useSubscriptions display names are consistent between the panel and th
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
-      usage: { limits: [{ kind: "weekly_all", percent: 12, is_active: true, resets_at: null, scope: null }] },
+      usage: {
+        limits: [
+          { kind: "weekly_all", percent: 12, is_active: true, resets_at: null, scope: null },
+        ],
+      },
       profile: { organization: { name: "Claude Max", organization_type: "claude_max" } },
     });
 
@@ -1088,7 +1254,11 @@ describe("useSubscriptions display names are consistent between the panel and th
     // there is no subscription to read a label off — it must still be the name
     // the captain knows it by, not the config directory's.
     expect(
-      result.current.displayLabelFor({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" }),
+      result.current.displayLabelFor({
+        id: "claude:claude",
+        provider: "claude",
+        config_dir: "~/.claude",
+      }),
     ).toBe("Claude Max");
   });
 
@@ -1096,7 +1266,11 @@ describe("useSubscriptions display names are consistent between the panel and th
     const { result } = renderHook(() => useSubscriptions());
     await flush();
     expect(
-      result.current.displayLabelFor({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" }),
+      result.current.displayLabelFor({
+        id: "claude:claude-team",
+        provider: "claude",
+        config_dir: "~/.claude-team",
+      }),
     ).toBe("Claude Team");
   });
 });

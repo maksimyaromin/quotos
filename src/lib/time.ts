@@ -27,7 +27,11 @@ const WEEKDAY_FMT = new Intl.DateTimeFormat(LOCALE, { weekday: "short" });
 const DATE_FMT = new Intl.DateTimeFormat(LOCALE, { month: "short", day: "numeric" });
 
 function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 /** Bare clock time, e.g. "4:05 PM" — used for compact labels like a

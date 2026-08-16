@@ -1,6 +1,7 @@
 import * as React from "react";
 
-export interface TextFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "style"> {
+export interface TextFieldProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "style"> {
   /** Label shown above the field. */
   label?: string;
   value?: string;

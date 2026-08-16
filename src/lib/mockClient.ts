@@ -9,7 +9,13 @@
  * deliberately decoupled from what's tracked/shown (I6: the tracked list,
  * persisted in localStorage via lib/persistence.ts, starts empty and is the
  * only thing the panel renders). */
-import type { AccountDescriptor, FetchError, RawSnapshot, SignInFinishedEvent, StatuslineIntegrationStatus } from "../types/entities";
+import type {
+  AccountDescriptor,
+  FetchError,
+  RawSnapshot,
+  SignInFinishedEvent,
+  StatuslineIntegrationStatus,
+} from "../types/entities";
 
 const DELAY_MS = 500;
 const callCounts = new Map<string, number>();
@@ -72,7 +78,11 @@ const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:demo-critical", provider: "claude", config_dir: "~/.claude-demo-critical" },
   { id: "claude:demo-idle", provider: "claude", config_dir: "~/.claude-demo-idle" },
   { id: "claude:demo-broken", provider: "claude", config_dir: "~/.claude-demo-broken" },
-  { id: "claude:demo-stale-credential", provider: "claude", config_dir: "~/.claude-demo-stale-credential" },
+  {
+    id: "claude:demo-stale-credential",
+    provider: "claude",
+    config_dir: "~/.claude-demo-stale-credential",
+  },
   { id: "claude:demo-waiting", provider: "claude", config_dir: "~/.claude-demo-waiting" },
   { id: "claude:demo-behind", provider: "claude", config_dir: "~/.claude-demo-behind" },
   { id: "claude:demo-nolimits", provider: "claude", config_dir: "~/.claude-demo-nolimits" },
@@ -125,7 +135,10 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         profile: profilePayload("Critical demo", "claude_pro"),
       });
     case "claude:demo-idle":
-      return fail({ kind: "not_connected", message: "No Claude Code credentials in the Keychain for this account." });
+      return fail({
+        kind: "not_connected",
+        message: "No Claude Code credentials in the Keychain for this account.",
+      });
     case "claude:demo-broken":
       // R2-6: once the mock sign-in flow has "finished" (see
       // submitSignInCode below), the account reads healthy again — this is
@@ -147,7 +160,10 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       // "waiting"; it must still read Broken/expired-login on the 2nd,
       // 3rd, ... call.
       if (n === 1) {
-        return fail({ kind: "unauthorized", message: "still unauthorized after refreshing the credential" });
+        return fail({
+          kind: "unauthorized",
+          message: "still unauthorized after refreshing the credential",
+        });
       }
       return fail({ kind: "rate_limited", retry_after_secs: 214 });
     case "claude:demo-stale-credential":
@@ -263,7 +279,13 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
               percent: 61,
               severity: "normal",
               resets_at: new Date(Date.now() + 5 * 86400_000).toISOString(),
-              scope: { model: { id: null, display_name: "Claude Opus 4.5 (extended thinking, research preview)" }, surface: null },
+              scope: {
+                model: {
+                  id: null,
+                  display_name: "Claude Opus 4.5 (extended thinking, research preview)",
+                },
+                surface: null,
+              },
               is_active: false,
             },
           ],
@@ -290,7 +312,10 @@ export async function setDetached(_detached: boolean): Promise<void> {
 
 export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
   return Object.fromEntries(
-    Array.from(callCounts.entries()).map(([id, n]) => [id, { used: Math.min(n, 5), max: 5, retry_after_secs: null }]),
+    Array.from(callCounts.entries()).map(([id, n]) => [
+      id,
+      { used: Math.min(n, 5), max: 5, retry_after_secs: null },
+    ]),
   );
 }
 
@@ -307,7 +332,9 @@ export async function submitSignInCode(accountId: string, _code: string): Promis
   signInSessions.delete(accountId);
   recoveredAccounts.add(accountId);
   await delay(undefined);
-  signInListeners.forEach((listener) => listener({ account_id: accountId, success: true }));
+  signInListeners.forEach((listener) => {
+    listener({ account_id: accountId, success: true });
+  });
 }
 
 export async function cancelSignIn(accountId: string): Promise<void> {
@@ -318,7 +345,9 @@ export async function forgetSignIn(_accountId: string): Promise<void> {
   // no-op in the browser — nothing native to clean up
 }
 
-export function onSignInFinished(callback: (event: SignInFinishedEvent) => void): Promise<() => void> {
+export function onSignInFinished(
+  callback: (event: SignInFinishedEvent) => void,
+): Promise<() => void> {
   signInListeners.push(callback);
   return Promise.resolve(() => {
     signInListeners = signInListeners.filter((l) => l !== callback);
@@ -340,12 +369,17 @@ export async function statuslineStatus(configDir: string): Promise<StatuslineInt
   return delay(statuslineState.get(configDir) ?? { kind: "not_installed" });
 }
 
-export async function statuslineInstall(configDir: string, force: boolean): Promise<{ replaced_existing: boolean }> {
+export async function statuslineInstall(
+  configDir: string,
+  force: boolean,
+): Promise<{ replaced_existing: boolean }> {
   const current = statuslineState.get(configDir) ?? { kind: "not_installed" };
   if (current.kind === "conflict" && !force) {
-    const rejection = delay({ kind: "conflict", existing_command: current.existing_command }).then((e) => {
-      throw e;
-    });
+    const rejection = delay({ kind: "conflict", existing_command: current.existing_command }).then(
+      (e) => {
+        throw e;
+      },
+    );
     return rejection as Promise<never>;
   }
   const replaced = current.kind === "conflict";

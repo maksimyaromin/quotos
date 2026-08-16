@@ -22,14 +22,25 @@ function anchorButtonAt({ top, bottom, right }) {
   const original = Element.prototype.getBoundingClientRect;
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function mocked() {
     if (this.getAttribute?.("aria-label") === "More") {
-      return { top, bottom, right, left: right - 20, width: 20, height: bottom - top, x: right - 20, y: top };
+      return {
+        top,
+        bottom,
+        right,
+        left: right - 20,
+        width: 20,
+        height: bottom - top,
+        x: right - 20,
+        y: top,
+      };
     }
     return original.call(this);
   });
 }
 
 function openMenu() {
-  return render(<SubscriptionRow label="Claude Team" provider="Anthropic" state="working" used={40} menuOpen />);
+  return render(
+    <SubscriptionRow label="Claude Team" provider="Anthropic" state="working" used={40} menuOpen />,
+  );
 }
 
 // R4-5: the captain's 2026-08-15 screencast — opening the bottom row's "…"
@@ -124,8 +135,13 @@ describe("the 'N limits' disclosure is a real, focusable control (R6)", () => {
   it("toggles expansion itself, without the row's own click undoing it", () => {
     const onToggleExpand = vi.fn();
     render(
-      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows}
-        onToggleExpand={onToggleExpand} />,
+      <SubscriptionRow
+        label="Claude Max"
+        state="working"
+        used={40}
+        windows={windows}
+        onToggleExpand={onToggleExpand}
+      />,
     );
     screen.getByRole("button", { name: /2 limits/ }).click();
     // Exactly once: the button's stopPropagation must keep the row div's
@@ -147,8 +163,16 @@ describe("the row menu's Move up / Move down (v5)", () => {
     const onMoveDown = vi.fn();
     const onToggleMenu = vi.fn();
     render(
-      <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen
-        canMoveUp canMoveDown onMoveDown={onMoveDown} onToggleMenu={onToggleMenu} />,
+      <SubscriptionRow
+        label="Claude Max"
+        state="working"
+        used={40}
+        menuOpen
+        canMoveUp
+        canMoveDown
+        onMoveDown={onMoveDown}
+        onToggleMenu={onToggleMenu}
+      />,
     );
     screen.getByText("Move down").click();
     expect(onMoveDown).toHaveBeenCalledTimes(1);
@@ -159,8 +183,15 @@ describe("the row menu's Move up / Move down (v5)", () => {
     const onMoveUp = vi.fn();
     const onToggleMenu = vi.fn();
     render(
-      <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen
-        canMoveDown onMoveUp={onMoveUp} onToggleMenu={onToggleMenu} />,
+      <SubscriptionRow
+        label="Claude Max"
+        state="working"
+        used={40}
+        menuOpen
+        canMoveDown
+        onMoveUp={onMoveUp}
+        onToggleMenu={onToggleMenu}
+      />,
     );
     const moveUp = screen.getByText("Move up");
     expect(moveUp.disabled).toBe(true);
@@ -185,13 +216,33 @@ describe("the row menu is keyboard-operable (v6)", () => {
   // Keydowns bubble from wherever focus is to the row div's own handler, so
   // firing on the trigger models "Enter opened the menu, focus still on the
   // '…' button".
-  const arrow = (key) => fireEvent.keyDown(document.activeElement === document.body
-    ? screen.getByLabelText("More")
-    : document.activeElement, { key });
+  const arrow = (key) =>
+    fireEvent.keyDown(
+      document.activeElement === document.body
+        ? screen.getByLabelText("More")
+        : document.activeElement,
+      { key },
+    );
 
   it("ArrowDown walks the items top-to-bottom and wraps past the end", () => {
-    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveUp canMoveDown />);
-    const expected = ["Read now", "Rename", "Show in menu bar", "Move up", "Move down", "Stop tracking"];
+    render(
+      <SubscriptionRow
+        label="Claude Max"
+        state="working"
+        used={40}
+        menuOpen
+        canMoveUp
+        canMoveDown
+      />,
+    );
+    const expected = [
+      "Read now",
+      "Rename",
+      "Show in menu bar",
+      "Move up",
+      "Move down",
+      "Stop tracking",
+    ];
     for (const label of expected) {
       arrow("ArrowDown");
       expect(document.activeElement.textContent).toBe(label);
@@ -201,7 +252,16 @@ describe("the row menu is keyboard-operable (v6)", () => {
   });
 
   it("ArrowUp enters at the last item and walks backwards", () => {
-    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveUp canMoveDown />);
+    render(
+      <SubscriptionRow
+        label="Claude Max"
+        state="working"
+        used={40}
+        menuOpen
+        canMoveUp
+        canMoveDown
+      />,
+    );
     arrow("ArrowUp");
     expect(document.activeElement.textContent).toBe("Stop tracking");
     arrow("ArrowUp");
@@ -218,7 +278,16 @@ describe("the row menu is keyboard-operable (v6)", () => {
   });
 
   it("Home and End jump to the edges", () => {
-    render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveUp canMoveDown />);
+    render(
+      <SubscriptionRow
+        label="Claude Max"
+        state="working"
+        used={40}
+        menuOpen
+        canMoveUp
+        canMoveDown
+      />,
+    );
     arrow("End");
     expect(document.activeElement.textContent).toBe("Stop tracking");
     arrow("Home");
@@ -240,7 +309,9 @@ describe("the row menu is keyboard-operable (v6)", () => {
   });
 
   it("hands focus back to the trigger when closing unmounts the focused item", () => {
-    const { rerender } = render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
+    const { rerender } = render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />,
+    );
     arrow("ArrowDown");
     expect(document.activeElement.textContent).toBe("Read now");
     rerender(<SubscriptionRow label="Claude Max" state="working" used={40} />);
@@ -282,7 +353,12 @@ describe("the row menu exposes WAI-ARIA menu semantics (v7)", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
     const items = screen.getAllByRole("menuitem");
     expect(items.map((b) => b.textContent)).toEqual([
-      "Read now", "Rename", "Show in menu bar", "Move up", "Move down", "Stop tracking",
+      "Read now",
+      "Rename",
+      "Show in menu bar",
+      "Move up",
+      "Move down",
+      "Stop tracking",
     ]);
   });
 
@@ -300,7 +376,14 @@ describe("the row menu exposes WAI-ARIA menu semantics (v7)", () => {
 describe("committing a rename without editing keeps an existing custom name (F1)", () => {
   function openRenameField(onRename) {
     render(
-      <SubscriptionRow label="My Max" provider="Anthropic" state="working" used={40} menuOpen onRename={onRename} />
+      <SubscriptionRow
+        label="My Max"
+        provider="Anthropic"
+        state="working"
+        used={40}
+        menuOpen
+        onRename={onRename}
+      />,
     );
     fireEvent.click(screen.getByText("Rename"));
     return screen.getByRole("textbox");
@@ -365,7 +448,9 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight 
   });
 
   it("shows it again when expanded", () => {
-    render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />);
+    render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
+    );
     const detail = detailContainer();
     expect(detail.getAttribute("aria-hidden")).toBe("false");
     expect(detail.style.visibility).toBe("visible");
@@ -374,7 +459,9 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight 
   it("transitions visibility on the duration token, so content stays visible while the row closes", () => {
     // Without this, the windows vanish the instant a collapse starts and the
     // I4 animation closes an already-empty box.
-    render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />);
+    render(
+      <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
+    );
     expect(detailContainer().style.transition).toContain("visibility var(--dur-base)");
   });
 });

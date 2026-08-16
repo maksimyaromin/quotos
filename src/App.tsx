@@ -1,23 +1,23 @@
 import { useEffect, useState } from "react";
-import { Panel } from "./design-system/components/shell/Panel";
-import { IconButton } from "./design-system/components/controls/IconButton";
-import { Button } from "./design-system/components/controls/Button";
-import { SubscriptionRow } from "./design-system/components/subscription/SubscriptionRow";
+import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "./components/icons";
 import { SubscriptionsScreen } from "./components/SubscriptionsScreen";
 import { UndoRow } from "./components/UndoRow";
+import { Button } from "./design-system/components/controls/Button";
+import { IconButton } from "./design-system/components/controls/IconButton";
+import { Panel } from "./design-system/components/shell/Panel";
+import { SubscriptionRow } from "./design-system/components/subscription/SubscriptionRow";
 import { useSubscriptions } from "./hooks/useSubscriptions";
-import { formatExactReset, formatRelativePast, formatClockTime } from "./lib/time";
 import { rowPresentation } from "./lib/rowPresentation";
-import { RefreshIcon, PlusIcon, SnapBackIcon, BackIcon, DebugIcon } from "./components/icons";
 import {
-  hidePanel,
-  setDetached as setDetachedIpc,
   debugRateLimitSnapshot,
-  onPanelBeakOffset,
-  onPanelVisibility,
   dragWindowStep,
   endWindowDrag,
+  hidePanel,
+  onPanelBeakOffset,
+  onPanelVisibility,
+  setDetached as setDetachedIpc,
 } from "./lib/tauriClient";
+import { formatClockTime, formatExactReset, formatRelativePast } from "./lib/time";
 import "./app.css";
 
 const NOW_TICK_MS = 30_000;
@@ -288,11 +288,17 @@ export default function App() {
   // whose answer is "sign in" is not waiting on the rate budget, so it must
   // not make the header claim everything is. R4-3: and the summaries describe
   // what is *tracked*, so a row inside its undo window is out of all of them.
-  const blockedSubs = trackedSubscriptions.filter((s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now));
-  const allBlocked = trackedSubscriptions.length > 0 && blockedSubs.length === trackedSubscriptions.length;
+  const blockedSubs = trackedSubscriptions.filter(
+    (s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now),
+  );
+  const allBlocked =
+    trackedSubscriptions.length > 0 && blockedSubs.length === trackedSubscriptions.length;
   const earliestAvailable = blockedSubs.length
     ? blockedSubs.reduce((min, s) =>
-        new Date(s.rateLimitedUntil as string).getTime() < new Date(min.rateLimitedUntil as string).getTime() ? s : min,
+        new Date(s.rateLimitedUntil as string).getTime() <
+        new Date(min.rateLimitedUntil as string).getTime()
+          ? s
+          : min,
       ).rateLimitedUntil
     : null;
   // R3-4: the wait is a tooltip, never a disabled control. Disabling this
@@ -304,18 +310,19 @@ export default function App() {
   const refreshLabel = refreshing
     ? "Reading…"
     : allBlocked
-    ? `Waiting for the rate budget — retry at ${formatClockTime(earliestAvailable)}`
-    : "Read all now";
+      ? `Waiting for the rate budget — retry at ${formatClockTime(earliestAvailable)}`
+      : "Read all now";
   const mostRecentRead = trackedSubscriptions.reduce<string | null>((latest, s) => {
     if (!s.lastReadAt) return latest;
-    if (!latest || new Date(s.lastReadAt).getTime() > new Date(latest).getTime()) return s.lastReadAt;
+    if (!latest || new Date(s.lastReadAt).getTime() > new Date(latest).getTime())
+      return s.lastReadAt;
     return latest;
   }, null);
   const footerSummary = refreshing
     ? "Reading…"
     : mostRecentRead
-    ? `Last read ${formatRelativePast(mostRecentRead, nowDate)}`
-    : "";
+      ? `Last read ${formatRelativePast(mostRecentRead, nowDate)}`
+      : "";
 
   return (
     <Panel
@@ -358,7 +365,13 @@ export default function App() {
               Add subscription
             </Button>
             <div style={{ flex: 1 }} />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-xs)", color: "var(--text-quaternary)" }}>
+            <span
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-xs)",
+                color: "var(--text-quaternary)",
+              }}
+            >
               {footerSummary}
             </span>
           </>
@@ -423,7 +436,9 @@ export default function App() {
               reason={sub.reason ?? undefined}
               badge={presentation.badge}
               pinnedCount={windows.filter((w) => w.pinned).length}
-              headlinePinned={sub.headlineWindowId !== null && sub.pinnedWindowIds.includes(sub.headlineWindowId)}
+              headlinePinned={
+                sub.headlineWindowId !== null && sub.pinnedWindowIds.includes(sub.headlineWindowId)
+              }
               expanded={expanded.has(sub.id)}
               menuOpen={openMenuId === sub.id}
               actionLabel={presentation.actionLabel}

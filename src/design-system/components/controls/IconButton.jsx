@@ -41,7 +41,13 @@ export function IconButton({
       style={composed}
       {...rest}
     >
-      <span style={{ display: "inline-flex", width: Math.round(size * 0.6), height: Math.round(size * 0.6) }}>
+      <span
+        style={{
+          display: "inline-flex",
+          width: Math.round(size * 0.6),
+          height: Math.round(size * 0.6),
+        }}
+      >
         {children}
       </span>
     </button>

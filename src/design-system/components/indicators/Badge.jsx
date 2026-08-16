@@ -1,7 +1,9 @@
-import React from "react";
-
 const TONES = {
-  neutral: { color: "var(--text-tertiary)", bg: "var(--bg-elevated)", border: "var(--border-default)" },
+  neutral: {
+    color: "var(--text-tertiary)",
+    bg: "var(--bg-elevated)",
+    border: "var(--border-default)",
+  },
   accent: { color: "var(--text-accent)", bg: "var(--teal-muted)", border: "transparent" },
   warn: { color: "var(--amber)", bg: "var(--amber-muted)", border: "transparent" },
   danger: { color: "var(--red)", bg: "var(--red-muted)", border: "transparent" },

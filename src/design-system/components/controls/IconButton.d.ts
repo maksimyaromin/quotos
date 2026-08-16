@@ -1,6 +1,7 @@
 import * as React from "react";
 
-export interface IconButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+export interface IconButtonProps
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
   /** Outer square size in px (default 24). The glyph is scaled to ~60%. */
   size?: number;
   /** Toggle-on look (teal). Used for the pin control. */

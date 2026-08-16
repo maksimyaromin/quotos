@@ -1,4 +1,4 @@
-import React, { useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 // Mirrors --panel-width/--radius-xl (tokens/spacing.css). Duplicated as a
 // plain number, the same way the native side duplicates it
@@ -149,7 +149,10 @@ export function Panel({
   children,
   style,
 }) {
-  const detachedFixed = !docked && position ? { position: "fixed", left: position.x, top: position.y, margin: 0 } : null;
+  const detachedFixed =
+    !docked && position
+      ? { position: "fixed", left: position.x, top: position.y, margin: 0 }
+      : null;
   const clipId = useId();
 
   // The unified beak+rect shape needs the content's *real* rendered height
@@ -177,11 +180,17 @@ export function Panel({
   }, []);
 
   const showBeak = docked && !detachedFixed;
-  const pathD = contentHeight > 0 ? buildPanelOutlinePath(PANEL_WIDTH, contentHeight, showBeak ? beakLeft : null) : null;
+  const pathD =
+    contentHeight > 0
+      ? buildPanelOutlinePath(PANEL_WIDTH, contentHeight, showBeak ? beakLeft : null)
+      : null;
   const beakBoxHeight = contentHeight + NOTCH_RESERVE;
 
   return (
-    <div data-quotos-panel="true" style={{ position: "relative", width: "var(--panel-width)", ...detachedFixed, ...style }}>
+    <div
+      data-quotos-panel="true"
+      style={{ position: "relative", width: "var(--panel-width)", ...detachedFixed, ...style }}
+    >
       {pathD ? (
         <>
           {/* The fill layer — clipped to the exact same path the stroke
@@ -230,7 +239,11 @@ export function Panel({
           </svg>
           <div
             style={{
-              position: "absolute", top: -NOTCH_RESERVE, left: 0, width: PANEL_WIDTH, height: beakBoxHeight,
+              position: "absolute",
+              top: -NOTCH_RESERVE,
+              left: 0,
+              width: PANEL_WIDTH,
+              height: beakBoxHeight,
               background: "var(--bg-panel)",
               boxShadow: "var(--shadow-popover)",
               clipPath: `url(#${clipId})`,
@@ -242,7 +255,8 @@ export function Panel({
       <div
         ref={contentRef}
         style={{
-          display: "flex", flexDirection: "column",
+          display: "flex",
+          flexDirection: "column",
           position: "relative",
           borderRadius: "var(--radius-xl)",
           overflow: "hidden",
@@ -254,7 +268,9 @@ export function Panel({
         <div
           onMouseDown={onHeaderPointerDown}
           style={{
-            display: "flex", alignItems: "center", gap: "var(--space-1)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-1)",
             padding: "var(--space-2-5) var(--space-2) var(--space-2-5) var(--space-3)",
             borderBottom: "0.5px solid var(--border-subtle)",
             cursor: dragging ? "grabbing" : "grab",
@@ -262,30 +278,49 @@ export function Panel({
           }}
         >
           {leading}
-          <span style={{
-            flex: 1, fontFamily: "var(--font-sans)", fontSize: "var(--text-base)",
-            fontWeight: "var(--weight-semibold)", color: "var(--text-primary)",
-            letterSpacing: "var(--tracking-tight)",
-          }}>{title}</span>
+          <span
+            style={{
+              flex: 1,
+              fontFamily: "var(--font-sans)",
+              fontSize: "var(--text-base)",
+              fontWeight: "var(--weight-semibold)",
+              color: "var(--text-primary)",
+              letterSpacing: "var(--tracking-tight)",
+            }}
+          >
+            {title}
+          </span>
           {headerActions}
         </div>
         {/* body — no reserved scrollbar gutter; the track is hidden outright
             (scrollbar-width: none / ::-webkit-scrollbar{width:0} in app.css)
             so there is nothing to reserve space for in the first place. */}
-        <div className="quotos-scroll" style={{
-          display: "flex", flexDirection: "column", gap: "var(--space-0-5)",
-          padding: "var(--space-1-5)",
-          maxHeight: maxBodyHeight, overflowY: "auto",
-        }}>
+        <div
+          className="quotos-scroll"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-0-5)",
+            padding: "var(--space-1-5)",
+            maxHeight: maxBodyHeight,
+            overflowY: "auto",
+          }}
+        >
           {children}
         </div>
         {/* footer */}
         {footer ? (
-          <div style={{
-            display: "flex", alignItems: "center", gap: "var(--space-2)",
-            padding: "var(--space-1-5) var(--space-2)",
-            borderTop: "0.5px solid var(--border-subtle)",
-          }}>{footer}</div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              padding: "var(--space-1-5) var(--space-2)",
+              borderTop: "0.5px solid var(--border-subtle)",
+            }}
+          >
+            {footer}
+          </div>
         ) : null}
       </div>
       {pathD ? (
@@ -300,9 +335,20 @@ export function Panel({
           width={PANEL_WIDTH}
           height={beakBoxHeight}
           viewBox={`0 0 ${PANEL_WIDTH} ${beakBoxHeight}`}
-          style={{ position: "absolute", top: -NOTCH_RESERVE, left: 0, overflow: "visible", pointerEvents: "none" }}
+          style={{
+            position: "absolute",
+            top: -NOTCH_RESERVE,
+            left: 0,
+            overflow: "visible",
+            pointerEvents: "none",
+          }}
         >
-          <path d={pathD} fill="none" style={{ stroke: "var(--border-strong)" }} strokeWidth={0.5} />
+          <path
+            d={pathD}
+            fill="none"
+            style={{ stroke: "var(--border-strong)" }}
+            strokeWidth={0.5}
+          />
         </svg>
       ) : null}
     </div>

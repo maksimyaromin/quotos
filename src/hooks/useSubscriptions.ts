@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AccountDescriptor, FetchError, RawSnapshot, Subscription, SubscriptionState } from "../types/entities";
-import { isFetchError } from "../types/entities";
+import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
 import {
+  cancelSignIn as cancelSignInIpc,
   fetchSnapshot,
-  setTrayStatus,
-  onQuotaRefresh,
+  forgetSignIn,
   kickScheduler,
+  onQuotaRefresh,
+  onSignInFinished,
+  setTrayStatus,
   startSignIn as startSignInIpc,
   submitSignInCode as submitSignInCodeIpc,
-  cancelSignIn as cancelSignInIpc,
-  forgetSignIn,
-  onSignInFinished,
 } from "../lib/tauriClient";
-import { normalizeFor, providerDisplayName, mapOutcomeFor } from "../providers/registry";
-import { loadTracked, saveTracked, type TrackedAccount } from "../lib/persistence";
 import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "../lib/traySegments";
+import { mapOutcomeFor, normalizeFor, providerDisplayName } from "../providers/registry";
+import type {
+  AccountDescriptor,
+  FetchError,
+  RawSnapshot,
+  Subscription,
+  SubscriptionState,
+} from "../types/entities";
+import { isFetchError } from "../types/entities";
 
 /** The id-derived default label for an account before any read has come back
  * (or before a custom rename) — shared with the add-subscription flow so a
@@ -189,7 +195,9 @@ export function useSubscriptions() {
         // R4-4: remember it for the Subscriptions screen, which otherwise has
         // only the config directory's name to show once this account stops
         // being tracked.
-        setKnownLabels((prev) => (prev[accountId] === normalized.label ? prev : { ...prev, [accountId]: normalized.label }));
+        setKnownLabels((prev) =>
+          prev[accountId] === normalized.label ? prev : { ...prev, [accountId]: normalized.label },
+        );
         // v4 pin migration: consumed at most once per account, on whichever
         // read (successful or not — see below) lands first after load.
         const pinnedWindowIds = pendingPinMigrationRef.current.has(accountId)
@@ -268,7 +276,10 @@ export function useSubscriptions() {
 
       try {
         const raw = await fetchSnapshot(account);
-        applyRefreshResult(account.id, account.provider, accountLabel(account), prior, { ok: true, raw });
+        applyRefreshResult(account.id, account.provider, accountLabel(account), prior, {
+          ok: true,
+          raw,
+        });
       } catch (err) {
         applyRefreshResult(account.id, account.provider, accountLabel(account), prior, {
           ok: false,
@@ -322,7 +333,11 @@ export function useSubscriptions() {
       // R4-3: a row inside its "Stop tracking" undo window is untracked
       // already — never spend a read on it.
       const targets = subscriptionsRef.current.filter((s) => !s.pendingRemoval);
-      await Promise.allSettled(targets.map((s) => refreshOneGuarded({ id: s.id, provider: s.provider, config_dir: s.configDir })));
+      await Promise.allSettled(
+        targets.map((s) =>
+          refreshOneGuarded({ id: s.id, provider: s.provider, config_dir: s.configDir }),
+        ),
+      );
     })();
     refreshAllInFlight.current = run;
     try {
@@ -352,7 +367,12 @@ export function useSubscriptions() {
       prev.map((s) => {
         if (s.id !== id) return s;
         const has = s.pinnedWindowIds.includes(windowId);
-        return { ...s, pinnedWindowIds: has ? s.pinnedWindowIds.filter((w) => w !== windowId) : [...s.pinnedWindowIds, windowId] };
+        return {
+          ...s,
+          pinnedWindowIds: has
+            ? s.pinnedWindowIds.filter((w) => w !== windowId)
+            : [...s.pinnedWindowIds, windowId],
+        };
       }),
     );
   }, []);
@@ -394,9 +414,14 @@ export function useSubscriptions() {
         // action as undoing it — same account, same slot, same name.
         const existing = prev.find((s) => s.id === account.id);
         if (existing) {
-          return existing.pendingRemoval ? prev.map((s) => (s.id === account.id ? { ...s, pendingRemoval: false } : s)) : prev;
+          return existing.pendingRemoval
+            ? prev.map((s) => (s.id === account.id ? { ...s, pendingRemoval: false } : s))
+            : prev;
         }
-        return [...prev, initialSubscription(account, null, [], knownLabelsRef.current[account.id])];
+        return [
+          ...prev,
+          initialSubscription(account, null, [], knownLabelsRef.current[account.id]),
+        ];
       });
       // Brief §5.3 step 4: verify by reading once immediately, so the
       // person sees what came back rather than a cold placeholder. F4: this
@@ -436,7 +461,9 @@ export function useSubscriptions() {
   const stopTracking = useCallback(
     (id: string) => {
       clearRemovalTimer(id);
-      setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, pendingRemoval: true } : s)));
+      setSubscriptions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, pendingRemoval: true } : s)),
+      );
       void cancelSignInIpc(id);
       removalTimers.current[id] = setTimeout(() => {
         delete removalTimers.current[id];
@@ -449,7 +476,9 @@ export function useSubscriptions() {
   const undoStopTracking = useCallback(
     (id: string) => {
       clearRemovalTimer(id);
-      setSubscriptions((prev) => prev.map((s) => (s.id === id ? { ...s, pendingRemoval: false } : s)));
+      setSubscriptions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, pendingRemoval: false } : s)),
+      );
     },
     [clearRemovalTimer],
   );
@@ -479,7 +508,10 @@ export function useSubscriptions() {
         // app, the spawn failed instantly and nothing said so. Say what
         // went wrong in the row's own reason line instead.
         const message = typeof err === "string" ? err : err instanceof Error ? err.message : null;
-        patch(id, { signInInProgress: false, reason: message ?? "Quotos couldn't start the Claude Code sign-in." });
+        patch(id, {
+          signInInProgress: false,
+          reason: message ?? "Quotos couldn't start the Claude Code sign-in.",
+        });
       }
     },
     [patch],
@@ -527,6 +559,7 @@ export function useSubscriptions() {
   //  - browser/mock harness: there's no Rust scheduler to push from, so this
   //    does the one-time initial read itself, exactly as before R2-4 moved
   //    cadence onto the Rust side.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberately mount-once (see the comment above, and the prior eslint-disable this replaces); adding applyRefreshResult/refreshOneGuarded risks re-running the load on every render.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -545,11 +578,17 @@ export function useSubscriptions() {
       const migrating = new Set<string>();
       const loaded = tracked.map((t) => {
         const legacy = t as unknown as { pinnedWindowIds?: unknown; pinned?: unknown };
-        const pinnedWindowIds = Array.isArray(legacy.pinnedWindowIds) ? (legacy.pinnedWindowIds as string[]) : [];
+        const pinnedWindowIds = Array.isArray(legacy.pinnedWindowIds)
+          ? (legacy.pinnedWindowIds as string[])
+          : [];
         if (!Array.isArray(legacy.pinnedWindowIds) && legacy.pinned === true) {
           migrating.add(t.id);
         }
-        return initialSubscription({ id: t.id, provider: t.provider, config_dir: t.config_dir }, t.label, pinnedWindowIds);
+        return initialSubscription(
+          { id: t.id, provider: t.provider, config_dir: t.config_dir },
+          t.label,
+          pinnedWindowIds,
+        );
       });
       pendingPinMigrationRef.current = migrating;
       setSubscriptions(loaded);
@@ -561,7 +600,9 @@ export function useSubscriptions() {
 
       if (!isTauri) {
         void Promise.allSettled(
-          loaded.map((s) => refreshOneGuarded({ id: s.id, provider: s.provider, config_dir: s.configDir })),
+          loaded.map((s) =>
+            refreshOneGuarded({ id: s.id, provider: s.provider, config_dir: s.configDir }),
+          ),
         );
         return;
       }
@@ -575,11 +616,21 @@ export function useSubscriptions() {
         // must not resurrect it.
         if (!existing || existing.pendingRemoval) return;
         const prior = priorReadOf(existing);
-        const fallbackLabel = accountLabel({ id: accountId, provider: existing.provider, config_dir: existing.configDir });
+        const fallbackLabel = accountLabel({
+          id: accountId,
+          provider: existing.provider,
+          config_dir: existing.configDir,
+        });
         if (event.kind === "ok") {
-          applyRefreshResult(accountId, existing.provider, fallbackLabel, prior, { ok: true, raw: event.snapshot });
+          applyRefreshResult(accountId, existing.provider, fallbackLabel, prior, {
+            ok: true,
+            raw: event.snapshot,
+          });
         } else {
-          applyRefreshResult(accountId, existing.provider, fallbackLabel, prior, { ok: false, error: event.error });
+          applyRefreshResult(accountId, existing.provider, fallbackLabel, prior, {
+            ok: false,
+            error: event.error,
+          });
         }
       });
       if (cancelled) {
@@ -594,14 +645,16 @@ export function useSubscriptions() {
       cancelled = true;
       unlisten?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** R4-3: what "tracked" means everywhere except the panel's own row list —
    * persistence, the tray, the Subscriptions screen. A row inside its undo
    * window is already gone from all three; it survives only as a slot in the
    * panel, which is why `subscriptions` (returned below) still carries it. */
-  const trackedSubscriptions = useMemo(() => subscriptions.filter((s) => !s.pendingRemoval), [subscriptions]);
+  const trackedSubscriptions = useMemo(
+    () => subscriptions.filter((s) => !s.pendingRemoval),
+    [subscriptions],
+  );
 
   // Persist the user-owned parts of the list (membership, custom labels,
   // pins) on every change, once the initial load has actually committed.
@@ -632,7 +685,10 @@ export function useSubscriptions() {
       try {
         await saveTracked(tracked);
       } catch (error) {
-        console.error("Quotos: saving the tracked list failed; will retry on the next change", error);
+        console.error(
+          "Quotos: saving the tracked list failed; will retry on the next change",
+          error,
+        );
         if (lastSavedRef.current === serialized) lastSavedRef.current = null;
       }
     })();

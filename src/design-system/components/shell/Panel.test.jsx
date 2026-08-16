@@ -1,6 +1,13 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BEAK_BASE_HALF, BEAK_HEIGHT, NOTCH_RESERVE, PANEL_RADIUS, Panel, buildPanelOutlinePath } from "./Panel.jsx";
+import {
+  BEAK_BASE_HALF,
+  BEAK_HEIGHT,
+  buildPanelOutlinePath,
+  NOTCH_RESERVE,
+  PANEL_RADIUS,
+  Panel,
+} from "./Panel.jsx";
 
 afterEach(() => {
   cleanup();
@@ -77,7 +84,9 @@ describe("buildPanelOutlinePath", () => {
   it("reserves enough headroom above the rect for the beak it draws", () => {
     expect(NOTCH_RESERVE).toBeGreaterThanOrEqual(BEAK_HEIGHT + 1);
     const d = buildPanelOutlinePath(332, 500, 20);
-    const yValues = [...d.matchAll(/(?:^|[A-Z]\s*)(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[2]));
+    const yValues = [...d.matchAll(/(?:^|[A-Z]\s*)(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)].map(
+      (m) => Number(m[2]),
+    );
     // Nothing may reach above y = 0, which is the transparent window's own
     // top edge once app.css's padding-top matches NOTCH_RESERVE.
     expect(Math.min(...yValues)).toBeGreaterThanOrEqual(0);
@@ -94,7 +103,9 @@ describe("buildPanelOutlinePath", () => {
     const d = buildPanelOutlinePath(332, 500, null);
     // No line segment should touch a y coordinate above the rect's own top
     // edge — the whole path stays within [NOTCH_RESERVE, NOTCH_RESERVE+height].
-    const yValues = [...d.matchAll(/(?:^|[A-Z]\s*)(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)].map((m) => Number(m[2]));
+    const yValues = [...d.matchAll(/(?:^|[A-Z]\s*)(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)].map(
+      (m) => Number(m[2]),
+    );
     expect(Math.min(...yValues)).toBeGreaterThanOrEqual(NOTCH_RESERVE - 0.01);
   });
 
@@ -140,18 +151,28 @@ describe("buildPanelOutlinePath", () => {
 // *same* path the fill was clipped to (so they can never drift apart).
 describe("Panel's docked beak rendering", () => {
   it("clips a single background layer to the same path the border strokes", () => {
-    const { container } = render(<Panel docked beakLeft={24}><div>content</div></Panel>);
+    const { container } = render(
+      <Panel docked beakLeft={24}>
+        <div>content</div>
+      </Panel>,
+    );
     const clipPath = container.querySelector("clipPath path");
-    const strokePath = container.querySelector("path[fill='none']") ?? container.querySelector("path[fill=none]");
+    const strokePath =
+      container.querySelector("path[fill='none']") ?? container.querySelector("path[fill=none]");
     expect(clipPath).toBeTruthy();
     expect(strokePath).toBeTruthy();
     expect(clipPath.getAttribute("d")).toBe(strokePath.getAttribute("d"));
   });
 
   it("there is exactly one element carrying a background fill (no second translucent layer)", () => {
-    const { container } = render(<Panel docked beakLeft={24}><div>content</div></Panel>);
+    const { container } = render(
+      <Panel docked beakLeft={24}>
+        <div>content</div>
+      </Panel>,
+    );
     const filled = Array.from(container.querySelectorAll("div")).filter(
-      (el) => el.style.background && el.style.background !== "" && el.style.background !== "transparent",
+      (el) =>
+        el.style.background && el.style.background !== "" && el.style.background !== "transparent",
     );
     expect(filled).toHaveLength(1);
   });
@@ -190,7 +211,8 @@ describe("Panel's docked beak rendering", () => {
       </Panel>,
     );
     const filled = Array.from(container.querySelectorAll("div")).filter(
-      (el) => el.style.background && el.style.background !== "" && el.style.background !== "transparent",
+      (el) =>
+        el.style.background && el.style.background !== "" && el.style.background !== "transparent",
     );
     expect(filled).toHaveLength(1);
     expect(filled[0].style.backdropFilter).toBe("");
@@ -222,7 +244,8 @@ describe("Panel's docked beak rendering", () => {
       </Panel>,
     );
     const filled = Array.from(container.querySelectorAll("div")).filter(
-      (el) => el.style.background && el.style.background !== "" && el.style.background !== "transparent",
+      (el) =>
+        el.style.background && el.style.background !== "" && el.style.background !== "transparent",
     );
     expect(filled).toHaveLength(1);
   });

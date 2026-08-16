@@ -1,5 +1,3 @@
-import React from "react";
-
 /** Maps consumed capacity to a fill color: teal when little is used, amber
  *  approaching the limit, red near or at it. This is the only place color
  *  changes meaning by value. I2: consumed, not remaining — a full bar and a
@@ -61,6 +59,7 @@ export function CapacityBar({
           background: color,
           borderRadius: "var(--radius-pill)",
           opacity: stale ? 0.4 : 1,
+          // biome-ignore format: reducedMotion.test.jsx scans this line for a --dur token; keep it on one line.
           transition: "width var(--dur-slow) var(--ease-out), background var(--dur-base), opacity var(--dur-base)",
         }}
       />

@@ -86,7 +86,12 @@ describe("subscription row — the contradictory row cannot be rendered again", 
 
   it("a waiting row states the time exactly once", () => {
     const { container } = renderRow(
-      sub({ state: "behind", used: 20, rateLimitedUntil: IN_AN_HOUR, reason: "The provider didn't answer." }),
+      sub({
+        state: "behind",
+        used: 20,
+        rateLimitedUntil: IN_AN_HOUR,
+        reason: "The provider didn't answer.",
+      }),
     );
 
     expect(container.textContent).toMatch(/Waiting for the rate budget/);

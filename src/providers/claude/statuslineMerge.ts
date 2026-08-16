@@ -45,12 +45,13 @@ export function reconcileWithStatusline(
   apiFetchedAtIso: string,
   feed: StatuslineFeedWire | null | undefined,
 ): unknown {
-  if (!feed || !feed.rate_limits) return usageRaw;
+  if (!feed?.rate_limits) return usageRaw;
   if (usageRaw === null || typeof usageRaw !== "object") return usageRaw;
 
   const feedTime = Date.parse(feed.written_at);
   const apiTime = Date.parse(apiFetchedAtIso);
-  if (!Number.isFinite(feedTime) || !Number.isFinite(apiTime) || feedTime <= apiTime) return usageRaw;
+  if (!Number.isFinite(feedTime) || !Number.isFinite(apiTime) || feedTime <= apiTime)
+    return usageRaw;
 
   const usage: Record<string, unknown> = { ...(usageRaw as Record<string, unknown>) };
   const fiveHour = feed.rate_limits.five_hour;
@@ -73,10 +74,18 @@ export function reconcileWithStatusline(
   }
 
   if (fiveHour && usage.five_hour && typeof usage.five_hour === "object") {
-    usage.five_hour = patchWindow(usage.five_hour as Record<string, unknown>, "utilization", fiveHour);
+    usage.five_hour = patchWindow(
+      usage.five_hour as Record<string, unknown>,
+      "utilization",
+      fiveHour,
+    );
   }
   if (sevenDay && usage.seven_day && typeof usage.seven_day === "object") {
-    usage.seven_day = patchWindow(usage.seven_day as Record<string, unknown>, "utilization", sevenDay);
+    usage.seven_day = patchWindow(
+      usage.seven_day as Record<string, unknown>,
+      "utilization",
+      sevenDay,
+    );
   }
   return usage;
 }
