@@ -52,37 +52,46 @@ pub(crate) fn set_status_item_state(
     let Some(status_item) = app.tray_by_id("main-status-item") else {
         return Ok(());
     };
-    {
-        // This command runs on the main thread and its body is a full
-        // bitmap composite plus a set_icon. The frontend fires it on every
-        // state change, most of which leave the pinned digits identical,
-        // so comparing first turns those into a no-op rather than
-        // main-thread work that also reaches
-        // schedule_resync_after_icon_change, which moves the open panel.
-        let state = app.state::<AppState>();
-        let mut last = state
-            .last_status_item_segments
-            .lock()
-            .expect("last_status_item_segments mutex poisoned");
-        let mut last_worst = state
-            .last_status_item_worst_used_percent
-            .lock()
-            .expect("last_status_item_worst_used_percent mutex poisoned");
-        let mut last_tooltip = state
-            .last_status_item_tooltip
-            .lock()
-            .expect("last_status_item_tooltip mutex poisoned");
-        // The tooltip participates in the skip guard because it can change
-        // alone: renaming a subscription rewrites its tooltip line while
-        // leaving every digit byte-identical.
-        if *last == segments && *last_worst == worst_used_percent && *last_tooltip == tooltip {
-            return Ok(());
-        }
-        *last = segments;
-        *last_worst = worst_used_percent;
-        *last_tooltip = tooltip;
+    if !record_if_changed(&app, segments, worst_used_percent, tooltip) {
+        return Ok(());
     }
     repaint_status_item(&app, &status_item)
+}
+
+/// This command runs on the main thread and its caller's body is a full
+/// bitmap composite plus a set_icon. The frontend fires it on every state
+/// change, most of which leave the pinned digits identical, so comparing
+/// first turns those into a no-op rather than main-thread work that also
+/// reaches `schedule_resync_after_icon_change`, which moves the open
+/// panel. The tooltip participates because it can change alone: renaming a
+/// subscription rewrites its tooltip line while leaving every digit
+/// byte-identical.
+fn record_if_changed(
+    app: &tauri::AppHandle,
+    segments: Vec<StatusItemSegmentDto>,
+    worst_used_percent: u8,
+    tooltip: String,
+) -> bool {
+    let state = app.state::<AppState>();
+    let mut last = state
+        .last_status_item_segments
+        .lock()
+        .expect("last_status_item_segments mutex poisoned");
+    let mut last_worst = state
+        .last_status_item_worst_used_percent
+        .lock()
+        .expect("last_status_item_worst_used_percent mutex poisoned");
+    let mut last_tooltip = state
+        .last_status_item_tooltip
+        .lock()
+        .expect("last_status_item_tooltip mutex poisoned");
+    if *last == segments && *last_worst == worst_used_percent && *last_tooltip == tooltip {
+        return false;
+    }
+    *last = segments;
+    *last_worst = worst_used_percent;
+    *last_tooltip = tooltip;
+    true
 }
 
 /// Flips the status item's "panel open" highlight on or off and repaints.
@@ -107,15 +116,12 @@ pub(crate) fn set_status_item_highlighted(app: &tauri::AppHandle, highlighted: b
 /// so this always reads both fresh from `AppState` rather than taking
 /// either as a parameter.
 ///
-/// `tray-icon` v0.24.2's macOS `set_title` only calls `NSStatusItem`'s
-/// `setTitle` when given `Some(..)`; `None` is a silent no-op that leaves
-/// the previous title stuck on screen, so this always clears it with
-/// `Some("")`, even though digits are drawn into the icon image, not the
-/// title. Colored digits have no path through `set_title` at all — see
-/// `status_item_render.rs`'s module doc. With any segments present, or the
-/// highlight active, this drops `icon_as_template` and paints a composed
-/// bitmap instead, since a plain template image cannot carry its own
-/// background tint; with neither, it reverts to the plain template glyph.
+/// Always clears the title with `Some("")`; see "tray-icon 0.24.2 on
+/// macOS" in platform-constraints.md for why `None` cannot do that here.
+/// With any segments present, or the highlight active, this drops
+/// `icon_as_template` and paints a composed bitmap instead, since a plain
+/// template image cannot carry its own background tint; with neither, it
+/// reverts to the plain template glyph.
 fn repaint_status_item(
     app: &tauri::AppHandle,
     status_item: &tauri::tray::TrayIcon,
@@ -215,20 +221,12 @@ fn repaint_status_item(
     Ok(())
 }
 
-/// `tray-icon` v0.24.2 always creates the status item with
-/// `NSVariableStatusItemLength` and never touches its length again. A
-/// variable-length item's button is not the same rect as its own image:
-/// AppKit reserves a fixed margin on each side of the image, independent
-/// of content, which both widens the gap to the neighboring menu bar item
-/// and makes a plain click's native highlight, painted across the
-/// button's bounds, read wider than the panel-open pill this app draws
-/// into the image's own bounds. See `status_item_render::draw_highlight_background`.
-///
-/// Pinning the item to a fixed length exactly matching the composited
-/// image removes that margin, so the button's bounds and the image's
-/// bounds become the same rect. Must run on every repaint, not just once:
-/// unlike a variable-length item, a fixed-length one never resizes itself
-/// when a new, differently sized image is set.
+/// Pins the status item to a fixed length exactly matching the composited
+/// image, closing the variable-length margin platform-constraints.md
+/// documents; see `status_item_render::draw_highlight_background` for the
+/// highlight that margin would otherwise widen past. Must run on every
+/// repaint, not just once: unlike a variable-length item, a fixed-length
+/// one never resizes itself when a new, differently sized image is set.
 #[cfg(target_os = "macos")]
 pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_width_px: u32) {
     // status_item_render's buffer is always 2x an 18pt-tall image, see
@@ -325,46 +323,54 @@ pub(crate) fn set_detached(
         .set_skip_taskbar(!detached)
         .map_err(|e| e.to_string())?;
     if detached {
-        // NSFloatingWindowLevel, which this sets, is right for a
-        // free-floating detached window, and specifically wrong for the
-        // popover; see the else branch.
-        window.set_always_on_top(true).map_err(|e| e.to_string())?;
-        // Dragging must never fight the docked-position self-correction;
-        // see AppState.docked_target's doc comment.
-        clear_docked_target(&app);
-        // set_focus() would activate the application, and activating
-        // while another app owns a full-screen Space is what makes macOS
-        // leave that Space. Tearing the panel off must not move the user.
-        if panel_window::make_nonactivating_panel(&window) {
-            panel_window::order_front_without_activating(&window);
-        } else {
-            let _ = window.set_focus();
-        }
+        enter_detached_mode(&app, &window)
     } else {
-        // Snapping back must restore NSStatusWindowLevel, which
-        // set_popover_collection_behavior below does, and must be the
-        // only level-setting call in this branch: tao's set_always_on_top,
-        // called by the if branch above, ends in an async dispatch to the
-        // main queue, and calling it here too would schedule a later
-        // runloop turn to drop the level back to floating right after
-        // this synchronous restore, undoing it.
-        set_popover_collection_behavior(&window);
-        // Snapping back must also re-dock the window under the status
-        // item, not just restore the chrome. This path has no fresh click
-        // to read a rect from, since it is triggered by the panel's own
-        // header button, so it uses the last rect seen by any status item
-        // event, `None` only before the app's first such event, which
-        // cannot happen here since detaching requires the panel to
-        // already be open.
-        if let Some((item_x, item_y)) = *state
-            .last_status_item_rect
-            .lock()
-            .expect("last_status_item_rect mutex poisoned")
-        {
-            reposition_under_status_item(&app, &window, item_x, item_y);
-        }
+        snap_back_to_docked(&app, &window, &state);
+        Ok(())
+    }
+}
+
+/// `NSFloatingWindowLevel`, which this sets, is right for a free-floating
+/// detached window, and specifically wrong for the popover; see
+/// `snap_back_to_docked`. Dragging must never fight the docked-position
+/// self-correction; see `AppState.docked_target`'s doc comment.
+/// `set_focus()` would activate the application, and activating while
+/// another app owns a full-screen Space is what makes macOS leave that
+/// Space, so tearing the panel off must not move the user.
+fn enter_detached_mode(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    window.set_always_on_top(true).map_err(|e| e.to_string())?;
+    clear_docked_target(app);
+    if panel_window::make_nonactivating_panel(window) {
+        panel_window::order_front_without_activating(window);
+    } else {
+        let _ = window.set_focus();
     }
     Ok(())
+}
+
+/// Restores `NSStatusWindowLevel`, through `set_popover_collection_behavior`,
+/// and must be the only level-setting call on this path: `tao`'s
+/// `set_always_on_top`, called by `enter_detached_mode`, ends in an async
+/// dispatch to the main queue, and calling it here too would schedule a
+/// later runloop turn to drop the level back to floating right after this
+/// synchronous restore, undoing it. Also re-docks the window under the
+/// status item, from the last rect seen by any status item event, since
+/// this path has no fresh click to read a rect from: it is triggered by
+/// the panel's own header button. `None` only before the app's first such
+/// event, which cannot happen here since detaching requires the panel to
+/// already be open.
+fn snap_back_to_docked(app: &tauri::AppHandle, window: &tauri::WebviewWindow, state: &AppState) {
+    set_popover_collection_behavior(window);
+    if let Some((item_x, item_y)) = *state
+        .last_status_item_rect
+        .lock()
+        .expect("last_status_item_rect mutex poisoned")
+    {
+        reposition_under_status_item(app, window, item_x, item_y);
+    }
 }
 
 fn compute_docked_layout(
