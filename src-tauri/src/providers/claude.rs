@@ -1177,7 +1177,7 @@ mod tests {
         let lag = fetched_at - headers_sent;
         assert!(
             lag < chrono::Duration::milliseconds(300),
-            "fetched_at lags response arrival by {lag} — stamped after the body was read?"
+            "fetched_at lags response arrival by {lag}, stamped after the body was read?"
         );
     }
 
