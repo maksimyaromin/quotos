@@ -16,8 +16,8 @@ pub(crate) const PANEL_WINDOW_WIDTH_LOGICAL: f64 = 360.0;
 pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 
 /// The status item glyph's own center, as an offset in points from the
-/// item's own left edge — not the whole button's center, which is why this
-/// needs deriving at all.
+/// item's own left edge, not the whole button's center. That distinction
+/// is why this needs deriving at all.
 ///
 /// `NSStatusItem` centers the whole composited image, glyph alone or glyph
 /// plus pinned digits, inside a button wider than the image by a system
@@ -34,7 +34,7 @@ pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 ///
 /// If `status item.rect()` is unavailable, this falls back to treating the
 /// glyph as flush with the item's own left edge rather than failing
-/// outright — a plausible worst case, not a crash.
+/// outright. That is a plausible worst case, not a crash.
 ///
 /// Returns points, never physical pixels; see `DisplayPoints`.
 fn glyph_center_offset_from_item_left_points(
@@ -96,7 +96,7 @@ pub(crate) struct DisplayPoints {
     ///
     /// This must never be hardcoded: a notched built-in display's menu bar
     /// can be noticeably taller than an unnotched external display's, so a
-    /// single offset is wrong on at least one of them — too small places
+    /// single offset is wrong on at least one of them: too small places
     /// the panel's top edge inside the bar, where AppKit clamps it flush
     /// with no gap; too large leaves an oversized gap.
     pub(crate) menu_bar_bottom: Option<f64>,
@@ -300,7 +300,7 @@ pub(crate) fn docked_layout_in_points(
 
     // Recomputed from the applied x, not the wanted one, so a screen-edge
     // clamp moves the beak across the panel instead of dragging it off the
-    // glyph. Clamped only to keep the notch on the panel at all —
+    // glyph. Clamped only to keep the notch on the panel at all:
     // buildPanelOutlinePath shrinks whichever top corner the notch
     // encroaches on rather than the notch giving way, since clamping the
     // notch position instead would move the beak visibly off the glyph.

@@ -459,10 +459,10 @@ fn place_window_top_left_sync(_window: &tauri::WebviewWindow, _x: f64, _y: f64) 
 /// `tao`'s `startDragging()` bottoms out in. `performWindowDragWithEvent:`
 /// does move the window, but doing so while the mouse stays down
 /// measurably reactivates the application, the same Space-losing failure
-/// `panel_window.rs` exists to prevent — and the same problem reproduces
-/// for this function's own replacement mechanism,
-/// `place_window_top_left_sync`, so relocating a window while the mouse
-/// button is held over it appears to carry an implicit activation outside
+/// `panel_window.rs` exists to prevent. The same problem reproduces for
+/// this function's own replacement mechanism, `place_window_top_left_sync`:
+/// relocating a window while the mouse button is held over it appears to
+/// carry an implicit activation outside
 /// `NSWindowStyleMaskNonactivatingPanel`'s own promise, which is scoped to
 /// key and main status, not window-server-level drag handling.
 /// Reactivation is therefore scoped to the physical gesture's duration

@@ -5,11 +5,11 @@
 //! different one while a full-screen Space is frontmost makes macOS leave
 //! that Space, the same transition Cmd-Tab produces. An ordinary `NSWindow`
 //! can only become key while its application is active, so
-//! `WebviewWindow::set_focus()` — `tao`'s `makeKeyAndOrderFront:` followed
-//! by `activateIgnoringOtherApps: YES` — triggered that transition on every
-//! panel open. `NSWindowStyleMaskNonactivatingPanel` lifts the constraint,
-//! but only on an `NSPanel`; set on a plain `NSWindow` it is silently
-//! inert.
+//! `WebviewWindow::set_focus()` triggered that transition on every panel
+//! open: it is `tao`'s `makeKeyAndOrderFront:` followed by
+//! `activateIgnoringOtherApps: YES`. `NSWindowStyleMaskNonactivatingPanel`
+//! lifts the constraint, but only on an `NSPanel`; set on a plain
+//! `NSWindow` it is silently inert.
 //!
 //! Tauri and `tao` create a plain `NSWindow` subclass with no switch for
 //! "make it a panel", so [`make_nonactivating_panel`] swaps the window's
