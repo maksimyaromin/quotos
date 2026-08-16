@@ -60,6 +60,13 @@ const MENU_GAP = 4; // between the "…" button's bottom edge and the menu's top
 const MENU_VIEWPORT_MARGIN = 8; // never closer than this to the window's own edge
 const MENU_MIN_WIDTH = 168;
 
+function nextMenuIndex(key: string, current: number, length: number): number {
+  if (key === "Home") return 0;
+  if (key === "End") return length - 1;
+  if (key === "ArrowDown") return current < 0 ? 0 : (current + 1) % length;
+  return current < 0 ? length - 1 : (current - 1 + length) % length;
+}
+
 function MenuItem({
   danger,
   disabled,
@@ -341,19 +348,7 @@ export function SubscriptionRow({
     if (items.length === 0) return;
     e.preventDefault();
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      e.key === "Home"
-        ? 0
-        : e.key === "End"
-          ? items.length - 1
-          : e.key === "ArrowDown"
-            ? current < 0
-              ? 0
-              : (current + 1) % items.length
-            : current < 0
-              ? items.length - 1
-              : (current - 1 + items.length) % items.length;
-    items[next].focus();
+    items[nextMenuIndex(e.key, current, items.length)].focus();
   };
 
   return (
