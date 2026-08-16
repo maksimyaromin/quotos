@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**322 automated tests pass** (201 vitest, 121 `cargo test`); `tsc --noEmit`,
+**325 automated tests pass** (204 vitest, 121 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -390,6 +390,20 @@ clean.
     but only overwrites `resets_at` when the feed actually supplies one.
     Pinned by 3 regression tests, the two preservation ones proven to fail
     against the old code.
+
+35. **Dismissing a row menu with a click no longer also performs the
+    click.** The window-level dismissal listened on `mousedown`, which
+    nulled the open-menu state before the same gesture's `click` event
+    arrived — so the row's own `menuOpen` guard (the prototype's
+    return-without-expanding rule) was dead, and the click that closed the
+    menu also expanded the row, or pressed whatever control sat under the
+    pointer, worst case "Open Claude Code" spawning a pty session. The
+    listener now runs on the window's *capture-phase* `click` and consumes
+    the event (stopPropagation + preventDefault) before React's delegated
+    handlers see it — pointer dismissal now follows the same
+    innermost-layer-first rule as Escape. Clicks inside the menu or on its
+    trigger (`data-quotos-menu-scope`) are exempt, exactly as before.
+    Pinned by 3 regression tests proven to fail against the old listener.
 
 ## Honest gaps, still open
 

@@ -330,13 +330,21 @@ rewritten each round, not appended to.
   unused `"repairing"` was removed from the union and both `StatusDot`
   copies); don't introduce new state values without updating both this file
   and the handoff's row-state table.
-- The "…" row menu (`SubscriptionRow.jsx`) closes on any interaction outside
-  itself via a single `window` `mousedown` listener in `App.tsx`, gated by
-  `data-quotos-menu-scope` on both the trigger button and the dropdown. It
-  only ever *closes* — never (re)opens — so it can't race the trigger
-  button's own toggle-on-click. Keep both elements' `data-quotos-menu-scope`
-  attribute if you touch this markup, or the menu will close itself on its
-  own click. Escape follows the same layering (R6b, App.test.tsx): the
+- The "…" row menu (`SubscriptionRow.jsx`) closes on any click outside
+  itself via a single capture-phase `window` `click` listener in `App.tsx`,
+  gated by `data-quotos-menu-scope` on both the trigger button and the
+  dropdown — and the dismissing click is *consumed* there
+  (stopPropagation + preventDefault at capture, before React's delegated
+  handlers), matching Escape's innermost-layer-first rule and the
+  prototype's own row guard, which returns without expanding (F6). It
+  used to listen on `mousedown` instead, which nulled the open-menu state
+  before the gesture's `click` arrived — so the row's own `menuOpen` guard
+  was dead and the dismissing click also expanded the row or pressed
+  whatever control sat under the pointer, worst case "Open Claude Code"
+  spawning a pty session. It only ever *closes* — never (re)opens — so it
+  can't race the trigger button's own toggle-on-click. Keep both elements'
+  `data-quotos-menu-scope` attribute if you touch this markup, or the menu
+  will close itself on its own click. Escape follows the same layering (R6b, App.test.tsx): the
   window keydown handler closes an open menu first and only a bare Escape
   hides the panel, a panel hide also resets the menu (via
   `onPanelVisibility` false — the prototype's `menuId: null`-on-open rule),

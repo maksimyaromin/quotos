@@ -135,19 +135,27 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // The "…" menu closes on any interaction outside itself or its trigger —
-  // never on interaction with them (see data-quotos-menu-scope in
-  // SubscriptionRow.jsx). Only ever closes, never (re)opens, so it can't
+  // The "…" menu closes on any click outside itself or its trigger — never
+  // on interaction with them (see data-quotos-menu-scope in
+  // SubscriptionRow.jsx). Registered on the window's capture phase and the
+  // dismissing click is consumed there, before React's delegated handlers
+  // ever see it: pointer dismissal follows the same innermost-layer-first
+  // rule as Escape above (and the prototype's own row guard, which returns
+  // without expanding) — it must never also expand a row or press whatever
+  // control sits under the pointer, worst case "Open Claude Code" spawning
+  // a sign-in session (F6). Only ever closes, never (re)opens, so it can't
   // race the trigger button's own toggle.
   useEffect(() => {
     if (!openMenuId) return;
-    const onMouseDown = (event: MouseEvent) => {
+    const onClickCapture = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest("[data-quotos-menu-scope]")) return;
+      event.preventDefault();
+      event.stopPropagation();
       setOpenMenuId(null);
     };
-    window.addEventListener("mousedown", onMouseDown);
-    return () => window.removeEventListener("mousedown", onMouseDown);
+    window.addEventListener("click", onClickCapture, true);
+    return () => window.removeEventListener("click", onClickCapture, true);
   }, [openMenuId]);
 
   const toggleExpand = (id: string) => {

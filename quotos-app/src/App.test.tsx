@@ -13,19 +13,22 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
 const hidePanel = vi.fn();
+const fetchSnapshotSpy = vi.fn();
 let visibilityCallback: ((visible: boolean) => void) | null = null;
 
 vi.mock("./lib/tauriClient", () => ({
   listAccounts: () => Promise.resolve([]),
-  fetchSnapshot: () =>
-    Promise.resolve({
+  fetchSnapshot: () => {
+    fetchSnapshotSpy();
+    return Promise.resolve({
       account_id: "claude:claude",
       provider: "claude",
       config_dir: "~/.claude",
       fetched_at: new Date().toISOString(),
       usage: { limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }] },
       profile: null,
-    }),
+    });
+  },
   hidePanel: () => hidePanel(),
   onPanelVisibility: (callback: (visible: boolean) => void) => {
     visibilityCallback = callback;
@@ -111,6 +114,54 @@ describe("Escape dismissal layering", () => {
 
     act(() => visibilityCallback!(false));
     expect(screen.queryByText("Stop tracking")).toBeNull();
+  });
+});
+
+// A real browser fires mousedown before click, so every dismissal here fires
+// both — the exact sequence that exposed F6: the old window-mousedown
+// listener nulled openMenuId first, which made the row's own menuOpen guard
+// dead by the time the click arrived, so the dismissing click also expanded
+// the row (or pressed the control under the pointer).
+describe("pointer dismissal consumes the dismissing click (F6)", () => {
+  function dismissByClicking(target: Element) {
+    fireEvent.mouseDown(target);
+    fireEvent.click(target);
+  }
+
+  it("a click on the row body only dismisses the menu — the row does not expand", async () => {
+    const trigger = await renderAppWithRow();
+    fireEvent.click(trigger);
+    expect(screen.getByText("Stop tracking")).toBeTruthy();
+    const expandToggle = screen.getByRole("button", { name: /1 limit/ });
+    expect(expandToggle.getAttribute("aria-expanded")).toBe("false");
+
+    dismissByClicking(screen.getByText("Claude"));
+    expect(screen.queryByText("Stop tracking")).toBeNull();
+    expect(expandToggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("only the dismissing click is consumed — the next click acts normally", async () => {
+    const trigger = await renderAppWithRow();
+    fireEvent.click(trigger);
+
+    dismissByClicking(screen.getByText("Claude"));
+    dismissByClicking(screen.getByText("Claude"));
+    expect(screen.getByRole("button", { name: /1 limit/ }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("a dismissing click on a button does not press it", async () => {
+    const trigger = await renderAppWithRow();
+    const callsBefore = fetchSnapshotSpy.mock.calls.length;
+    fireEvent.click(trigger);
+    expect(screen.getByText("Stop tracking")).toBeTruthy();
+
+    const refresh = screen.getByRole("button", { name: "Read all now" });
+    await act(async () => dismissByClicking(refresh));
+    expect(screen.queryByText("Stop tracking")).toBeNull();
+    expect(fetchSnapshotSpy.mock.calls.length).toBe(callsBefore);
+
+    await act(async () => dismissByClicking(refresh));
+    expect(fetchSnapshotSpy.mock.calls.length).toBe(callsBefore + 1);
   });
 });
 
