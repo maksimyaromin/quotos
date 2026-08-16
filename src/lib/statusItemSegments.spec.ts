@@ -97,12 +97,18 @@ describe("buildStatusItemSegments", () => {
     ]);
   });
 
-  test("colors past 75 amber and past 90 red", () => {
+  test("colors past 75 amber and past 90 red, the boundary itself included", () => {
     const subs = [
       subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 80 })] }),
       subscription({ id: "b", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 95 })] }),
     ];
     expect(buildStatusItemSegments(subs).map((s) => s.color)).toEqual(["amber", "red"]);
+
+    const atBoundary = [
+      subscription({ id: "a", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 75 })] }),
+      subscription({ id: "b", pinnedWindowIds: ["w"], windows: [window({ id: "w", used: 90 })] }),
+    ];
+    expect(buildStatusItemSegments(atBoundary).map((s) => s.color)).toEqual(["amber", "red"]);
   });
 
   test("turns every contributing figure amber when any contributing subscription is stale", () => {
