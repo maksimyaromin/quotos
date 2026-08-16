@@ -27,8 +27,7 @@ pub enum LoginItemStatus {
     /// Not registered.
     Disabled,
     /// The OS cannot resolve this app as a registrable login item. This
-    /// happens for an unbundled dev binary, or on a macOS version too old
-    /// to have `SMAppService`.
+    /// happens for an unbundled dev binary.
     NotFound,
 }
 
@@ -67,9 +66,6 @@ mod platform {
     #[link(name = "ServiceManagement", kind = "framework")]
     unsafe extern "C" {}
 
-    /// Returns `None` on a macOS version old enough to lack `SMAppService`,
-    /// meaning before macOS 13. The class lookup is the availability check
-    /// itself, so nothing here can panic on an older system.
     fn main_app_service() -> Option<Retained<AnyObject>> {
         let class = AnyClass::get(c"SMAppService")?;
         Some(unsafe { msg_send![class, mainAppService] })
