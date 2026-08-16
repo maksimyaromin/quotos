@@ -64,14 +64,26 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
 
 ## Architecture
 
-- **Module layout: one alias for `src/`, one for the design system's public
-  surface, both sourced from `tsconfig.json`'s own `paths` and nothing
-  else.** `@/*` resolves to `./src/*`; `@design-system` resolves to the
-  single file `src/design-system/index.ts`, not a wildcard into its
-  internals. Vite reads that same `paths` field natively via
-  `resolve.tsconfigPaths: true` in `vite.config.ts` (Vite 8) — chosen over a
-  duplicated `resolve.alias` block (two places to keep in sync, and the
-  thing this migration was asked to stop doing) and over the
+- **Module layout: exactly one alias, `@/*` → `./src/*`, in `tsconfig.json`'s
+  own `paths` and nowhere else.** Every internal package is reached the same
+  way through that one prefix, `@/lib/...`, `@/hooks/...`, `@/providers/...`,
+  including the design system: `@/design-system` resolves to
+  `src/design-system/index.ts` through the same wildcard's ordinary
+  directory-index resolution, the same as any other bundler-resolved bare
+  directory import, not through a second, design-system-specific `paths`
+  entry. An earlier pass of this migration gave the design system its own
+  bare, non-`@/`-prefixed specifier (`@design-system`) reasoning that a
+  second entry was needed to keep it off a wildcard reaching its internals —
+  wrong on both counts: a plain `@design-system` broke the one-prefix rule
+  the rest of the tree follows, and `@/*` already covers every path under
+  `src/design-system/` regardless of whether a second entry exists, so the
+  "protection" was never real — reaching `@/design-system/components/...`
+  directly was always possible either way. What actually keeps consumers on
+  the barrel is discipline, not config: nothing this migration wrote stops a
+  future import from reaching around it. Vite reads the same `paths` field
+  natively via `resolve.tsconfigPaths: true` in `vite.config.ts` (Vite 8) —
+  chosen over a duplicated `resolve.alias` block (two places to keep in
+  sync, and the thing this migration was asked to stop doing) and over the
   `vite-tsconfig-paths` plugin (same idea, but an extra dependency for
   something Vite now ships itself). Vitest inherits it for free since its
   `test` block lives inside the same `vite.config.ts`. The rule for when to

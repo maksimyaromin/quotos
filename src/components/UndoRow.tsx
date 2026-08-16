@@ -1,4 +1,4 @@
-import { Button } from "@design-system";
+import { Button } from "@/design-system";
 
 /** Stand-in for a just-removed row for five seconds. App.tsx owns the
  * timer. Adopted in place of a confirmation dialog: cheaper than a dialog,

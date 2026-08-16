@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "@design-system";
+import { Button } from "@/design-system";
 import { listAccounts, onPanelVisibility } from "@/lib/tauriClient";
 import type { AccountDescriptor, Subscription } from "@/types/entities";
 import { StatuslineControl } from "./StatuslineControl";

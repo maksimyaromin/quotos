@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "@design-system";
+import { Button } from "@/design-system";
 import { statuslineInstall, statuslineRemove, statuslineStatus } from "@/lib/tauriClient";
 import { isStatuslineError, type StatuslineIntegrationStatus } from "@/types/entities";
 

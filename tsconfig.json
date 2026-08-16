@@ -17,8 +17,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "@design-system": ["./src/design-system/index.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src"],

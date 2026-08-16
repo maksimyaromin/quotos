@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { SubscriptionRow } from "@design-system";
+import { SubscriptionRow } from "@/design-system";
 import { presentRow } from "@/lib/rowPresentation";
 import type { Subscription } from "@/types/entities";
 

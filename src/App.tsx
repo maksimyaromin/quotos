@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, IconButton, Panel, SubscriptionRow } from "@design-system";
+import { Button, IconButton, Panel, SubscriptionRow } from "@/design-system";
 import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "@/components/icons";
 import { SubscriptionsScreen } from "@/components/SubscriptionsScreen";
 import { UndoRow } from "@/components/UndoRow";
