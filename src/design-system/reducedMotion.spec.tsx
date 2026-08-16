@@ -5,11 +5,9 @@ import elevation from "./tokens/elevation.css?raw";
 
 afterEach(cleanup);
 
-// macOS "Reduce Motion" reaches the webview as prefers-reduced-motion.
-// tokens/elevation.css answers it in one place: zero the --dur-* tokens
-// every transition takes its duration from, stop the inline-styled
-// keyframe animations, and hide the shimmer overlay. jsdom cannot evaluate
-// a real media query, so these tests pin the pieces it relies on instead.
+// See elevation.css's own comment for the mechanism; jsdom cannot
+// evaluate a real media query, so these tests pin the pieces it relies on
+// instead.
 
 const reducedBlock = elevation.split("@media (prefers-reduced-motion: reduce)")[1];
 
