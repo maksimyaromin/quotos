@@ -2,9 +2,8 @@ pub mod claude;
 
 use serde::Serialize;
 
-/// One configured account Quotos knows how to read. `provider` is a stable
-/// slug, such as "claude". See "The provider seam" in architecture.md for
-/// what adding a second provider touches.
+/// `provider` is a stable slug, such as "claude". See "The provider seam"
+/// in architecture.md for what adding a second provider touches.
 #[derive(Serialize, Clone, Debug)]
 pub struct AccountDescriptor {
     pub id: String,
@@ -46,9 +45,8 @@ pub enum FetchError {
         message: String,
     },
     /// The access token merely aged out and Quotos could not renew it on
-    /// this machine, a local problem rather than an expired sign-in.
-    /// Conflating the two reports a working account as needing to sign in
-    /// again. See "Sign-in recovery" in claude-provider.md.
+    /// this machine, a local problem rather than an expired sign-in. See
+    /// "Sign-in recovery" in claude-provider.md.
     CredentialStale {
         message: String,
     },
