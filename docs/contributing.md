@@ -81,7 +81,7 @@ to exactly one of them; `tsc --showConfig -p <project>` answers, for any
 file, which project claims it and with which options:
 
 - `tsconfig.app.json` covers `src`: DOM libraries, no Node types, the
-  `@/*` path alias, target ES2023.
+  `@/*` path alias, target ES2024.
 - `tsconfig.node.json` covers `vite.config.ts`: Node types, bundler
   module resolution to match how Vite itself loads the file, target
   ES2023.
@@ -89,28 +89,29 @@ file, which project claims it and with which options:
   described below.
 
 `src`'s target follows the macOS floor the application supports:
-`src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 14, whose
-initial release shipped Safari 17.0. ES2023 is fully supported by that
-version — WebKit's own 16.4 release notes list class static
-initialization blocks, the last gap in ES2022, and every ES2023
-addition (Array find-from-last, the change-by-copy array methods,
-symbols as `WeakMap`/`WeakSet` keys, hashbang grammar) had already
-shipped by Safari 16.4 as well, so Safari 17 carries the complete set.
-Vite does not polyfill missing runtime APIs for an older engine, only
-lowers syntax, so a feature outside `lib` reaches that floor as a
-runtime crash, not a caught typecheck error.
+`src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 15, whose
+initial release shipped Safari 18.0. ES2024 is fully supported by that
+version. Its own two most recent additions, `Object.groupBy` /
+`Map.groupBy` and `Promise.withResolvers`, shipped in Safari 17.4;
+the rest of the year's spec — `Array.fromAsync`, resizable and
+transferable `ArrayBuffer`, growable `SharedArrayBuffer`, and the
+well-formed string methods — had already shipped in Safari 16.4, and
+the RegExp `v` flag in Safari 17.0. Safari 18 carries the complete set
+well before its own release. Vite does not polyfill missing runtime
+APIs for an older engine, only lowers syntax, so a feature outside
+`lib` reaches that floor as a runtime crash, not a caught typecheck
+error.
 
-`tools/` and `vite.config.ts` target ES2023 too, but for a different
-reason: they match the Node runtime that actually executes them —
-`package.json`'s `engines.node` is `>=24` — not the macOS floor. The
-app project's target happens to land on the same spec year right now
-because Safari 17 fully supports it; a future macOS floor bump that
-lands on a different Safari's ceiling can move `tsconfig.app.json` again
-without touching the Node-facing projects, since the two track genuinely
-different runtimes.
+`tools/` and `vite.config.ts` stay on ES2023, tracking the Node runtime
+that actually executes them — `package.json`'s `engines.node` is
+`>=24` — not the macOS floor. The app project's target used to land on
+the same spec year by coincidence, because Safari 17 fully supported
+it; the two have now diverged exactly as expected, since they track
+genuinely different runtimes and this macOS floor bump landed on a
+newer Safari's ceiling than ES2023.
 
 Vite's own production `build.target` is a separate setting from any of
-the above, pinned in `vite.config.ts` to `"safari17"` to match
+the above, pinned in `vite.config.ts` to `"safari18"` to match
 `minimumSystemVersion` exactly, rather than left at Vite's default,
 `baseline-widely-available`. That default tracks whatever the Baseline
 initiative currently calls widely available, which moves forward on its
