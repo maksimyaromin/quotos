@@ -175,6 +175,42 @@ const EMPTY: NormalizedUsage = {
   headlineWindowId: null,
 };
 
+/** `limits[]` when present and non-empty, otherwise the fixed top-level
+ * windows plus an opted-in `extra_usage` entry. Mirrors the same
+ * empty-limits-falls-through rule `pickAccountWideWeekly` applies when
+ * picking the headline. */
+function buildWindows(usage: Record<string, unknown>): LimitWindowEntity[] {
+  const rawLimits = usage.limits;
+  if (Array.isArray(rawLimits) && rawLimits.length > 0) {
+    return rawLimits
+      .filter((l): l is RawLimit => l !== null && typeof l === "object")
+      .map(windowFromLimit);
+  }
+
+  const windows = Object.keys(FIXED_WINDOW_LABELS)
+    .map((key) => windowFromFixed(key, usage[key]))
+    .filter((w): w is LimitWindowEntity => w !== null);
+
+  const extra = usage.extra_usage;
+  if (extra && typeof extra === "object") {
+    const e = extra as { is_enabled?: unknown; utilization?: unknown };
+    if (e.is_enabled === true) {
+      const used = clampPercent(e.utilization);
+      if (used !== null) {
+        windows.push({
+          id: buildWindowId("extra_usage", null),
+          name: "Extra usage",
+          scope: null,
+          used,
+          resetsAt: null,
+          isActive: true,
+        });
+      }
+    }
+  }
+  return windows;
+}
+
 /** Turns a raw `/api/oauth/usage` response into the generic window list
  * plus headline, everywhere in percent-consumed terms, never remaining.
  * Defensive throughout: tolerates unknown keys, absent fields, a
@@ -185,38 +221,7 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
     return EMPTY;
   }
   const usage = raw as Record<string, unknown>;
-
-  const rawLimits = usage.limits;
-  let windows: LimitWindowEntity[];
-
-  if (Array.isArray(rawLimits) && rawLimits.length > 0) {
-    windows = rawLimits
-      .filter((l): l is RawLimit => l !== null && typeof l === "object")
-      .map(windowFromLimit);
-  } else {
-    windows = Object.keys(FIXED_WINDOW_LABELS)
-      .map((key) => windowFromFixed(key, usage[key]))
-      .filter((w): w is LimitWindowEntity => w !== null);
-
-    const extra = usage.extra_usage;
-    if (extra && typeof extra === "object") {
-      const e = extra as { is_enabled?: unknown; utilization?: unknown };
-      if (e.is_enabled === true) {
-        const used = clampPercent(e.utilization);
-        if (used !== null) {
-          windows.push({
-            id: buildWindowId("extra_usage", null),
-            name: "Extra usage",
-            scope: null,
-            used,
-            resetsAt: null,
-            isActive: true,
-          });
-        }
-      }
-    }
-  }
-
+  const windows = buildWindows(usage);
   const headline = pickAccountWideWeekly(usage) ?? pickMostConsumed(windows);
   return {
     windows,
