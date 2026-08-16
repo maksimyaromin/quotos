@@ -69,6 +69,18 @@ function buildProfilePayload(name: string, orgType: string) {
   return { organization: { name, organization_type: orgType, subscription_status: "active" } };
 }
 
+/** The fields every snapshot carries regardless of scenario. `fetchedAt`
+ * defaults to now; only the statusline-reconciliation scenario backdates
+ * it, to leave room for a fresher feed reading. */
+function snapshotEnvelope(account: AccountDescriptor, fetchedAt = new Date().toISOString()) {
+  return {
+    account_id: account.id,
+    provider: "claude",
+    config_dir: account.config_dir,
+    fetched_at: fetchedAt,
+  };
+}
+
 // What discovery finds on this fake machine. Every entry here would have
 // resolved a real Keychain credential. A folder-only phantom with no
 // credential never reaches this list at all.
@@ -109,28 +121,19 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
   switch (account.id) {
     case "claude:claude":
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: buildUsagePayload(2, 3, 3),
         profile: buildProfilePayload("Personal", "claude_max"),
       });
     case "claude:claude-team":
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: buildUsagePayload(78, 82, 45),
         profile: buildProfilePayload("Scompler", "claude_team"),
       });
     case "claude:demo-critical":
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: buildUsagePayload(94, 91, 20),
         profile: buildProfilePayload("Critical demo", "claude_pro"),
       });
@@ -145,10 +148,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       // UI be reviewed end to end in a browser.
       if (recoveredAccounts.has(account.id)) {
         return delay({
-          account_id: account.id,
-          provider: "claude",
-          config_dir: account.config_dir,
-          fetched_at: new Date().toISOString(),
+          ...snapshotEnvelope(account),
           usage: buildUsagePayload(5, 8, 2),
           profile: buildProfilePayload("Recovered demo", "claude_pro"),
         });
@@ -177,10 +177,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         });
       }
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: buildUsagePayload(11, 19, 6),
         profile: buildProfilePayload("Renewed demo", "claude_max"),
       });
@@ -192,10 +189,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
     case "claude:demo-behind":
       if (n === 1) {
         return delay({
-          account_id: account.id,
-          provider: "claude",
-          config_dir: account.config_dir,
-          fetched_at: new Date().toISOString(),
+          ...snapshotEnvelope(account),
           usage: buildUsagePayload(12, 24, 8),
           profile: buildProfilePayload("Flaky demo", "claude_pro"),
         });
@@ -206,10 +200,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       // no windows at all, not a failure. Exercises the "No limits
       // reported yet." message with a teal, not amber or red, dot.
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: { limits: [] },
         profile: buildProfilePayload("No limits demo", "claude_pro"),
       });
@@ -217,10 +208,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       // Exercises headline and severity disagreeing: the weekly headline is
       // a healthy 20%, but the session is nearly out at 85%.
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: buildUsagePayload(85, 20, 8),
         profile: buildProfilePayload("Severity demo", "claude_pro"),
       });
@@ -231,10 +219,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       // reconcileWithStatusline end to end: the row should show the
       // fresher 45%, not the API's stale 12%.
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date(Date.now() - 30_000).toISOString(),
+        ...snapshotEnvelope(account, new Date(Date.now() - 30_000).toISOString()),
         usage: buildUsagePayload(12, 24, 8),
         profile: buildProfilePayload("Statusline demo", "claude_pro"),
         statusline: {
@@ -250,10 +235,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       // truncation in LimitWindow.jsx. Names are rendered verbatim, never
       // translated or shortened by this app.
       return delay({
-        account_id: account.id,
-        provider: "claude",
-        config_dir: account.config_dir,
-        fetched_at: new Date().toISOString(),
+        ...snapshotEnvelope(account),
         usage: {
           limits: [
             {
