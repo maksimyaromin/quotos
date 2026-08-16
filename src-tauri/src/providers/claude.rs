@@ -35,9 +35,7 @@ const CLI_LOOKUP_TIMEOUT: Duration = Duration::from_secs(6);
 /// `classify_unrenewable`.
 const SIGN_IN_EXPIRED: &str = "the stored sign-in is no longer accepted";
 
-/// `security(1)`'s exit status for `errSecItemNotFound`, measured. It is
-/// the one failure that genuinely means "not signed in", and every other
-/// one must not be reported as such.
+/// `security(1)`'s exit status for `errSecItemNotFound`, measured.
 const KEYCHAIN_ITEM_NOT_FOUND_EXIT: i32 = 44;
 
 fn home_dir() -> Option<PathBuf> {
@@ -277,10 +275,8 @@ fn epoch_ms(value: Option<&serde_json::Value>) -> Option<i64> {
     }
 }
 
-/// Read this account's stored credential from the macOS Keychain. Never
-/// logs the blob or the token. Read-only: `security find-generic-password`
-/// is the same call Claude Code itself is trusted for on this item (it is
-/// the ACL's own trusted application), so this cannot raise a prompt.
+/// Never logs the blob or the token. See "Reading the account" in
+/// claude-provider.md for why this call never raises a Keychain prompt.
 fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
     let service = keychain_service_for_config_dir(config_dir);
     let user = std::env::var("USER").map_err(|_| FetchError::Other {
@@ -623,8 +619,6 @@ async fn get_json(
             message: e.to_string(),
         })?;
 
-    // The server produced its answer no later than this. Anything written
-    // after it, such as a statusline feed line, is genuinely fresher.
     let fetched_at = chrono::Utc::now().to_rfc3339();
     let status = resp.status().as_u16();
     let retry_after_secs = resp
@@ -689,8 +683,7 @@ pub struct UsageRead {
 /// The read follows three rules:
 ///  1. Renew before spending a request whenever the stored token is at or
 ///     past its own expiry. Claude Code's tokens live roughly 8 hours, so
-///     this is the ordinary case, and handling it locally means an
-///     aged-out token never reaches the user as a 401 at all.
+///     this is the ordinary case, not an edge case.
 ///  2. On an unexpected 401, renew once, retrying only if the credential
 ///     actually changed. See "Sign-in recovery" in claude-provider.md.
 ///  3. Reserve one budget slot per real request, not per read attempt.
@@ -850,10 +843,6 @@ mod tests {
         }
     }
 
-    /// Exactly two Keychain-backed config dirs must yield exactly two
-    /// subscriptions. A plain folder that merely matches the `.claude-*`
-    /// naming pattern must never appear, because it resolves no
-    /// credential.
     #[test]
     fn only_credentialed_config_dirs_become_subscriptions() {
         let home = TempHome::new();
@@ -876,8 +865,6 @@ mod tests {
         );
     }
 
-    /// A directory in the right place with no credential behind it must
-    /// not become a subscription, full stop.
     #[test]
     fn plain_folder_without_credential_is_not_a_subscription() {
         let home = TempHome::new();
@@ -891,7 +878,6 @@ mod tests {
         );
     }
 
-    /// A credentialed default `~/.claude` alone is still discovered.
     #[test]
     fn default_dir_alone_is_discovered_when_credentialed() {
         let home = TempHome::new();
@@ -903,7 +889,6 @@ mod tests {
         assert_eq!(found[0].id, "claude:claude");
     }
 
-    /// No `.claude*` directories at all: no subscriptions, no panic.
     #[test]
     fn empty_home_yields_nothing() {
         let home = TempHome::new();
@@ -918,8 +903,6 @@ mod tests {
         assert_eq!(claude_config_dir_env(&home, &home.join(".claude")), None);
     }
 
-    /// Any other config dir is a genuinely separate account and does need
-    /// the variable.
     #[test]
     fn a_sibling_config_dir_still_sets_claude_config_dir() {
         let home = PathBuf::from("/Users/someone");
@@ -927,8 +910,6 @@ mod tests {
         assert_eq!(claude_config_dir_env(&home, &team), Some(team));
     }
 
-    /// The same default and sibling split the keychain lookup already
-    /// relies on, kept in one place so the two can never disagree.
     #[test]
     fn keychain_service_matches_the_default_config_dir_split() {
         let home = PathBuf::from("/Users/someone");
@@ -957,9 +938,7 @@ mod tests {
         }
     }
 
-    /// An access token that simply aged out, with a refresh token that is
-    /// still perfectly valid, is not an expired sign-in. The account is
-    /// signed in, and Claude Code renews it on its own next use.
+    /// Claude Code renews an aged-out access token on its own next use.
     #[test]
     fn an_aged_out_token_with_a_valid_refresh_token_is_never_an_expired_sign_in() {
         let now = 1_000_000_000_000;
@@ -975,8 +954,6 @@ mod tests {
         }
     }
 
-    /// The genuinely signed-out case still reports as such: nothing left
-    /// that could renew the credential without a new sign-in.
     #[test]
     fn an_expired_token_with_no_usable_refresh_is_an_expired_sign_in() {
         let now = 1_000_000_000_000;
@@ -993,8 +970,6 @@ mod tests {
         ));
     }
 
-    /// A token the provider refuses while it is still current by its own
-    /// metadata really is a dead sign-in (revoked, or signed out elsewhere).
     #[test]
     fn a_current_token_the_provider_refuses_is_an_expired_sign_in() {
         let now = 1_000_000_000_000;
@@ -1005,16 +980,12 @@ mod tests {
         ));
     }
 
-    /// A credential with no recorded expiry must never be assumed expired.
-    /// Guessing here is what produces false sign-in warnings.
     #[test]
     fn a_credential_without_an_expiry_is_not_treated_as_expired() {
         let now = 1_000_000_000_000;
         assert!(!credential(None, None, true).access_expired(now, EXPIRY_MARGIN_MS));
     }
 
-    /// The margin exists so a token that expires seconds from now is renewed
-    /// before a request is spent on it, not after it 401s.
     #[test]
     fn a_token_expiring_within_the_margin_counts_as_expired() {
         let now = 1_000_000_000_000;
@@ -1036,8 +1007,6 @@ mod tests {
         assert!(parsed.has_refresh_token);
     }
 
-    /// Seconds and RFC 3339 are tolerated rather than silently read as a
-    /// wrong instant, which would misclassify every read.
     #[test]
     fn tolerates_other_timestamp_encodings() {
         assert_eq!(
@@ -1059,8 +1028,6 @@ mod tests {
         assert!(parse_credential("not json at all").is_none());
     }
 
-    /// A 403 is a refusal, not a missing authentication. It must never
-    /// travel down the sign-in path.
     #[test]
     fn a_403_is_not_an_authentication_problem() {
         assert!(matches!(
@@ -1077,9 +1044,6 @@ mod tests {
         ));
     }
 
-    /// The CLI is looked up, never assumed to be on `PATH`: a Finder- or
-    /// Dock-launched app inherits no `PATH` at all, so children must be
-    /// handed a usable one.
     #[test]
     fn child_path_always_contains_the_system_directories() {
         let path = child_path_including(Some(Path::new("/somewhere/bin")));
@@ -1152,8 +1116,6 @@ mod tests {
         );
     }
 
-    /// Serve one canned HTTP response on a local socket and run `get_json`
-    /// against it.
     fn get_json_against(status_line: &str, body: &[u8]) -> Result<HttpResult, FetchError> {
         use std::io::{Read as _, Write as _};
 
@@ -1181,12 +1143,10 @@ mod tests {
         result
     }
 
-    /// A 200 whose body is not JSON, such as a proxy's HTML error page or
-    /// a truncated stream, must be a failed read. Treating it as `Ok(Null)`
-    /// would read as a healthy "no limits reported yet" to the whole
-    /// pipeline, wiping every window and status item digit while still bumping
-    /// lastReadAt. A failed read instead lets the frontend's
-    /// prior-good-data logic say "behind" honestly.
+    /// Treating this as `Ok(Null)` would read as a healthy "no limits
+    /// reported yet" to the whole pipeline, wiping every window and status
+    /// item digit while still bumping lastReadAt. A failed read instead
+    /// lets the frontend's prior-good-data logic say "behind" honestly.
     #[test]
     fn a_200_with_an_unreadable_body_is_a_failed_read_not_an_empty_one() {
         let result = get_json_against("200 OK", b"<html>gateway error</html>");
@@ -1202,10 +1162,9 @@ mod tests {
         }
     }
 
-    /// The deliberate asymmetry of the test above. A non-200 answer is
-    /// classified by its status alone, and its body is never consumed, so
-    /// an HTML-bodied 401 must still reach the 401 handling rather than
-    /// become a network error that hides the real verdict.
+    /// The deliberate asymmetry of the test above: an HTML-bodied 401 must
+    /// still reach the 401 handling rather than become a network error
+    /// that hides the real verdict.
     #[test]
     fn a_non_200_with_an_unreadable_body_still_classifies_by_status() {
         let result = get_json_against("401 Unauthorized", b"<html>denied</html>")
