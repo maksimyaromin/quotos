@@ -178,9 +178,9 @@ describe("panel reopen refreshes the presentation clock", () => {
     visibilityCallback = null;
   });
 
-  // macOS suspends a hidden WKWebView's timers, so the NOW_TICK interval
-  // does not run while the panel is closed. Modeled here by moving the
-  // wall clock without ever letting the interval fire.
+  // Models the panel being closed long enough for stale-relative-time
+  // painting to matter: the wall clock moves without ever letting the
+  // NOW_TICK interval itself fire.
   test("re-reads `now` on visible=true so relative times are not hours stale", async () => {
     await renderAppWithRow();
     expect(screen.getByText("Last read just now")).toBeTruthy();
