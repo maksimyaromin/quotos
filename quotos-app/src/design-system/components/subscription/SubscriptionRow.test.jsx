@@ -291,3 +291,50 @@ describe("the row menu exposes WAI-ARIA menu semantics (v7)", () => {
     expect(screen.getByRole("separator")).toBeTruthy();
   });
 });
+
+// F1: the rename field shows the *composed* label — the custom override when
+// one exists — and commit used to send null ("clear the custom name") whenever
+// the draft equaled it. So confirming without editing, or just opening Rename
+// and clicking away (blur commits), silently deleted an existing custom name.
+// Unchanged must be a no-op; only an explicitly emptied field clears.
+describe("committing a rename without editing keeps an existing custom name (F1)", () => {
+  function openRenameField(onRename) {
+    render(
+      <SubscriptionRow label="My Max" provider="Anthropic" state="working" used={40} menuOpen onRename={onRename} />
+    );
+    fireEvent.click(screen.getByText("Rename"));
+    return screen.getByRole("textbox");
+  }
+
+  it("Enter with an untouched draft is a no-op, not a clear", () => {
+    const onRename = vi.fn();
+    const input = openRenameField(onRename);
+    expect(input.value).toBe("My Max");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("clicking away (blur) with an untouched draft is a no-op too", () => {
+    const onRename = vi.fn();
+    const input = openRenameField(onRename);
+    fireEvent.blur(input);
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it("an edited draft commits the trimmed new name", () => {
+    const onRename = vi.fn();
+    const input = openRenameField(onRename);
+    fireEvent.change(input, { target: { value: "  Team account " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRename).toHaveBeenCalledWith("Team account");
+  });
+
+  it("an explicitly emptied field clears the custom name", () => {
+    const onRename = vi.fn();
+    const input = openRenameField(onRename);
+    fireEvent.change(input, { target: { value: "   " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRename).toHaveBeenCalledWith(null);
+  });
+});

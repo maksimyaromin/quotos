@@ -220,7 +220,14 @@ export function SubscriptionRow({
   const commitRename = () => {
     setRenaming(false);
     const trimmed = draft.trim();
-    onRename?.(trimmed.length > 0 && trimmed !== label ? trimmed : null);
+    // F1: `label` is the composed name — the custom override when one exists —
+    // so an unchanged draft must be a no-op, never a clear. Treating "equals
+    // what the field showed" as "revert to provider name" wiped an existing
+    // custom name on every confirm-without-edit, and blur commits too, so
+    // merely opening Rename and clicking away did the same. Only an
+    // explicitly emptied field clears the custom name.
+    if (trimmed === label) return;
+    onRename?.(trimmed.length > 0 ? trimmed : null);
   };
 
   const stale = state === "behind";

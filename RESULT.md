@@ -286,6 +286,16 @@ clean.
     interactive demo's per-window pin toggle adds/removes tray figures in
     subscription order.
 
+28. **Confirming a rename without editing no longer deletes the custom
+    name** — the rename field shows the *composed* label (the custom
+    override when one exists), and commit treated "draft equals what the
+    field showed" as a request to revert to the provider name. So pressing
+    Enter on an untouched draft — or merely opening Rename and clicking
+    away, since blur commits — silently cleared an existing custom name and
+    persisted the loss. Unchanged is now a no-op; only an explicitly
+    emptied field clears (both design-system copies, bundle regenerated,
+    four regression tests).
+
 ## Honest gaps, still open
 
 - **Where `claude setup-token` writes for the default account** is unverified
