@@ -76,8 +76,6 @@ describe("persistence on the native path, migrating from localStorage", () => {
 
     await loadTracked();
 
-    // A bad migration must be recoverable by going back to the old build.
-    // That only works if the old key was never touched.
     expect(window.localStorage.getItem(LEGACY_KEY)).toBe(raw);
   });
 
@@ -134,9 +132,6 @@ describe("persistence on the native path, migrating from localStorage", () => {
   });
 
   test("saveTracked rejects when the native write fails, so the caller can retry", async () => {
-    // The caller holds the record of what was last saved. A failure
-    // swallowed here would be a save remembered as done, never retried,
-    // and the change would die with the process.
     invoke.mockRejectedValue(new Error("disk full"));
     await expect(saveTracked([SAMPLE])).rejects.toThrow("disk full");
   });
@@ -150,9 +145,6 @@ describe("persistence on the native path, migrating from localStorage", () => {
 
     const loaded = await loadTracked();
 
-    // This session still shows the real list from memory. The native store
-    // stayed empty and the source key untouched, so the next launch simply
-    // migrates again.
     expect(loaded).toEqual([SAMPLE]);
     expect(window.localStorage.getItem(LEGACY_KEY)).toBe(raw);
   });
