@@ -24,6 +24,7 @@ const lanes: Lane[] = [
   { name: "test", script: "test" },
   { name: "hidden characters", script: "check:hidden-characters" },
   { name: "spec suffix", script: "check:spec-suffix" },
+  { name: "doc links", script: "check:doc-links" },
   { name: "cargo fmt", script: "cargo:fmt" },
   { name: "cargo clippy", script: "cargo:clippy" },
 ];
