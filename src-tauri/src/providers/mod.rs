@@ -3,9 +3,8 @@ pub mod claude;
 use serde::Serialize;
 
 /// One configured account Quotos knows how to read. `provider` is a stable
-/// slug, such as "claude". The frontend keys UI behavior off entity data,
-/// never off this string, so a second provider is a new module plus a new
-/// `AccountDescriptor` source, nothing else.
+/// slug, such as "claude". See "The provider seam" in architecture.md for
+/// what adding a second provider touches.
 #[derive(Serialize, Clone, Debug)]
 pub struct AccountDescriptor {
     pub id: String,
@@ -18,11 +17,9 @@ pub struct RawSnapshot {
     pub account_id: String,
     pub provider: String,
     pub config_dir: String,
-    /// When the usage HTTP response arrived. Never when this snapshot was
-    /// assembled. The statusline merge's freshest-wins comparison runs
-    /// against this, and the feed is read after the fetch, so a later
-    /// stamp would make the API side always look fresher and silently
-    /// disable the second source. See `claude::UsageRead`.
+    /// When the usage HTTP response arrived, never when this snapshot was
+    /// assembled. See "The statusline feed" in claude-provider.md for why
+    /// a later stamp silently disables the freshest-wins comparison.
     pub fetched_at: String,
     pub usage: serde_json::Value,
     pub profile: Option<serde_json::Value>,
@@ -43,16 +40,15 @@ pub enum FetchError {
     NotConnected {
         message: String,
     },
-    /// Credential exists but the provider rejected it, even after the
-    /// one-shot refresh-and-retry.
+    /// The sign-in itself has ended. See "Sign-in recovery" in
+    /// claude-provider.md.
     Unauthorized {
         message: String,
     },
-    /// The stored credential is present and its refresh half is still
-    /// valid, but its access token has expired and Quotos could not get it
-    /// renewed on this machine. This is a local problem, not an expired
-    /// sign-in. Conflating the two reports a working account as needing to
-    /// sign in again. Never say "sign-in expired" for this.
+    /// The access token merely aged out and Quotos could not renew it on
+    /// this machine, a local problem rather than an expired sign-in.
+    /// Conflating the two reports a working account as needing to sign in
+    /// again. See "Sign-in recovery" in claude-provider.md.
     CredentialStale {
         message: String,
     },
