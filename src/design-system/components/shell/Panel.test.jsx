@@ -154,7 +154,65 @@ describe("Panel's docked beak rendering", () => {
       (el) => el.style.background && el.style.background !== "" && el.style.background !== "transparent",
     );
     expect(filled).toHaveLength(1);
-    expect(filled[0].style.backdropFilter).not.toBe("");
+  });
+
+  // W1. This assertion used to be its exact opposite — it required the fill
+  // layer to carry a non-empty `backdropFilter` — and it is inverted here on
+  // purpose, not deleted. The captain reported the panel's surface
+  // intermittently going flat instead of staying see-through ("фон должен
+  // оставаться прозрачным всегда а не мерцать вот так"), and the flat state
+  // is what `backdrop-filter: saturate(180%) blur(28px)` produces when its
+  // pass actually runs against the content behind this transparent window:
+  // a 28px blur of a text-bearing backdrop is a flat wash. The see-through
+  // state — the one the design intends and the one his good frames show — is
+  // a plain alpha composite of --bg-panel over whatever is behind, with the
+  // backdrop's own detail arriving *sharp*, i.e. with no blur contribution
+  // whatsoever. So the filter was never part of the intended look; it was
+  // only ever the flicker. See Panel.jsx's fill-layer comment for the
+  // measurements.
+  //
+  // What this test can and cannot hold: the flat-vs-see-through outcome
+  // lives in a real WKWebView on a `transparent: true` NSWindow and cannot
+  // be observed in jsdom at all (no layout, no compositor, no window). What
+  // *is* testable, and what is pinned here, is the DOM/style contract that
+  // decides it — the fill layer must ship with no backdrop filter under
+  // either vendor spelling, docked or detached. If someone reintroduces one,
+  // this fails; the on-screen behaviour it stands in for was verified
+  // separately by burst-capturing the live panel (390 frames blurred with
+  // the filter, 200 frames sharp without it) — see RESULT.md.
+  it.each([
+    ["docked", { docked: true, beakLeft: 24 }],
+    ["detached", { docked: false }],
+  ])("ships the fill layer with no backdrop filter (%s)", (_label, props) => {
+    const { container } = render(
+      <Panel {...props}>
+        <div>content</div>
+      </Panel>,
+    );
+    const filled = Array.from(container.querySelectorAll("div")).filter(
+      (el) => el.style.background && el.style.background !== "" && el.style.background !== "transparent",
+    );
+    expect(filled).toHaveLength(1);
+    expect(filled[0].style.backdropFilter).toBe("");
+    expect(filled[0].style.webkitBackdropFilter ?? "").toBe("");
+    expect(filled[0].getAttribute("style")).not.toMatch(/backdrop-filter/i);
+  });
+
+  // The same rule one level up: nothing in the panel's own subtree may carry
+  // a backdrop filter either. Besides bringing the flicker back, a non-none
+  // `backdrop-filter` makes an element a containing block for fixed-position
+  // descendants, which is exactly what SubscriptionRow's fixed "…" dropdown
+  // relies on no ancestor doing (R4-5).
+  it("no element anywhere in the panel carries a backdrop filter", () => {
+    const { container } = render(
+      <Panel docked beakLeft={24}>
+        <div>content</div>
+      </Panel>,
+    );
+    const offenders = Array.from(container.querySelectorAll("[style]")).filter((el) =>
+      /backdrop-filter/i.test(el.getAttribute("style") ?? ""),
+    );
+    expect(offenders).toHaveLength(0);
   });
 
   it("detached (no beak) still renders the same single-layer shape", () => {

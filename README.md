@@ -117,3 +117,17 @@ a fresh identity from, and reusing v4's identity is what proves the flattened
 build still reads the captain's real tracked-subscription list
 (`~/Library/Application Support/com.quotos.desktop.v4/tracked.json`) instead
 of booting empty. See the corresponding `AGENTS.md` sharp-edges entry.
+
+## Round-5.1 build ("v5.1")
+
+`tauri.v5-1.conf.json` (`npx tauri build --config
+src-tauri/tauri.v5-1.conf.json`, `productName` "Quotos v5.1") carries the
+panel-background flicker fix and **reuses `com.quotos.desktop.v4` again**,
+for the same reason v5 did: the fix is a single CSS-property removal on the
+panel's fill layer with no change to the persisted data shape, so there is
+nothing to isolate a fresh identity from, and sharing v4's identity is what
+lets the captain judge the fix against his own real tracked subscriptions
+rather than an empty panel. `tauri.v5.conf.json` stays in place so the two
+builds can be run side by side — note that, sharing an identifier, they also
+share `instance.lock`, so only one of them runs at a time (by design; see
+`AGENTS.md` on `single_instance.rs`).

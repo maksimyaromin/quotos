@@ -703,14 +703,64 @@ each round, not appended to.
   reaches -2px above the box), so closing that gap costs nothing at the top;
   the left/right 14px margin is still load-bearing for the shadow (B9).
 - **The beak is one shape with the panel, not a second layer.** Two stacked
-  translucent elements paint `rgba(19,21,24,0.86)` twice at the overlap and the
-  beak had no `backdrop-filter` of its own — a seam the captain could see over
-  a bright desktop. `Panel.jsx`'s `buildPanelOutlinePath` emits a single path
-  used both as the `clip-path` for one fill+blur layer and as one 0.5px stroke
-  round the whole outline. Don't try to fix a seam by tuning opacities:
-  backdrop-filter's blur kernel doesn't sample across an element boundary, so
-  only one shape actually removes it. Judge it over a *bright* backdrop — a
-  dark one hides both faults.
+  translucent elements paint `rgba(19,21,24,0.86)` twice at the overlap — a
+  seam the captain could see over a bright desktop, because 0.86 over 0.86
+  is not 0.86. `Panel.jsx`'s `buildPanelOutlinePath` emits a single path used
+  both as the `clip-path` for one fill layer and as one 0.5px stroke round
+  the whole outline. Don't try to fix a seam by tuning opacities; only one
+  shape actually removes it. Judge it over a *bright* backdrop — a dark one
+  hides the fault. **W1 correction:** this entry used to argue the
+  single-shape rule partly from `backdrop-filter`'s blur kernel not sampling
+  across an element boundary. There is no `backdrop-filter` on the panel any
+  more (next entry), so that half of the argument is void; the double-alpha
+  half stands on its own and was re-verified over a bright backdrop after
+  the blur was dropped — beak and panel measured one uniform `(51,52,55)`
+  against a `#f2f3f5` backdrop, matching `0.86*(19,21,24) +
+  0.14*(242,243,245)` exactly, with no seam at the join.
+- **W1: the panel's fill layer carries no `backdrop-filter`, and must not
+  get one back.** It used to carry `--blur-vibrancy` (`saturate(180%)
+  blur(28px)`), and that was the cause of the captain's *"фон должен
+  оставаться прозрачным всегда а не мерцать вот так"*. On a `transparent:
+  true` window whose page paints nothing behind the panel, that backdrop
+  pass usually resolves to nothing and the surface degenerates to a plain
+  alpha composite over the desktop — the see-through look the whole design
+  is built around — but not always: in his screencast ~20% of frames instead
+  show the pass running against the *below-window* content and blurring it
+  into a flat wash. Measured off his own frames: against a backdrop whose
+  detail is mean `|dI/dx| = 16.9`, the good frames read `2.2` inside the
+  panel (`16.9 x 0.14 = 2.4` predicted for an unblurred pass-through, i.e.
+  no blur contribution at all) while the flat frames read `0.04`; and the
+  flat surface un-composites through the 0.86 fill to a uniform `229`
+  against that same backdrop's real mean of `230.2`. So the blur was never
+  part of the intended look, only of the flicker, and removing it is
+  visually neutral in the good state. Two reasons never to reintroduce one
+  anywhere in the panel's subtree: the flicker, and the fact that a non-none
+  `backdrop-filter` establishes a containing block for fixed-position
+  descendants — which is exactly what R4-5 (the row's `position: fixed` "…"
+  dropdown) depends on no ancestor doing. Pinned by `Panel.test.jsx`; the
+  on-screen half of the invariant is only observable in a live WKWebView and
+  is not testable in jsdom, so that half was verified by burst-capturing the
+  real panel over a controlled backdrop (390 frames flat with the filter,
+  200 frames sharp without it). `--blur-vibrancy` itself stays defined:
+  `docs/design/system/`'s card and ui_kit pages still use it on in-page mock
+  surfaces, where a backdrop-filter has real in-page content to blur and
+  behaves normally.
+- **What a transparent Tauri window can and cannot tell you about
+  compositing, from an agent seat.** The technique that settled W1 and is
+  worth reusing: give the *page* a known high-frequency background
+  (`html { background: repeating-linear-gradient(...) }` — the root
+  element's background is the document canvas, so it needs no new element,
+  no new stacking context, and disturbs the layer tree as little as
+  anything can), then burst-capture the live panel with `screencapture -x
+  -o -R <bounds from CGWindowListCopyWindowInfo>` in a shell loop (~14
+  fps here, no sleep needed) and reduce each frame to one number — the
+  per-pixel brightness standard deviation of a band inside the panel. A
+  stripe period well under the blur radius makes the metric binary: sd ≈ 2
+  means the backdrop pass ran, sd ≈ 18 means the surface is a plain alpha
+  composite. What this cannot do is reproduce the *intermittency*, because
+  distinguishing the two states needs a bright, detailed backdrop *behind
+  the window*, and what is behind the window on this machine is not
+  something an agent may rearrange.
 - **The tray image carries fixed side padding, always.** `tray_render`'s
   `SIDE_PAD_PX` (6pt per side) exists so A11's "panel open" highlight reads as
   a pressed menu bar button rather than a box hugging the ink, and it is
@@ -1050,7 +1100,11 @@ each round, not appended to.
   identity is what lets the flattened build prove itself against the
   captain's real tracked-subscription list at
   `~/Library/Application Support/com.quotos.desktop.v4/tracked.json`
-  instead of booting empty.
+  instead of booting empty. `tauri.v5-1.conf.json` ("Quotos v5.1", the W1
+  panel-background fix) reuses it a third time on the same reasoning. One
+  consequence of that shared identity is worth knowing before testing two
+  of these side by side: they also share `instance.lock`, so the second one
+  launched exits quietly rather than opening a window.
 
 ## Maintaining this file
 

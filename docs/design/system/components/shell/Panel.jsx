@@ -117,20 +117,18 @@ export function buildPanelOutlinePath(width, height, beakLeft) {
  *  it and the header carries a snap-back affordance instead (see App.tsx).
  *
  *  Docked, the beak is fused into the panel's own outline as one shape —
- *  a single fill, a single `backdrop-filter` pass, and one 0.5px border
- *  tracing the whole boundary (rect *and* beak edges, no seam where they
- *  meet) — via one SVG path (`buildPanelOutlinePath`) used both as a
- *  `clip-path` for a background layer and as the stroke itself. Two
- *  translucent layers stacked on top of each other (the beak's old
- *  rotated-square div, painted over the panel body wherever they
- *  overlapped) is exactly what read as a visible seam over a real desktop —
- *  0.86 alpha over 0.86 alpha is not 0.86, and the old beak had no
- *  `backdrop-filter` of its own, so it also never blurred what was behind
- *  it the way the panel did. See AGENTS.md's R3-4 note for the measurements
- *  that caught this and why a two-element approach (even a seamless
- *  butt-join) isn't the fix: backdrop-filter's blur kernel doesn't sample
- *  across a real element boundary, so nothing short of one shape actually
- *  removes the seam.
+ *  a single fill and one 0.5px border tracing the whole boundary (rect
+ *  *and* beak edges, no seam where they meet) — via one SVG path
+ *  (`buildPanelOutlinePath`) used both as a `clip-path` for a background
+ *  layer and as the stroke itself. Two translucent layers stacked on top
+ *  of each other (the beak's old rotated-square div, painted over the
+ *  panel body wherever they overlapped) is exactly what read as a visible
+ *  seam over a real desktop: 0.86 alpha over 0.86 alpha is not 0.86. One
+ *  shape, one fill, one stroke is what removes it — re-verified over a
+ *  bright backdrop after the blur was dropped (see the fill layer below),
+ *  since the original argument for one shape leaned partly on the blur
+ *  kernel not sampling across an element boundary and that argument is
+ *  gone now. The remaining reason still holds on its own.
  *
  *  The header is always grab/grabbing — dragging it is how the panel
  *  detaches (there is no detach button). `onHeaderPointerDown` is wired by
@@ -186,12 +184,43 @@ export function Panel({
     <div data-quotos-panel="true" style={{ position: "relative", width: "var(--panel-width)", ...detachedFixed, ...style }}>
       {pathD ? (
         <>
-          {/* The fill + blur layer — clipped to the exact same path the
-              stroke (below, painted after the content so it's never
-              partly covered by the content box's own edge) traces, so
-              there is nothing for a second translucent layer to double up
-              against. The clipPath def itself has no visual footprint of
-              its own — just referenced by `clip-path` below. */}
+          {/* The fill layer — clipped to the exact same path the stroke
+              (below, painted after the content so it's never partly
+              covered by the content box's own edge) traces, so there is
+              nothing for a second translucent layer to double up against.
+              The clipPath def itself has no visual footprint of its own —
+              just referenced by `clip-path` below.
+
+              W1: it carries **no `backdrop-filter`**, deliberately, and
+              that is the fix for the captain's *"фон должен оставаться
+              прозрачным всегда а не мерцать"*. It used to carry
+              `var(--blur-vibrancy)` (`saturate(180%) blur(28px)`).
+              Quotos's window is `transparent: true` and its page paints
+              nothing behind this element, so the backdrop pass has no
+              in-page content to blur — most of the time it resolves to
+              nothing and the surface degenerates to a plain alpha
+              composite of this 0.86 fill over the desktop, which is the
+              see-through look the whole design is built around. But it
+              does not always resolve to nothing: in the captain's own
+              screencast, ~20% of frames instead show that pass running
+              against the *below-window* content, blurring it into a flat
+              wash. Measured off his frames, the two states are
+              unambiguous — over a Gmail window whose own detail measures
+              mean |dI/dx| = 16.9, the good frames read 2.2 inside the
+              panel (16.9 x 0.14 = 2.4 predicted for an unblurred pass-
+              through: no blur at all), the flat frames read 0.04, and the
+              flat surface un-composites through this fill to a uniform
+              229 against a real backdrop mean of 230.2. So the blur never
+              contributed anything to how the panel is *supposed* to look;
+              its only effect was the flicker. Removing it makes the good
+              state the only reachable state, with the colours, alpha,
+              rim, shadow and beak geometry all untouched.
+
+              Do not add one back here, and do not add one to any ancestor
+              of the panel body: besides restoring the flicker, a non-none
+              `backdrop-filter` makes an element a containing block for
+              fixed-position descendants, which is what SubscriptionRow's
+              own R4-5 note depends on not happening. */}
           <svg width="0" height="0" style={{ position: "absolute" }}>
             <defs>
               <clipPath id={clipId}>
@@ -203,8 +232,6 @@ export function Panel({
             style={{
               position: "absolute", top: -NOTCH_RESERVE, left: 0, width: PANEL_WIDTH, height: beakBoxHeight,
               background: "var(--bg-panel)",
-              backdropFilter: "var(--blur-vibrancy)",
-              WebkitBackdropFilter: "var(--blur-vibrancy)",
               boxShadow: "var(--shadow-popover)",
               clipPath: `url(#${clipId})`,
               WebkitClipPath: `url(#${clipId})`,
