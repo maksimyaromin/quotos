@@ -12,8 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Rust / Tauri build output (src-tauri/.gitignore also covers these locally;
-# listed here too so a fresh clone's status is clean regardless of subdir)
+# Also covered by src-tauri/.gitignore. Listed here too so a fresh clone's
+# status is clean regardless of which directory git runs from.
 src-tauri/target
 src-tauri/gen
 

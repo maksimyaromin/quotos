@@ -7,8 +7,6 @@
   },
   "files": {
     "ignoreUnknown": true,
-    // Biome's scope here is JS/TS/JSX/JSON only — fonts, SVGs, CSS and
-    // markdown are handled by other tools or not at all.
     "includes": ["**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx", "**/*.json", "**/*.jsonc"]
   },
   "formatter": {
@@ -29,9 +27,7 @@
     "rules": {
       "preset": "recommended",
       "a11y": {
-        // Decorative glyphs and deliberately custom interactive surfaces
-        // (row click-away catcher, "…" menu) predate this ruleset. Revisit
-        // rule-by-rule in stage 2 rather than reshape behavior here.
+        // TODO: audit these rules individually instead of disabling them wholesale.
         "noSvgWithoutTitle": "off",
         "noStaticElementInteractions": "off",
         "useKeyWithClickEvents": "off",
@@ -51,8 +47,7 @@
   },
   "overrides": [
     {
-      // Non-null assertions are idiomatic in test setup/fixtures; the
-      // production-code rule stays on everywhere else.
+      // Non-null assertions are idiomatic in test fixtures. The production rule stays on elsewhere.
       "includes": ["**/*.spec.ts", "**/*.spec.tsx"],
       "linter": {
         "rules": {
