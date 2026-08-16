@@ -27,6 +27,7 @@ const lanes: Lane[] = [
   { name: "spec suffix", script: "check:spec-suffix" },
   { name: "doc links", script: "check:doc-links" },
   { name: "kebab case", script: "check:kebab-case" },
+  { name: "comment length", script: "check:comment-length" },
   { name: "cargo fmt", script: "cargo:fmt" },
   { name: "cargo clippy", script: "cargo:clippy" },
   { name: "cargo test", script: "cargo:test" },

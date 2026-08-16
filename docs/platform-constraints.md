@@ -180,3 +180,28 @@ startup, long before anything else forks; this was always a test-binary
 concurrency artifact, never a production defect. Any new test that
 spawns a real child process is a reintroduction of this hazard and
 should take its environment reading as a parameter the same way.
+
+## Pinning `objc2` feature flags
+
+`Cargo.toml`'s `[target.'cfg(target_os = "macos")'.dependencies]` block
+only exists at all because Core Text gives sharper status item digits
+than a hand-rolled bitmap font, and that whole family of crates is
+macOS-only since the crate only ever runs as a menu bar app there. Every
+feature list under it is pinned to exactly what `tauri`'s own transitive
+use of the `objc2` family already resolves in `Cargo.lock`, so `cargo
+check` needs no network access to add a new crate version: default
+features on `objc2-app-kit` pull in `objc2-core-video`, and default
+features on `objc2-core-graphics` pull in `objc2-metal`, neither of
+which this crate's actual `NSFont`, `NSFontDescriptor`, and
+`CGBitmapContext`-based text rendering needs, and neither of which is
+already resolved. `objc2-app-kit`'s `NSStatusBar`, `NSStatusBarButton`,
+and `NSStatusItem` features, reached through
+`tray_icon::TrayIcon::ns_status_item()`, add no new resolution either,
+since the `tray-icon` crate itself already requests those same three for
+the same `objc2-app-kit` version.
+
+## The `_lib` crate name suffix
+
+`[lib]`'s `name = "quotos_app_lib"` looks redundant next to the binary's
+own `quotos_app`, but dropping the suffix conflicts with the bin name on
+Windows; see [cargo#8519](https://github.com/rust-lang/cargo/issues/8519).
