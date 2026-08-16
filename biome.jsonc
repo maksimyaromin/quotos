@@ -53,7 +53,7 @@
     {
       // Non-null assertions are idiomatic in test setup/fixtures; the
       // production-code rule stays on everywhere else.
-      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "includes": ["**/*.spec.ts", "**/*.spec.tsx"],
       "linter": {
         "rules": {
           "style": {
