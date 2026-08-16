@@ -1,8 +1,11 @@
 {
   "name": "quotos-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.5.1",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -11,7 +14,11 @@
     "test": "vitest run",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "lint": "biome lint ."
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "cargo:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+    "cargo:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "verify": "node tools/verify.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

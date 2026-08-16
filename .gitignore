@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Rust / Tauri build output (src-tauri/.gitignore also covers these locally;
+# listed here too so a fresh clone's status is clean regardless of subdir)
+src-tauri/target
+src-tauri/gen
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
