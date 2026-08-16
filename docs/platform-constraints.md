@@ -22,6 +22,14 @@ Every relaxation the policy carries is load-bearing:
 - `connect-src ipc: http://ipc.localhost` for Tauri's own IPC transport;
   removing it breaks every `invoke` call.
 
+`img-src 'self'` grants nothing beyond that default: every icon and glyph
+in the webview is inline SVG markup, never a fetched resource, and the
+status item's own bitmap is composited in Rust and handed to AppKit
+directly, never touching the webview at all. `img-src` stays explicit
+rather than left to fall back to `default-src` so a future, more
+permissive `default-src` can't silently widen it too. `tools/checks/csp.spec.ts`
+pins both this and the next paragraph's claim.
+
 The policy names no remote host anywhere. Every HTTP request this app
 makes happens on the Rust side.
 
