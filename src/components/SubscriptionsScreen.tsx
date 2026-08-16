@@ -107,8 +107,6 @@ export function SubscriptionsScreen({
               {r.tracked ? "Remove" : "Add"}
             </Button>
           </div>
-          {/* The statusline opt-in offer, only for tracked accounts, right
-              where "Add subscription" already lives. */}
           {r.tracked ? <StatuslineControl configDir={r.path} /> : null}
         </div>
       ))}
