@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**319 automated tests pass** (198 vitest, 121 `cargo test`); `tsc --noEmit`,
+**322 automated tests pass** (201 vitest, 121 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -379,6 +379,17 @@ clean.
     tests proven to fail against the old hook. (This also removes the main
     route into F5's stale-restore race — the full re-capture fix is still
     open.)
+
+34. **A statusline reading without a reset time no longer blanks the API's.**
+    The feed's ingest side only requires `used_percentage` (`statusline.rs`'s
+    `extract_window`), so a fresher reading with `resets_at: null` is
+    routine — but `reconcileWithStatusline` wrote the feed's `resets_at`
+    unconditionally, so that reading erased the API's real reset timestamp
+    and the row's "Resets today at…" line flickered out. All four patch
+    sites now go through one helper that always refreshes the percentage
+    but only overwrites `resets_at` when the feed actually supplies one.
+    Pinned by 3 regression tests, the two preservation ones proven to fail
+    against the old code.
 
 ## Honest gaps, still open
 

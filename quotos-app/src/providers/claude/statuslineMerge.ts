@@ -1,8 +1,24 @@
-import type { StatuslineFeedWire } from "../../types/entities";
+import type { StatuslineFeedWire, StatuslineWindowWire } from "../../types/entities";
 
 function isoFromEpochSeconds(sec: number | null | undefined): string | null {
   if (typeof sec !== "number" || !Number.isFinite(sec)) return null;
   return new Date(sec * 1000).toISOString();
+}
+
+/** The feed's ingest side only requires `used_percentage` (statusline.rs's
+ * `extract_window`), so a fresher reading with `resets_at: null` is routine.
+ * The window's reset time hasn't changed just because the feed omitted it —
+ * refresh the percentage, keep the API's own `resets_at` unless the feed
+ * actually supplies a newer one. */
+function patchWindow(
+  window: Record<string, unknown>,
+  percentKey: "percent" | "utilization",
+  feedWindow: StatuslineWindowWire,
+): Record<string, unknown> {
+  const patched = { ...window, [percentKey]: feedWindow.used_percentage };
+  const resets = isoFromEpochSeconds(feedWindow.resets_at);
+  if (resets !== null) patched.resets_at = resets;
+  return patched;
 }
 
 /** S2: reconciles the Claude Code statusline's zero-cost feed with the API
@@ -46,10 +62,10 @@ export function reconcileWithStatusline(
       if (entry === null || typeof entry !== "object") return entry;
       const limit = entry as Record<string, unknown>;
       if (limit.kind === "session" && fiveHour) {
-        return { ...limit, percent: fiveHour.used_percentage, resets_at: isoFromEpochSeconds(fiveHour.resets_at) };
+        return patchWindow(limit, "percent", fiveHour);
       }
       if (limit.kind === "weekly_all" && sevenDay) {
-        return { ...limit, percent: sevenDay.used_percentage, resets_at: isoFromEpochSeconds(sevenDay.resets_at) };
+        return patchWindow(limit, "percent", sevenDay);
       }
       return limit;
     });
@@ -57,18 +73,10 @@ export function reconcileWithStatusline(
   }
 
   if (fiveHour && usage.five_hour && typeof usage.five_hour === "object") {
-    usage.five_hour = {
-      ...(usage.five_hour as Record<string, unknown>),
-      utilization: fiveHour.used_percentage,
-      resets_at: isoFromEpochSeconds(fiveHour.resets_at),
-    };
+    usage.five_hour = patchWindow(usage.five_hour as Record<string, unknown>, "utilization", fiveHour);
   }
   if (sevenDay && usage.seven_day && typeof usage.seven_day === "object") {
-    usage.seven_day = {
-      ...(usage.seven_day as Record<string, unknown>),
-      utilization: sevenDay.used_percentage,
-      resets_at: isoFromEpochSeconds(sevenDay.resets_at),
-    };
+    usage.seven_day = patchWindow(usage.seven_day as Record<string, unknown>, "utilization", sevenDay);
   }
   return usage;
 }

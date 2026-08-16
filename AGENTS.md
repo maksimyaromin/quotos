@@ -445,7 +445,10 @@ rewritten each round, not appended to.
   already asserts exists (never synthesizes one from `null`/absent — the
   write-mechanism contract's "never double-count"), which is also what
   makes "no interactive session is feeding it" require zero special-casing:
-  an empty or stale feed is just never fresher. `providers/registry.ts`'s
+  an empty or stale feed is just never fresher. A fresher feed reading with
+  no `resets_at` (the ingest requires only `used_percentage`) refreshes the
+  percentage but keeps the API's own reset time — never blank a field the
+  feed simply omitted (F3 of the 2026-08-16 review). `providers/registry.ts`'s
   `Normalizer` signature carries a `NormalizeContext` (`fetchedAt`,
   `statuslineFeed`) for this — a provider with nothing to reconcile just
   ignores it.

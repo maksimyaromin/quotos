@@ -127,4 +127,54 @@ describe("reconcileWithStatusline", () => {
       expect(result.seven_day.utilization).toBe(3);
     });
   });
+
+  // F3: the ingest side only requires used_percentage, so a fresher feed
+  // reading with resets_at: null is routine — it must refresh the percent
+  // without blanking the reset time the API supplied for the same window.
+  describe("F3: a feed with no resets_at preserves the API's reset time", () => {
+    it("keeps the API's resets_at in the limits[] shape while the percent updates", () => {
+      const usage = {
+        limits: [
+          { kind: "session", percent: 12, resets_at: "2026-08-15T15:00:00Z", scope: null, is_active: true },
+          { kind: "weekly_all", percent: 24, resets_at: "2026-08-20T00:00:00Z", scope: null, is_active: false },
+        ],
+      };
+      const feed = feedWith({
+        five_hour: { used_percentage: 45, resets_at: null },
+        seven_day: { used_percentage: 60, resets_at: null },
+      });
+      const result = reconcileWithStatusline(usage, API_FETCHED_AT, feed) as typeof usage;
+      const session = result.limits.find((l) => l.kind === "session")!;
+      const weekly = result.limits.find((l) => l.kind === "weekly_all")!;
+      expect(session.percent).toBe(45);
+      expect(session.resets_at).toBe("2026-08-15T15:00:00Z");
+      expect(weekly.percent).toBe(60);
+      expect(weekly.resets_at).toBe("2026-08-20T00:00:00Z");
+    });
+
+    it("keeps the API's resets_at in the fixed top-level shape while the percent updates", () => {
+      const usage = {
+        five_hour: { utilization: 2, resets_at: "2026-08-15T15:00:00Z" },
+        seven_day: { utilization: 3, resets_at: "2026-08-20T00:00:00Z" },
+      };
+      const feed = feedWith({
+        five_hour: { used_percentage: 45, resets_at: null },
+        seven_day: { used_percentage: 60, resets_at: null },
+      });
+      const result = reconcileWithStatusline(usage, API_FETCHED_AT, feed) as typeof usage;
+      expect(result.five_hour.utilization).toBe(45);
+      expect(result.five_hour.resets_at).toBe("2026-08-15T15:00:00Z");
+      expect(result.seven_day.utilization).toBe(60);
+      expect(result.seven_day.resets_at).toBe("2026-08-20T00:00:00Z");
+    });
+
+    it("still lets a feed that supplies a reset time win over the API's", () => {
+      const usage = {
+        limits: [{ kind: "session", percent: 12, resets_at: "2026-08-15T15:00:00Z", scope: null, is_active: true }],
+      };
+      const feed = feedWith({ five_hour: { used_percentage: 45, resets_at: 1786899600 } });
+      const result = reconcileWithStatusline(usage, API_FETCHED_AT, feed) as typeof usage;
+      expect(result.limits[0].resets_at).toBe(new Date(1786899600 * 1000).toISOString());
+    });
+  });
 });
