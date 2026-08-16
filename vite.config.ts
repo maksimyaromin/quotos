@@ -8,10 +8,10 @@ export default defineConfig(async () => ({
 
   build: {
     // This value matches `minimumSystemVersion` in src-tauri/tauri.conf.json.
-    // macOS 14.0 bundles Safari 17 as its WebKit engine. Vite's own default
+    // macOS 15.0 bundles Safari 18 as its WebKit engine. Vite's own default
     // target floats forward over time, so pinning this explicitly keeps the
     // bundle's actual engine floor from drifting away from the declared one.
-    target: "safari17",
+    target: "safari18",
   },
 
   resolve: {
