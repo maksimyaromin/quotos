@@ -70,8 +70,8 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
   });
 
   test("flips above the button rather than off the bottom of the window", () => {
-    // A row near the panel's bottom, which is exactly where the clipping was
-    // visible: the menu cannot open downward and stay inside a 560px window.
+    // A row near the panel's bottom: the menu cannot open downward and
+    // still fit inside a 560px window.
     anchorButtonAt({ top: 520, bottom: 540, right: 320 });
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(122);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(178);
