@@ -32,11 +32,9 @@ export function normalize(
 /** The outcome-to-state-and-reason mapping is provider-owned, so a second
  * provider can supply its own without touching the generic
  * `useSubscriptions.ts`; the state vocabulary itself, see `types/entities.ts`'s
- * `SubscriptionState` doc, is fixed. `rate_limited` is deliberately not one
- * of the cases handled here: a self-imposed budget wait is never a health
- * state, so the shell intercepts it before calling into any provider's
- * mapper and restores whatever state this function returned for the
- * previous attempt. */
+ * `SubscriptionState` doc, is fixed. See `ReadOutcome`'s doc for why
+ * `rate_limited` never reaches this function; the shell restores whatever
+ * state this function returned for the previous attempt instead. */
 export function mapOutcome(outcome: ReadOutcome, hadGoodRead: boolean): OutcomeResult {
   if (outcome.kind === "ok") {
     const noLimits = outcome.normalized.used === null && outcome.normalized.windows.length === 0;
