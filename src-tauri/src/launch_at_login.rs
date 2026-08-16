@@ -1,30 +1,15 @@
-//! Launch at login, through SMAppService, available on macOS 13 and newer.
-//! This is the OS's own login-item registry, surfaced in System Settings
-//! under General, then Login Items.
-//!
-//! The OS is the single owner of this state. Quotos stores nothing. The
-//! menu checkbox is drawn from [`status`] at build time and re-read after
-//! every toggle, so a registration the OS refused reads as still off
-//! instead of lying. The realistic way a registration gets refused is a
-//! bare `cargo` or dev binary that is not an `.app` bundle, since
-//! `SMAppService` only registers bundles. Registration applies to the app
-//! bundle itself. The statusline helper copy in `statusline.rs` lives at a
-//! different path on disk and is never registered.
-//!
-//! `ServiceManagement` is not linked by anything else in the dependency
-//! tree, so the `#[link]` block below is the entire link directive.
-//! `status_item_render`'s `text` module takes the same zero-new-crates approach
-//! with Core Text.
+//! Launch at login, through `SMAppService`, available on macOS 13 and newer.
+//! The OS is the single owner of this state; Quotos stores nothing and
+//! reads it fresh on every call, so a registration the OS refused reads as
+//! still off instead of lying. `SMAppService` only registers `.app`
+//! bundles, so a bare `cargo` or dev binary can never register.
 
-/// What the OS currently says about Quotos's login item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoginItemStatus {
-    /// Registered and active. Quotos starts at login.
     Enabled,
     /// Registered, but macOS withholds it until the user approves it in
     /// System Settings.
     RequiresApproval,
-    /// Not registered.
     Disabled,
     /// The OS cannot resolve this app as a registrable login item. This
     /// happens for an unbundled dev binary.
@@ -32,21 +17,17 @@ pub enum LoginItemStatus {
 }
 
 impl LoginItemStatus {
-    /// Whether the login item exists at all from the user's point of view,
-    /// which is what the menu checkbox shows. `RequiresApproval` counts:
-    /// the item is registered and visible in System Settings, merely
-    /// awaiting consent there. Unchecking the box for this state would
-    /// misreport what toggling it again actually does, which is
-    /// unregister rather than register.
+    /// `RequiresApproval` counts as registered: the item is already
+    /// visible in System Settings, merely awaiting consent, and toggling
+    /// it again would unregister rather than register.
     pub fn is_registered(self) -> bool {
         matches!(self, Self::Enabled | Self::RequiresApproval)
     }
 }
 
 /// `SMAppServiceStatus`'s raw values, per `ServiceManagement/SMAppService.h`.
-/// `0` is `notRegistered`. An unknown future value also degrades to
-/// [`LoginItemStatus::Disabled`], so the checkbox reads unchecked and
-/// toggling it attempts a plain register, which is the correct recovery.
+/// `0` is `notRegistered`; an unknown future value also degrades to
+/// [`LoginItemStatus::Disabled`], so toggling it attempts a plain register.
 fn status_from_raw(raw: isize) -> LoginItemStatus {
     match raw {
         1 => LoginItemStatus::Enabled,
@@ -63,6 +44,9 @@ mod platform {
     use objc2::runtime::{AnyClass, AnyObject};
     use objc2_foundation::NSError;
 
+    // No other dependency links ServiceManagement, so nothing else forces
+    // dyld to load it; without this, `AnyClass::get(c"SMAppService")` finds
+    // no class to look up.
     #[link(name = "ServiceManagement", kind = "framework")]
     unsafe extern "C" {}
 
@@ -91,7 +75,6 @@ mod platform {
     }
 }
 
-/// What the OS currently says. Read fresh on every call, never cached.
 pub fn status() -> LoginItemStatus {
     #[cfg(target_os = "macos")]
     {
@@ -103,9 +86,9 @@ pub fn status() -> LoginItemStatus {
     }
 }
 
-/// Registers or unregisters Quotos as a login item. On success the change
-/// is already durable in the OS's own registry, so read [`status`] back
-/// for what to display rather than assuming the request took effect.
+/// On success, read [`status`] back for what to display rather than
+/// assuming the request took effect: registration can still require the
+/// user's approval in System Settings.
 pub fn set_registered(register: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -128,8 +111,6 @@ mod tests {
         assert_eq!(status_from_raw(2), LoginItemStatus::RequiresApproval);
         assert_eq!(status_from_raw(3), LoginItemStatus::NotFound);
         assert_eq!(status_from_raw(0), LoginItemStatus::Disabled);
-        // An unknown future value must degrade to "off", never crash or
-        // read as registered.
         assert_eq!(status_from_raw(99), LoginItemStatus::Disabled);
     }
 
@@ -141,10 +122,9 @@ mod tests {
         assert!(!LoginItemStatus::NotFound.is_registered());
     }
 
-    /// Read-only smoke of the real ObjC path: proves `ServiceManagement`
-    /// actually links and the selectors resolve at runtime. Deliberately
-    /// never calls `set_registered`. Mutating the login items of whatever
-    /// machine runs the tests is not a test's business.
+    /// Proves the selectors resolve at runtime, without calling
+    /// `set_registered`: mutating the login items of whatever machine
+    /// runs the tests is not a test's business.
     #[cfg(target_os = "macos")]
     #[test]
     fn the_real_status_call_answers_without_crashing() {
