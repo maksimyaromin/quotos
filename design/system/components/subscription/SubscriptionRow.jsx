@@ -488,13 +488,20 @@ export function SubscriptionRow({
 
       {/* expanded detail — always mounted, animated via grid-template-rows so
           expand/collapse is a deliberate motion rather than a pop, and never
-          shifts layout by itself (I4). */}
+          shifts layout by itself (I4). Collapsed it must also be
+          visibility-hidden, not merely clipped: overflow leaves the per-window
+          pin buttons in the tab order, so Tab vanished into the closed row and
+          Enter toggled a tray digit with nothing on screen (F2). visibility
+          transitions on the same token — it animates discretely, keeping the
+          content visible while the row closes and only then dropping it from
+          the tab order. */}
       <div
         aria-hidden={!expanded}
         style={{
           display: "grid",
           gridTemplateRows: expanded && windows && windows.length > 0 ? "1fr" : "0fr",
-          transition: "grid-template-rows var(--dur-base) var(--ease-standard)",
+          visibility: expanded && windows && windows.length > 0 ? "visible" : "hidden",
+          transition: "grid-template-rows var(--dur-base) var(--ease-standard), visibility var(--dur-base) var(--ease-standard)",
         }}
       >
         <div style={{ overflow: "hidden", minHeight: 0 }}>

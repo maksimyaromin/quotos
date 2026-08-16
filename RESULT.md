@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**313 automated tests pass** (192 vitest, 121 `cargo test`); `tsc --noEmit`,
+**316 automated tests pass** (195 vitest, 121 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (192) from `quotos-app/`; `cargo test` (121)
+- **Tests**: `npx vitest run` (195) from `quotos-app/`; `cargo test` (121)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -353,6 +353,19 @@ clean.
     is never consumed, and an HTML-bodied 401 must keep reaching the 401
     handling. Both sides pinned by local-server regression tests; the
     failure one failed against the old code on its first run.
+
+32. **Tab no longer disappears into a collapsed row.** The expanded detail
+    area is always mounted (the I4 grid-template-rows animation needs it),
+    and `0fr` + `overflow: hidden` + `aria-hidden` only *clipped* the
+    per-window pin buttons — they stayed in the tab order, so keyboard focus
+    vanished into the closed row and Enter toggled a tray digit with nothing
+    visible on screen. The collapsed container is now also
+    `visibility: hidden`, which is what actually removes clipped content
+    from the tab order; visibility transitions on the same `--dur-base`
+    token (discretely — content stays visible while the row animates closed,
+    then leaves the tab order). Fixed identically in both design-system
+    copies, bundle regenerated, pinned by 3 regression tests that fail
+    against the old component.
 
 ## Honest gaps, still open
 

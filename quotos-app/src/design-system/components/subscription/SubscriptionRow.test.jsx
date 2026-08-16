@@ -338,3 +338,43 @@ describe("committing a rename without editing keeps an existing custom name (F1)
     expect(onRename).toHaveBeenCalledWith(null);
   });
 });
+
+// F2: the collapsed detail area is always mounted (the I4 animation needs it)
+// and used to hide via grid-template-rows: 0fr + overflow: hidden alone —
+// which clips the per-window pin buttons but leaves them focusable, so Tab
+// disappeared into the closed row and Enter toggled a tray digit with nothing
+// visible. visibility: hidden is what actually removes clipped content from
+// the tab order; jsdom computes no focusability from style, so these pin the
+// style itself rather than simulating Tab.
+describe("a collapsed row's pin buttons are out of reach, not just out of sight (F2)", () => {
+  const windows = [
+    { id: "w1", name: "Session", used: 40 },
+    { id: "w2", name: "Weekly", used: 10 },
+  ];
+
+  function detailContainer() {
+    const [pin] = screen.getAllByLabelText("Show in menu bar");
+    return pin.closest("[aria-hidden]");
+  }
+
+  it("hides the collapsed detail area with visibility, not just clipping", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} />);
+    const detail = detailContainer();
+    expect(detail.getAttribute("aria-hidden")).toBe("true");
+    expect(detail.style.visibility).toBe("hidden");
+  });
+
+  it("shows it again when expanded", () => {
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />);
+    const detail = detailContainer();
+    expect(detail.getAttribute("aria-hidden")).toBe("false");
+    expect(detail.style.visibility).toBe("visible");
+  });
+
+  it("transitions visibility on the duration token, so content stays visible while the row closes", () => {
+    // Without this, the windows vanish the instant a collapse starts and the
+    // I4 animation closes an already-empty box.
+    render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />);
+    expect(detailContainer().style.transition).toContain("visibility var(--dur-base)");
+  });
+});
