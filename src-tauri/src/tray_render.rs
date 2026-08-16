@@ -1114,6 +1114,32 @@ mod tests {
         assert_eq!(plain_glyph_rgba(50).1, render(&[], true, 50).1);
     }
 
+    // quotos-tray-frame-t1: the click-highlighted state (native, always
+    // painted across whatever the status item's *current* length is — see
+    // `shell::sync_status_item_length`'s doc comment) and the panel-open
+    // state (`render`'s own `highlighted` pill, painted into this image)
+    // must land on the same frame rectangle. `sync_status_item_length` sets
+    // that length from this function's own returned width, so the real
+    // invariant to pin is here: `highlighted` must never change the width,
+    // for a real (non-empty) segment set too, not just the bare glyph case
+    // above — a width drift here would desync the button's length from the
+    // panel-open pill's own bounds the moment a subscription is pinned.
+    #[test]
+    fn click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned() {
+        let segs = [
+            seg("51%", TrayColor::Neutral),
+            seg("67%", TrayColor::Neutral),
+            seg("96%", TrayColor::Red),
+        ];
+        let unhighlighted = render(&segs, false, 96);
+        let highlighted = render(&segs, true, 96);
+        assert_eq!(
+            unhighlighted.1, highlighted.1,
+            "the image width driving the status item's length must not change when the panel-open pill is drawn"
+        );
+        assert_eq!(unhighlighted.2, highlighted.2);
+    }
+
     // v4: the glyph's own arc fill must never affect image width either —
     // only the *segments* do. Same drift class as the test above.
     #[test]

@@ -216,11 +216,71 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
     // main thread. The highlight toggle in particular never changes the width
     // (by construction — see `tray_render::SIDE_PAD_PX`), and it fires on
     // every single open and close.
+    sync_status_item_length(tray, icon_width_px);
+
     if width_changed {
         schedule_resync_after_icon_change(app, tray.clone());
     }
     Ok(())
 }
+
+/// Tray frame unification (quotos-tray-frame-t1): `tray-icon` v0.24.2
+/// always creates the status item with `NSVariableStatusItemLength` (see
+/// `TrayIcon::create` in the crate source) and never touches its length
+/// again after that. A variable-length item's *button* is not the same
+/// rect as its own image: measured live, with nothing pinned the item
+/// reported 46pt wide for a 28pt image, and with five digit segments
+/// pinned it reported 208pt for a 190pt image — 18pt of extra width both
+/// times, i.e. a fixed ~9pt AppKit margin on each side, independent of
+/// content. That extra margin is both defects the captain reported: it is
+/// the oversized gap to the next menu bar extra (nothing else reserves
+/// that space), and it is why a plain click's native highlight — which
+/// AppKit paints across the *button's* bounds — reads wider than the
+/// panel-open pill this app draws itself, into the *image's* bounds (see
+/// `tray_render::draw_highlight_background`).
+///
+/// Pinning the item to a fixed length exactly matching the composited
+/// image removes the margin outright, so the button's bounds and the
+/// image's bounds become the same rect (measured live post-fix: 192pt
+/// reported for a 190pt image, the ~1pt/side left over matching AppKit's
+/// own minimal button content inset, not a reintroduced margin) — both
+/// draws then share one frame, which is the whole fix for defect 2.
+///
+/// This does **not** fully close defect 1's gap to the next menu bar
+/// extra on its own, and must not be read as though it does: measured
+/// live before and after, with the same five pinned segments, the visual
+/// gap from the last digit's own ink to the neighbouring extra's ink held
+/// at 32pt either way. The ~18pt this removes was genuinely real (AppKit's
+/// own margin, gone from the button's reported width), but the trailing
+/// slack the captain is seeing is dominated by two things outside this
+/// function's reach: this app's own intentional per-segment
+/// `CELL_WIDTH_PX` reserve (content layout — explicitly out of scope, see
+/// the constant's own doc comment and the task brief) leaving air after a
+/// short string like "0%", and macOS's own baseline spacing to a
+/// *different* app's status item (measured independently at 19-21pt
+/// between two unrelated neighbours on the same bar, so some of that 32pt
+/// was never Quotos's to close at all). Must run on every repaint, not
+/// just once: unlike a variable-length item, a fixed-length one never
+/// resizes itself when a new, differently-sized image is set — leaving it
+/// stale would clip or under-fill the button the next time the digit
+/// count changes.
+#[cfg(target_os = "macos")]
+pub(crate) fn sync_status_item_length(tray: &tauri::tray::TrayIcon, icon_width_px: u32) {
+    // `tray_render`'s buffer is always 2x an 18pt-tall image (see
+    // `GLYPH_PX`'s doc comment), regardless of the display's own backing
+    // scale — so `/2.0` is this image's real width in points on any
+    // display, the same convention `geometry.rs`'s
+    // `glyph_center_offset_from_item_left_points` already relies on.
+    let width_points = icon_width_px as f64 / 2.0;
+    let _ = tray.with_inner_tray_icon(move |inner| {
+        if let Some(status_item) = inner.ns_status_item() {
+            status_item.setLength(width_points);
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn sync_status_item_length(_tray: &tauri::tray::TrayIcon, _icon_width_px: u32) {}
 
 /// Re-reads the tray item's *current* rect and, if the panel is visible and
 /// still docked (never while detached — the window isn't under the icon at

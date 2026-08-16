@@ -769,6 +769,41 @@ each round, not appended to.
   must keep producing the same width (there's a test). `geometry.rs` reads
   `GLYPH_LEFT_INSET_POINTS` from `tray_render` rather than assuming the glyph
   is the image's leftmost 18pt.
+- **quotos-tray-frame-t1: `tray-icon` v0.24.2 never touches the status
+  item's length after creating it with `NSVariableStatusItemLength`, and a
+  variable-length item's *button* is measurably wider than its own
+  image.** Measured live: bare glyph reported 46pt for a 28pt image, five
+  pinned digit segments reported 208pt for a 190pt image — 18pt of extra
+  width both times, a fixed ~9pt AppKit margin per side, independent of
+  content. This was two separate captain-reported defects at once: the
+  oversized gap to the next menu bar extra, and why a plain click's native
+  highlight (AppKit paints it across the *button's* bounds via
+  `-[NSStatusBarButton highlight:]`) read wider than the panel-open pill
+  this app draws itself into the *image's* bounds. `shell.rs`'s
+  `sync_status_item_length` pins the item to a fixed length matching the
+  just-composited image on every repaint (`tray.with_inner_tray_icon` →
+  `NSStatusItem.setLength`, needing `objc2-app-kit`'s `NSStatusBar`/
+  `NSStatusBarButton`/`NSStatusItem` features, already resolved in
+  Cargo.lock via `tray-icon`'s own request for them), which makes the
+  button's bounds and the image's bounds the same rect — confirmed live
+  post-fix at 192pt reported for a 190pt image, the leftover ~1pt/side
+  matching AppKit's own minimal button content inset. That fully fixes the
+  two-frames defect (`click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned`
+  pins the underlying invariant: `render`'s width never depends on
+  `highlighted`, which is what lets a fixed length work for both states).
+  **It does not fully close the neighbour-gap defect on its own, and
+  should not be assumed to**: measured live before and after with the same
+  five segments, the visual gap from the last digit's own ink to the next
+  extra's ink held at 32pt either way, because most of that number was
+  never AppKit's per-item margin — a large piece is `CELL_WIDTH_PX`'s own
+  intentional reserve leaving air after a short string like "0%" (content
+  layout, out of scope per the captain's own explicit instruction not to
+  touch anything inside Quotos's drawn area), and another piece is
+  whatever a *different* app's own status item leaves as its own margin
+  (measured independently at 19-21pt between two unrelated neighbours on
+  the same bar — not Quotos's to close at all). If the gap still reads as
+  too large after this fix, that is a real, separate, content-layout
+  question for a follow-up task, not a sign this fix is incomplete.
 - **This machine is live and shared — not a clean test box — and
   screenshotting this app's own windows only ever shows whatever's on the
   *currently active macOS Space*, which is frequently not where a tray

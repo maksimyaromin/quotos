@@ -523,6 +523,12 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            // Tray frame unification: pin the item to a fixed length
+            // matching this initial image right away, so there is no window
+            // between launch and the first repaint where the item is still
+            // `NSVariableStatusItemLength` and reads the old oversized-margin
+            // way. See `shell::sync_status_item_length`'s own doc comment.
+            shell::sync_status_item_length(&tray, initial_w);
             app.manage(tray);
 
             // Diagnostic only, off by default: opens the panel from the tray

@@ -44,6 +44,13 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSFont",
     "NSFontDescriptor",
     "NSWindow",
+    # Tray frame unification (quotos-tray-frame-t1): `NSStatusItem.setLength`,
+    # reached via `tray_icon::TrayIcon::ns_status_item()`. Already resolved
+    # in Cargo.lock — the `tray-icon` crate itself requests these same three
+    # for the same objc2-app-kit version, so this adds no new resolution.
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
     "objc2-core-foundation",
     "objc2-core-text",
 ] }
