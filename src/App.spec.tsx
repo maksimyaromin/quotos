@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 afterEach(cleanup);
 
@@ -85,13 +85,13 @@ describe("Escape dismissal layering", () => {
     visibilityCallback = null;
   });
 
-  it("a bare Escape hides the panel", async () => {
+  test("a bare Escape hides the panel", async () => {
     await renderAppWithRow();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(hidePanel).toHaveBeenCalledTimes(1);
   });
 
-  it("Escape closes an open row menu and leaves the panel up; the next Escape hides", async () => {
+  test("Escape closes an open row menu and leaves the panel up; the next Escape hides", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
     expect(screen.getByText("Stop tracking")).toBeTruthy();
@@ -104,7 +104,7 @@ describe("Escape dismissal layering", () => {
     expect(hidePanel).toHaveBeenCalledTimes(1);
   });
 
-  it("Escape in the rename field cancels the rename without hiding the panel", async () => {
+  test("Escape in the rename field cancels the rename without hiding the panel", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
     fireEvent.click(screen.getByText("Rename"));
@@ -115,7 +115,7 @@ describe("Escape dismissal layering", () => {
     expect(hidePanel).not.toHaveBeenCalled();
   });
 
-  it("the row menu does not survive a panel hide", async () => {
+  test("the row menu does not survive a panel hide", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
     expect(screen.getByText("Stop tracking")).toBeTruthy();
@@ -125,18 +125,16 @@ describe("Escape dismissal layering", () => {
   });
 });
 
-// A real browser fires mousedown before click, so every dismissal here fires
-// both — the exact sequence that exposed F6: the old window-mousedown
-// listener nulled openMenuId first, which made the row's own menuOpen guard
-// dead by the time the click arrived, so the dismissing click also expanded
-// the row (or pressed the control under the pointer).
-describe("pointer dismissal consumes the dismissing click (F6)", () => {
+// A real browser fires mousedown before click, so every dismissal here
+// fires both. The dismissing click must be fully consumed, or it would
+// also expand the row or press whatever control sits under the pointer.
+describe("pointer dismissal consumes the dismissing click", () => {
   function dismissByClicking(target: Element) {
     fireEvent.mouseDown(target);
     fireEvent.click(target);
   }
 
-  it("a click on the row body only dismisses the menu — the row does not expand", async () => {
+  test("a click on the row body only dismisses the menu — the row does not expand", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
     expect(screen.getByText("Stop tracking")).toBeTruthy();
@@ -148,7 +146,7 @@ describe("pointer dismissal consumes the dismissing click (F6)", () => {
     expect(expandToggle.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("only the dismissing click is consumed — the next click acts normally", async () => {
+  test("only the dismissing click is consumed — the next click acts normally", async () => {
     const trigger = await renderAppWithRow();
     fireEvent.click(trigger);
 
@@ -159,7 +157,7 @@ describe("pointer dismissal consumes the dismissing click (F6)", () => {
     );
   });
 
-  it("a dismissing click on a button does not press it", async () => {
+  test("a dismissing click on a button does not press it", async () => {
     const trigger = await renderAppWithRow();
     const callsBefore = fetchSnapshotSpy.mock.calls.length;
     fireEvent.click(trigger);
@@ -183,7 +181,7 @@ describe("panel reopen refreshes the presentation clock", () => {
   // macOS suspends a hidden WKWebView's timers, so the NOW_TICK interval
   // does not run while the panel is closed — modeled here by moving the
   // wall clock without ever letting the interval fire.
-  it("re-reads `now` on visible=true so relative times are not hours stale", async () => {
+  test("re-reads `now` on visible=true so relative times are not hours stale", async () => {
     await renderAppWithRow();
     expect(screen.getByText("Last read just now")).toBeTruthy();
 
