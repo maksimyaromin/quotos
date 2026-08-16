@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   BEAK_BASE_HALF,
   BEAK_HEIGHT,
@@ -45,7 +45,7 @@ beforeEach(() => {
 // These tests assert the path geometry directly, since jsdom has no
 // renderer to compare against a screenshot.
 describe("buildPanelOutlinePath", () => {
-  it("returns one single path (one M...Z run) whether or not a beak is present", () => {
+  test("returns one single path (one M...Z run) whether or not a beak is present", () => {
     const withBeak = buildPanelOutlinePath(332, 500, 24);
     const withoutBeak = buildPanelOutlinePath(332, 500, null);
     for (const d of [withBeak, withoutBeak]) {
@@ -54,7 +54,7 @@ describe("buildPanelOutlinePath", () => {
     }
   });
 
-  it("the notch's base spans exactly BEAK_BASE_HALF * 2, anchored at beakLeft", () => {
+  test("the notch's base spans exactly BEAK_BASE_HALF * 2, anchored at beakLeft", () => {
     const beakLeft = 24;
     const d = buildPanelOutlinePath(332, 500, beakLeft);
     // The base-left point sits at x = beakLeft on the rect's top edge, and
@@ -63,7 +63,7 @@ describe("buildPanelOutlinePath", () => {
     expect(d).toContain(`L ${beakLeft + BEAK_BASE_HALF * 2} ${NOTCH_RESERVE}`);
   });
 
-  it("reserves enough headroom above the rect for the beak it draws", () => {
+  test("reserves enough headroom above the rect for the beak it draws", () => {
     expect(NOTCH_RESERVE).toBeGreaterThanOrEqual(BEAK_HEIGHT + 1);
     const d = buildPanelOutlinePath(332, 500, 20);
     const yValues = [...d.matchAll(/(?:^|[A-Z]\s*)(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)].map(
@@ -75,12 +75,12 @@ describe("buildPanelOutlinePath", () => {
     expect(Math.min(...yValues)).toBeCloseTo(NOTCH_RESERVE - BEAK_HEIGHT, 5);
   });
 
-  it("keeps the beak noticeably larger than a 12px minimum", () => {
+  test("keeps the beak noticeably larger than a 12px minimum", () => {
     expect(BEAK_BASE_HALF * 2).toBeGreaterThan(12);
     expect(BEAK_HEIGHT).toBeGreaterThan(7);
   });
 
-  it("omits the beak segment entirely when beakLeft is null", () => {
+  test("omits the beak segment entirely when beakLeft is null", () => {
     const d = buildPanelOutlinePath(332, 500, null);
     const yValues = [...d.matchAll(/(?:^|[A-Z]\s*)(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g)].map(
       (m) => Number(m[2]),
@@ -88,14 +88,14 @@ describe("buildPanelOutlinePath", () => {
     expect(Math.min(...yValues)).toBeGreaterThanOrEqual(NOTCH_RESERVE - 0.01);
   });
 
-  it("the apex sits centered over the notch's own base", () => {
+  test("the apex sits centered over the notch's own base", () => {
     const beakLeft = 40;
     const d = buildPanelOutlinePath(332, 500, beakLeft);
     const apexX = beakLeft + BEAK_BASE_HALF;
     expect(d).toMatch(new RegExp(`Q ${apexX} -?\\d+(?:\\.\\d+)? `));
   });
 
-  it("shrinks the top-left corner radius to fit a notch placed inside it, rather than requiring the notch to move", () => {
+  test("shrinks the top-left corner radius to fit a notch placed inside test, rather than requiring the notch to move", () => {
     const beakLeft = 3; // Inside PANEL_RADIUS, the common case.
     const d = buildPanelOutlinePath(332, 500, beakLeft);
     expect(d.startsWith(`M ${beakLeft} ${NOTCH_RESERVE}`)).toBe(true);
@@ -103,7 +103,7 @@ describe("buildPanelOutlinePath", () => {
     expect(d).toContain(`L ${beakLeft} ${NOTCH_RESERVE}`);
   });
 
-  it("keeps the full 12px corner radius when the notch is nowhere near it", () => {
+  test("keeps the full 12px corner radius when the notch is nowhere near it", () => {
     const d = buildPanelOutlinePath(332, 500, 100);
     expect(d.startsWith(`M ${PANEL_RADIUS} ${NOTCH_RESERVE}`)).toBe(true);
   });
@@ -113,7 +113,7 @@ describe("buildPanelOutlinePath", () => {
 // one stroked border layer, tracing the same path, so they can never
 // drift apart.
 describe("Panel's docked beak rendering", () => {
-  it("clips a single background layer to the same path the border strokes", () => {
+  test("clips a single background layer to the same path the border strokes", () => {
     const { container } = render(
       <Panel docked beakLeft={24}>
         <div>content</div>
@@ -127,7 +127,7 @@ describe("Panel's docked beak rendering", () => {
     expect(clipPath!.getAttribute("d")).toBe(strokePath!.getAttribute("d"));
   });
 
-  it("there is exactly one element carrying a background fill (no second translucent layer)", () => {
+  test("there is exactly one element carrying a background fill (no second translucent layer)", () => {
     const { container } = render(
       <Panel docked beakLeft={24}>
         <div>content</div>
@@ -145,7 +145,7 @@ describe("Panel's docked beak rendering", () => {
   // testable, and what is pinned here, is the DOM contract that decides
   // it: the fill layer must ship with no backdrop filter under either
   // vendor spelling, docked or detached.
-  it.each<[string, Pick<PanelProps, "docked" | "beakLeft">]>([
+  test.each<[string, Pick<PanelProps, "docked" | "beakLeft">]>([
     ["docked", { docked: true, beakLeft: 24 }],
     ["detached", { docked: false }],
   ])("ships the fill layer with no backdrop filter (%s)", (_label, props) => {
@@ -167,7 +167,7 @@ describe("Panel's docked beak rendering", () => {
   // A non-none backdrop-filter anywhere in the subtree makes that element a
   // containing block for fixed-position descendants, which is exactly what
   // SubscriptionRow's fixed "…" dropdown relies on no ancestor doing.
-  it("no element anywhere in the panel carries a backdrop filter", () => {
+  test("no element anywhere in the panel carries a backdrop filter", () => {
     const { container } = render(
       <Panel docked beakLeft={24}>
         <div>content</div>
@@ -179,7 +179,7 @@ describe("Panel's docked beak rendering", () => {
     expect(offenders).toHaveLength(0);
   });
 
-  it("detached (no beak) still renders the same single-layer shape", () => {
+  test("detached (no beak) still renders the same single-layer shape", () => {
     const { container } = render(
       <Panel docked={false}>
         <div>content</div>

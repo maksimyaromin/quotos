@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { LimitWindow } from "./LimitWindow";
 
 afterEach(cleanup);
@@ -10,7 +10,7 @@ afterEach(cleanup);
 // jsdom cannot render either behavior, but it can pin the styles that make
 // both work in a real browser.
 describe("LimitWindow scope badge", () => {
-  it("keeps the base Badge's inline-flex display so its text stays vertically centered", () => {
+  test("keeps the base Badge's inline-flex display so its text stays vertically centered", () => {
     const { getByText } = render(
       <LimitWindow name="Weekly" used={45} scope="Fable" resetLabel="Resets Tue at 9:05 PM" />,
     );
@@ -18,7 +18,7 @@ describe("LimitWindow scope badge", () => {
     expect(getComputedStyle(badge).display).toBe("inline-flex");
   });
 
-  it("truncates a long scope tag via an inner block span, where text-overflow actually applies", () => {
+  test("truncates a long scope tag via an inner block span, where text-overflow actually applies", () => {
     const longName = "Claude Opus 4.5 (extended thinking, research preview)";
     const { getByText } = render(
       <LimitWindow name="Extended thinking" used={61} scope={longName} />,
@@ -36,7 +36,7 @@ describe("LimitWindow scope badge", () => {
     expect(badgeStyle.textOverflow).not.toBe("ellipsis");
   });
 
-  it("renders with no scope tag at all, the common case, without a badge element", () => {
+  test("renders with no scope tag at all, the common case, without a badge element", () => {
     const { queryByText } = render(<LimitWindow name="Session" used={78} />);
     expect(queryByText("Fable")).toBeNull();
   });

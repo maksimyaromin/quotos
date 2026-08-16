@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { SubscriptionRow } from "./SubscriptionRow";
 
 afterEach(() => {
@@ -48,7 +48,7 @@ function openMenu() {
 describe("SubscriptionRow's row menu overlays the panel instead of living inside its scroll box", () => {
   beforeEach(() => useWindow(360, 560));
 
-  it("is positioned against the viewport, not against the scrolled row", () => {
+  test("is positioned against the viewport, not against the scrolled row", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
     const menu = screen
@@ -57,7 +57,7 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(menu.style.position).toBe("fixed");
   });
 
-  it("hangs below the '…' button it belongs to", () => {
+  test("hangs below the '…' button it belongs to", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
     const menu = screen
@@ -68,7 +68,7 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(parseFloat(menu.style.top)).toBeLessThan(130);
   });
 
-  it("flips above the button rather than off the bottom of the window", () => {
+  test("flips above the button rather than off the bottom of the window", () => {
     // A row near the panel's bottom, which is exactly where the clipping was
     // visible: the menu cannot open downward and stay inside a 560px window.
     anchorButtonAt({ top: 520, bottom: 540, right: 320 });
@@ -84,7 +84,7 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(top + 122).toBeLessThanOrEqual(560);
   });
 
-  it("stays inside the window horizontally", () => {
+  test("stays inside the window horizontally", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(178);
     openMenu();
@@ -99,14 +99,14 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
   // App.tsx's click-away handler recognises "inside the menu" by this
   // attribute alone on both the dropdown and its trigger. Moving the
   // dropdown out of the row's own box must not cost it that.
-  it("keeps the menu-scope marker the click-away handler matches on", () => {
+  test("keeps the menu-scope marker the click-away handler matches on", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
     expect(screen.getByText("Stop tracking").closest("[data-quotos-menu-scope]")).not.toBeNull();
     expect(screen.getByLabelText("More").getAttribute("data-quotos-menu-scope")).toBe("true");
   });
 
-  it("the trigger reports the menu's open state via aria-expanded", () => {
+  test("the trigger reports the menu's open state via aria-expanded", () => {
     const { rerender } = render(<SubscriptionRow label="Claude Team" state="working" used={40} />);
     expect(screen.getByLabelText("More").getAttribute("aria-expanded")).toBe("false");
     rerender(<SubscriptionRow label="Claude Team" state="working" used={40} menuOpen />);
@@ -120,7 +120,7 @@ describe("the 'N limits' disclosure is a real, focusable control", () => {
     { id: "w2", name: "Weekly", used: 10 },
   ];
 
-  it("is a button carrying aria-expanded", () => {
+  test("is a button carrying aria-expanded", () => {
     const { rerender } = render(
       <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} />,
     );
@@ -132,7 +132,7 @@ describe("the 'N limits' disclosure is a real, focusable control", () => {
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("toggles expansion itself, without the row's own click undoing it", () => {
+  test("toggles expansion itself, without the row's own click undoing it", () => {
     const onToggleExpand = vi.fn();
     render(
       <SubscriptionRow
@@ -149,14 +149,14 @@ describe("the 'N limits' disclosure is a real, focusable control", () => {
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
 
-  it("does not render at all without windows", () => {
+  test("does not render at all without windows", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={[]} />);
     expect(screen.queryByRole("button", { name: /limits?/ })).toBeNull();
   });
 });
 
 describe("the row menu's Move up and Move down", () => {
-  it("fires the move callback and closes the menu, once each", () => {
+  test("fires the move callback and closes the menu, once each", () => {
     const onMoveDown = vi.fn();
     const onToggleMenu = vi.fn();
     render(
@@ -176,7 +176,7 @@ describe("the row menu's Move up and Move down", () => {
     expect(onToggleMenu).toHaveBeenCalledTimes(1);
   });
 
-  it("renders an impossible direction disabled, and clicking it does nothing", () => {
+  test("renders an impossible direction disabled, and clicking it does nothing", () => {
     const onMoveUp = vi.fn();
     const onToggleMenu = vi.fn();
     render(
@@ -198,7 +198,7 @@ describe("the row menu's Move up and Move down", () => {
     expect(onToggleMenu).not.toHaveBeenCalled();
   });
 
-  it("keeps both items in the menu even when neither direction is possible", () => {
+  test("keeps both items in the menu even when neither direction is possible", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
     expect(screen.getByText<HTMLButtonElement>("Move up").disabled).toBe(true);
     expect(screen.getByText<HTMLButtonElement>("Move down").disabled).toBe(true);
@@ -217,7 +217,7 @@ describe("the row menu is keyboard-operable", () => {
       { key },
     );
 
-  it("ArrowDown walks the items top-to-bottom and wraps past the end", () => {
+  test("ArrowDown walks the items top-to-bottom and wraps past the end", () => {
     render(
       <SubscriptionRow
         label="Claude Max"
@@ -244,7 +244,7 @@ describe("the row menu is keyboard-operable", () => {
     expect(document.activeElement?.textContent).toBe("Read now");
   });
 
-  it("ArrowUp enters at the last item and walks backwards", () => {
+  test("ArrowUp enters at the last item and walks backwards", () => {
     render(
       <SubscriptionRow
         label="Claude Max"
@@ -261,7 +261,7 @@ describe("the row menu is keyboard-operable", () => {
     expect(document.activeElement?.textContent).toBe("Move down");
   });
 
-  it("skips disabled items, exactly as the pointer path does", () => {
+  test("skips disabled items, exactly as the pointer path does", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveDown />);
     arrow("ArrowDown"); // Read now
     arrow("ArrowDown"); // Rename
@@ -270,7 +270,7 @@ describe("the row menu is keyboard-operable", () => {
     expect(document.activeElement?.textContent).toBe("Move down");
   });
 
-  it("Home and End jump to the edges", () => {
+  test("Home and End jump to the edges", () => {
     render(
       <SubscriptionRow
         label="Claude Max"
@@ -287,13 +287,13 @@ describe("the row menu is keyboard-operable", () => {
     expect(document.activeElement?.textContent).toBe("Read now");
   });
 
-  it("leaves the arrow keys alone while the menu is closed", () => {
+  test("leaves the arrow keys alone while the menu is closed", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} />);
     fireEvent.keyDown(screen.getByLabelText("More"), { key: "ArrowDown" });
     expect(document.activeElement).toBe(document.body);
   });
 
-  it("leaves the sign-in code field's caret alone even with the menu open", () => {
+  test("leaves the sign-in code field's caret alone even with the menu open", () => {
     render(<SubscriptionRow label="Claude Max" state="broken" menuOpen signInInProgress />);
     const code = screen.getByPlaceholderText("Paste code");
     code.focus();
@@ -301,7 +301,7 @@ describe("the row menu is keyboard-operable", () => {
     expect(document.activeElement).toBe(code);
   });
 
-  it("hands focus back to the trigger when closing unmounts the focused item", () => {
+  test("hands focus back to the trigger when closing unmounts the focused item", () => {
     const { rerender } = render(
       <SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />,
     );
@@ -311,7 +311,7 @@ describe("the row menu is keyboard-operable", () => {
     expect(document.activeElement).toBe(screen.getByLabelText("More"));
   });
 
-  it("does not steal focus when the close left it somewhere real", () => {
+  test("does not steal focus when the close left it somewhere real", () => {
     const windows = [{ id: "w1", name: "Session", used: 40 }];
     const { rerender } = render(
       <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} menuOpen />,
@@ -324,19 +324,19 @@ describe("the row menu is keyboard-operable", () => {
 });
 
 describe("the row menu exposes WAI-ARIA menu semantics", () => {
-  it("the trigger declares it opens a menu", () => {
+  test("the trigger declares it opens a menu", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} />);
     expect(screen.getByLabelText("More").getAttribute("aria-haspopup")).toBe("menu");
   });
 
-  it("the open dropdown is a named menu", () => {
+  test("the open dropdown is a named menu", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
     const menu = screen.getByRole("menu");
     expect(menu.getAttribute("aria-label")).toBe("Subscription actions");
     expect(menu.getAttribute("data-quotos-menu-scope")).toBe("true");
   });
 
-  it("every action is a menuitem, in the menu's one fixed order", () => {
+  test("every action is a menuitem, in the menu's one fixed order", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
     const items = screen.getAllByRole("menuitem");
     expect(items.map((b) => b.textContent)).toEqual([
@@ -349,7 +349,7 @@ describe("the row menu exposes WAI-ARIA menu semantics", () => {
     ]);
   });
 
-  it("the divider before Stop tracking is a separator", () => {
+  test("the divider before Stop tracking is a separator", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen />);
     expect(screen.getByRole("separator")).toBeTruthy();
   });
@@ -371,7 +371,7 @@ describe("committing a rename without editing keeps an existing custom name", ()
     return screen.getByRole<HTMLInputElement>("textbox");
   }
 
-  it("Enter with an untouched draft is a no-op, not a clear", () => {
+  test("Enter with an untouched draft is a no-op, not a clear", () => {
     const onRename = vi.fn();
     const input = openRenameField(onRename);
     expect(input.value).toBe("My Max");
@@ -380,14 +380,14 @@ describe("committing a rename without editing keeps an existing custom name", ()
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("clicking away (blur) with an untouched draft is a no-op too", () => {
+  test("clicking away (blur) with an untouched draft is a no-op too", () => {
     const onRename = vi.fn();
     const input = openRenameField(onRename);
     fireEvent.blur(input);
     expect(onRename).not.toHaveBeenCalled();
   });
 
-  it("an edited draft commits the trimmed new name", () => {
+  test("an edited draft commits the trimmed new name", () => {
     const onRename = vi.fn();
     const input = openRenameField(onRename);
     fireEvent.change(input, { target: { value: "  Team account " } });
@@ -395,7 +395,7 @@ describe("committing a rename without editing keeps an existing custom name", ()
     expect(onRename).toHaveBeenCalledWith("Team account");
   });
 
-  it("an explicitly emptied field clears the custom name", () => {
+  test("an explicitly emptied field clears the custom name", () => {
     const onRename = vi.fn();
     const input = openRenameField(onRename);
     fireEvent.change(input, { target: { value: "   " } });
@@ -418,14 +418,14 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
     return pin.closest<HTMLElement>("[aria-hidden]")!;
   }
 
-  it("hides the collapsed detail area with visibility, not just clipping", () => {
+  test("hides the collapsed detail area with visibility, not just clipping", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} />);
     const detail = detailContainer();
     expect(detail.getAttribute("aria-hidden")).toBe("true");
     expect(detail.style.visibility).toBe("hidden");
   });
 
-  it("shows it again when expanded", () => {
+  test("shows it again when expanded", () => {
     render(
       <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
     );
@@ -434,7 +434,7 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
     expect(detail.style.visibility).toBe("visible");
   });
 
-  it("transitions visibility on the duration token, so content stays visible while the row closes", () => {
+  test("transitions visibility on the duration token, so content stays visible while the row closes", () => {
     render(
       <SubscriptionRow label="Claude Max" state="working" used={40} windows={windows} expanded />,
     );
