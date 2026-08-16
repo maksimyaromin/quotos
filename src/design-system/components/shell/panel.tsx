@@ -1,7 +1,7 @@
 import type * as React from "react";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { joinClassNames } from "../../joinClassNames";
-import styles from "./Panel.module.css";
+import styles from "./panel.module.css";
 
 // Mirrors --panel-width in tokens/spacing.css, duplicated as a plain number
 // because the SVG path math below needs concrete units, not a CSS custom

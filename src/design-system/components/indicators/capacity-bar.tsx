@@ -1,5 +1,5 @@
 import type * as React from "react";
-import styles from "./CapacityBar.module.css";
+import styles from "./capacity-bar.module.css";
 
 type CapacityLevel = "healthy" | "warn" | "critical";
 

@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { CapacityBar } from "./components/indicators/CapacityBar";
+import { CapacityBar } from "./components/indicators/capacity-bar";
 import elevation from "./tokens/elevation.css?raw";
 
 afterEach(cleanup);

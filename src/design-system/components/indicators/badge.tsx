@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { joinClassNames } from "../../joinClassNames";
-import styles from "./Badge.module.css";
+import styles from "./badge.module.css";
 
 export interface BadgeProps {
   /** Muted color family. `neutral` for scope tags, the semantic tones for states. */

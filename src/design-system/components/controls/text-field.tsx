@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { joinClassNames } from "../../joinClassNames";
-import styles from "./TextField.module.css";
+import styles from "./text-field.module.css";
 
 export interface TextFieldProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "style"> {

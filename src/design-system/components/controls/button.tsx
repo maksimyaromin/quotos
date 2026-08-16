@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { joinClassNames } from "../../joinClassNames";
-import styles from "./Button.module.css";
+import styles from "./button.module.css";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Visual weight. `primary` for the one main action; `secondary` default; `ghost` for low-emphasis; `danger` for destructive. */

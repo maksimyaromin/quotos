@@ -1,10 +1,10 @@
 import * as React from "react";
-import { Badge } from "../indicators/Badge";
-import { CapacityBar } from "../indicators/CapacityBar";
-import type { SubscriptionState } from "../indicators/StatusDot";
-import { StatusDot } from "../indicators/StatusDot";
-import { LimitWindow, type LimitWindowProps } from "./LimitWindow";
-import styles from "./SubscriptionRow.module.css";
+import { Badge } from "../indicators/badge";
+import { CapacityBar } from "../indicators/capacity-bar";
+import type { SubscriptionState } from "../indicators/status-dot";
+import { StatusDot } from "../indicators/status-dot";
+import { LimitWindow, type LimitWindowProps } from "./limit-window";
+import styles from "./subscription-row.module.css";
 
 // Minimal default affordance glyphs: generic UI arrows and marks, not brand icons.
 function Chevron({ open }: { open: boolean }) {

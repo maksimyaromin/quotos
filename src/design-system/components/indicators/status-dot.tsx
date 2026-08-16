@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { joinClassNames } from "../../joinClassNames";
-import styles from "./StatusDot.module.css";
+import styles from "./status-dot.module.css";
 
 export type SubscriptionState =
   | "idle" // not connected

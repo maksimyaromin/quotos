@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { LimitWindow } from "./LimitWindow";
+import { LimitWindow } from "./limit-window";
 
 afterEach(cleanup);
 

@@ -1,7 +1,7 @@
 import type * as React from "react";
-import { Badge } from "../indicators/Badge";
-import { CapacityBar } from "../indicators/CapacityBar";
-import styles from "./LimitWindow.module.css";
+import { Badge } from "../indicators/badge";
+import { CapacityBar } from "../indicators/capacity-bar";
+import styles from "./limit-window.module.css";
 
 function numberLevel(used: number): "critical" | "warn" | "neutral" {
   if (used >= 90) return "critical";

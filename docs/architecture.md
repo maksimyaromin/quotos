@@ -184,7 +184,7 @@ The panel's beak is one shape with the panel itself, not a second
 layer, drawn from a single outline path so no two translucent layers
 overlap and double their alpha at the seam. Its size and position live
 in three files with nothing syncing them automatically: `geometry.rs`'s
-`docked_layout_in_points`, `Panel.tsx`'s matching constants, and
+`docked_layout_in_points`, `panel.tsx`'s matching constants, and
 `app.css`'s panel padding. The beak's center stays on the status item
 glyph's own center; the layout solves for the beak's tip, not the
 panel's top edge.

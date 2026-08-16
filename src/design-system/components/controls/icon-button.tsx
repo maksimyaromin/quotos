@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { joinClassNames } from "../../joinClassNames";
-import styles from "./IconButton.module.css";
+import styles from "./icon-button.module.css";
 
 export interface IconButtonProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {

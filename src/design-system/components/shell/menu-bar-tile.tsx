@@ -1,6 +1,6 @@
 import type * as React from "react";
-import type { SubscriptionState } from "../indicators/StatusDot";
-import styles from "./MenuBarTile.module.css";
+import type { SubscriptionState } from "../indicators/status-dot";
+import styles from "./menu-bar-tile.module.css";
 
 /** The placeholder quota-ring glyph. Not a logo, since Quotos has none. A
  *  functional macOS template mark, monochrome via currentColor. */

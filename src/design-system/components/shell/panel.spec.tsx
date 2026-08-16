@@ -8,8 +8,8 @@ import {
   PANEL_RADIUS,
   Panel,
   type PanelProps,
-} from "./Panel";
-import panelStylesheet from "./Panel.module.css?raw";
+} from "./panel";
+import panelStylesheet from "./panel.module.css?raw";
 
 afterEach(() => {
   cleanup();
@@ -166,7 +166,7 @@ describe("Panel's docked beak rendering", () => {
   });
 
   // Widens the two tests above from just the fill layer to the whole
-  // subtree; see Panel.tsx's own comment for why backdrop-filter is
+  // subtree; see panel.tsx's own comment for why backdrop-filter is
   // banned here at all.
   test("no element anywhere in the panel carries a backdrop filter", () => {
     const { container } = render(
@@ -182,11 +182,11 @@ describe("Panel's docked beak rendering", () => {
 
   // The fill layer's own background and box-shadow stay inline, since they
   // ride along with its measured, per-render geometry, but the rest of the
-  // panel's chrome, header, body and footer, moved to Panel.module.css.
+  // panel's chrome, header, body and footer, moved to panel.module.css.
   // This guards that stylesheet the same way the inline scan above guards
   // the fill layer, so the invariant holds regardless of which layer a
   // future change touches.
-  test("Panel.module.css never declares a backdrop filter", () => {
+  test("panel.module.css never declares a backdrop filter", () => {
     expect(panelStylesheet).not.toMatch(/backdrop-filter/i);
   });
 
