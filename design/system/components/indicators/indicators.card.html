@@ -10,7 +10,7 @@
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
   .lbl{font-size:11px;color:var(--text-quaternary);letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px}
   .barrow{display:flex;align-items:center;gap:10px;margin-bottom:9px}
-  .barrow .cap{font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);width:66px;flex:0 0 auto}
+  .barrow .cap{font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);width:96px;flex:0 0 auto;white-space:nowrap}
   .barrow .b{flex:1}
   .dots{display:flex;flex-direction:column;gap:8px}
   .dot{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)}
@@ -26,23 +26,23 @@
 <script type="text/babel">
 const { CapacityBar, StatusDot, Badge } = window.QuotosDesignSystem_52e720;
 const states = [
-  ["working","Working"],["reading","Reading"],["behind","Behind"],["repairing","Repairing"],
-  ["broken","Broken"],["waiting","Waiting on limits"],["connecting","Connecting"],["idle","Not connected"],
+  ["working","Working"],["reading","Reading"],["behind","Behind"],
+  ["broken","Broken"],["connecting","Connecting"],["idle","Not connected"],
 ];
 function App() {
   return (
     <div className="grid">
       <div>
-        <div className="lbl">Capacity — fill encodes what's left</div>
-        {[["78% left",78,{}],["42% left",42,{}],["18% left",18,{}],["6% left",6,{}],["62% · reading",62,{reading:true}],["40% · behind",40,{stale:true}]].map(([c,r,p],i)=>(
-          <div className="barrow" key={i}><span className="cap">{c}</span><span className="b"><CapacityBar remaining={r} {...p} /></span></div>
+        <div className="lbl">Capacity — fill encodes what's used</div>
+        {[["22% used",22,{}],["58% used",58,{}],["78% used",78,{}],["94% used",94,{}],["38% · reading",38,{reading:true}],["60% · behind",60,{stale:true}],["20% · warn",20,{severity:"warn"}]].map(([c,u,p],i)=>(
+          <div className="barrow" key={i}><span className="cap">{c}</span><span className="b"><CapacityBar used={u} {...p} /></span></div>
         ))}
         <div className="badges">
           <Badge tone="neutral">Weekly</Badge>
           <Badge tone="accent">Opus 4</Badge>
-          <Badge tone="warn">Behind</Badge>
-          <Badge tone="danger">Broken</Badge>
-          <Badge tone="info">Waiting on limits</Badge>
+          <Badge tone="warn">Not current</Badge>
+          <Badge tone="danger">Needs sign-in</Badge>
+          <Badge tone="info">Info</Badge>
         </div>
       </div>
       <div>

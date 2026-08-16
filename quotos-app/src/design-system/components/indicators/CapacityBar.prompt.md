@@ -1,9 +1,10 @@
-Use `CapacityBar` for any "how much is left" reading — the row headline and each limit window. `remaining` (0–100) drives both width and color: teal >25, amber ≤25, red ≤10.
+Use `CapacityBar` for any "how much is used" reading — the row headline and each limit window. `used` (0–100, percent consumed) always sets fill width: teal below 75, amber ≥75, red ≥90.
 
 ```jsx
-<CapacityBar remaining={8} />           // nearly out → red
-<CapacityBar remaining={62} reading />  // refreshing → shimmer over held value
-<CapacityBar remaining={40} stale />    // behind → dimmed fill
+<CapacityBar used={92} />                    // nearly spent → red
+<CapacityBar used={38} reading />            // refreshing → shimmer over held value
+<CapacityBar used={60} stale />              // behind → dimmed fill
+<CapacityBar used={20} severity="warn" />    // headline bar: worst window colors it
 ```
 
-`reading` shows an indeterminate shimmer (never blanks the number); `stale` dims the fill for behind data. `capacityColor(remaining)` is exported to tint a numeral the same way.
+Color comes from `severity` when given (the subscription's headline bar, colored by the worst of every window); otherwise from `used`'s own bracket (a single window's bar). `reading` shows an indeterminate shimmer (never blanks the number); `stale` dims the fill for behind data. `capacityColor(used)` is exported to tint a numeral the same way.

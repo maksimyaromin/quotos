@@ -25,28 +25,30 @@ function App() {
     <div className="grid">
       <div className="surf">
         <SubscriptionRow label="Claude Max" provider="Anthropic" account="Personal"
-          state="working" remaining={62} resetLabel="resets in 3h" lastRead="2 min ago" pinned
+          state="working" used={38} severity="warn" resetLabel="Resets today at 4:05 PM" lastRead="2 min ago"
+          pinnedCount={1} headlinePinned
           expanded={exp} onToggleExpand={() => setExp(!exp)}
           windows={[
-            { name: "Session", remaining: 62, resetLabel: "resets in 3h" },
-            { name: "Weekly", remaining: 41, resetLabel: "resets Mon", scope: "Opus 4" },
-            { name: "Code review", resetLabel: null },
+            { id: "w1", name: "Session", used: 38, resetLabel: "Resets today at 4:05 PM", pinned: true },
+            { id: "w2", name: "Weekly", used: 82, resetLabel: "Resets Mon", scope: "Opus 4" },
+            { id: "w3", name: "Code review", resetLabel: null },
           ]} />
       </div>
       <div className="surf">
         <SubscriptionRow label="Claude Team" provider="Anthropic" account="Work"
-          state="behind" remaining={40} resetLabel="resets in 5h" lastRead="41 min ago"
-          windows={[{ name: "Session", remaining: 40, resetLabel: "resets in 5h" }]} />
+          state="behind" used={60} severity="healthy" resetLabel="Resets in 5h" lastRead="41 min ago"
+          badge="Not current" actionLabel="Try again"
+          windows={[{ id: "w1", name: "Session", used: 60, resetLabel: "Resets in 5h" }]} />
       </div>
       <div className="surf">
         <SubscriptionRow label="Research key" provider="Anthropic" account="API"
-          state="waiting" remaining={88} resetLabel="resets weekly" lastRead="just now"
-          windows={[{ name: "Weekly", remaining: 88 }]} />
+          state="reading" used={55} severity="healthy" resetLabel="Resets Sun" lastRead="just now"
+          windows={[{ id: "w1", name: "Weekly", used: 55, resetLabel: "Resets Sun" }]} />
       </div>
       <div className="surf">
         <SubscriptionRow label="Old account" provider="Anthropic" account="Personal"
-          state="broken" reason="Sign-in expired. Reconnect to resume reading." lastRead="1h ago"
-          actionLabel="Reconnect" />
+          state="broken" reason="Sign-in expired. Sign in to resume reading." lastRead="1h ago"
+          badge="Needs sign-in" actionLabel="Sign in" />
       </div>
     </div>
   );

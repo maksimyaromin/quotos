@@ -22,9 +22,9 @@ inherited — treat it as a strong first direction to iterate on.
 ## The product in one screen
 
 - **Menu bar icon** — always present, monochrome (macOS template style).
-  Optionally shows pinned subscriptions' remaining figures beside it.
+  Optionally shows pinned windows' consumed figures beside it.
 - **Panel (popover)** — opens on click, ~332px wide. One scannable row per
-  subscription: a big "% left" numeral, a thin capacity bar, the age of the
+  subscription: a big "% used" numeral, a thin capacity bar, the age of the
   last read, and a state indicator. Rows expand to show every limit window.
 - **Add-subscription flow** — the central flow, not a settings afterthought:
   scan the machine → pick provider → pick connection method → verify by reading
@@ -47,9 +47,10 @@ inherited — treat it as a strong first direction to iterate on.
 
 ### Challenges to the brief (decisions taken)
 
-- **Headline is "% left", not "% consumed."** The binding constraint is the
-  most-consumed active limit, but it is framed as *remaining* capacity — that is
-  the reassuring, actionable reading ("8% left" tells you to switch).
+- **Headline is "% used", not "% left."** The first visual pass framed the
+  headline as remaining capacity; the build deliberately inverted every
+  percent surface to consumed — a fuller bar always means more used, so the
+  numeral, the bar, and the tray digits can never disagree about direction.
 - **Menu bar stays monochrome and shows at most a couple of pinned figures.**
   Color in the menu bar would violate macOS convention and "don't shout"; the
   pinned figure only gains a warning tint when it actually needs attention.
@@ -69,20 +70,20 @@ surfaces and text. A single **muted teal** accent (`--teal`, `#3f8b7e` dark /
 `#1f7c6f` light) is the brand note and the "healthy capacity" fill —
 deliberately low-saturation so it never glows. Semantic hues are muted by
 design: amber (`--amber`) for stale/behind, coral-red (`--red`) for broken,
-slate-blue (`--blue`) for in-progress and "waiting on limits". Never more than
+slate-blue (`--blue`) for informational accents. Never more than
 one accent plus at most one semantic hue on screen at once. See
 `tokens/colors.css`.
 
-**Capacity color logic.** The bar fill encodes how much is left: teal when
-healthy, amber below ~25% remaining, red below ~10%. That is the only place
-color changes meaning by value.
+**Capacity color logic.** The bar fill encodes how much is used: teal while
+comfortable, amber from 75% used, red from 90%. That is the only place color
+changes meaning by value.
 
 **Type.** UI text is **Inter** (variable, self-hosted); every number that
 matters is set in **MonoLisa** (static weights 400/500/600/700, self-hosted) so
 digits align in a list and read like data. Both font families were provided by
 the owner and ship with the system (`assets/fonts/`, declared in
 `tokens/fonts.css`). Sizes are compact for a popover (11–16px working range;
-13px body). The headline "% left" is 30px mono; the verify-result hero is 44px.
+13px body). The headline "% used" is 30px mono; the verify-result hero is 44px.
 See `tokens/typography.css`.
 
 **Spacing & radii.** A tight 2px-based scale (`--space-*`) — density is a
@@ -120,7 +121,7 @@ marketing surface.
 - **Provider vocabulary is passed through verbatim.** Window names ("Session",
   "Weekly", "Opus-scoped") are quoted from the provider, never rewritten — even
   in another language.
-- **Numbers carry units, time is relative.** "8% left", "resets in 3h",
+- **Numbers carry units, time is relative.** "92% used", "resets in 3h",
   "2 min ago". Absolute timestamps appear on hover / in detail.
 - **No emoji.** Status is carried by a small colored dot and a word, not an
   emoji. Iconography is line icons (see below).

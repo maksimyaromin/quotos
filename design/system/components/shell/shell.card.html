@@ -38,17 +38,17 @@ function App() {
       <div className="col">
         <span className="lbl">Menu-bar tile</span>
         <MenuBarTile pins={[]} />
-        <MenuBarTile pins={[{ remaining: 62, state: "working" }]} />
-        <MenuBarTile pins={[{ remaining: 62, state: "working" }, { remaining: 8, state: "working" }]} />
-        <MenuBarTile pins={[{ remaining: 40, state: "behind" }, { state: "broken" }]} />
+        <MenuBarTile pins={[{ used: 38, state: "working" }]} />
+        <MenuBarTile pins={[{ used: 38, state: "working" }, { used: 92, state: "working" }]} />
+        <MenuBarTile pins={[{ used: 60, state: "behind" }, { state: "broken" }]} />
       </div>
       <div className="col">
         <span className="lbl">Panel</span>
-        <Panel title="Quotos" beak={false}
+        <Panel title="Quotos"
           headerActions={<><IconButton label="Refresh"><Icon name="refresh-cw" /></IconButton><IconButton label="Add"><Icon name="plus" /></IconButton><IconButton label="Settings"><Icon name="settings" /></IconButton></>}
           footer={<Button variant="ghost" size="sm" icon={<Icon name="plus" />}>Add subscription</Button>}>
-          <SubscriptionRow label="Claude Max" account="Personal" provider="Anthropic" state="working" remaining={62} resetLabel="resets in 3h" lastRead="2 min ago" pinned windows={[{ name: "Session", remaining: 62 }]} />
-          <SubscriptionRow label="Claude Team" account="Work" provider="Anthropic" state="behind" remaining={40} lastRead="41 min ago" windows={[{ name: "Session", remaining: 40 }]} />
+          <SubscriptionRow label="Claude Max" account="Personal" provider="Anthropic" state="working" used={38} severity="healthy" resetLabel="Resets in 3h" lastRead="2 min ago" pinnedCount={1} headlinePinned windows={[{ id: "w1", name: "Session", used: 38, pinned: true }]} />
+          <SubscriptionRow label="Claude Team" account="Work" provider="Anthropic" state="behind" used={60} severity="healthy" badge="Not current" lastRead="41 min ago" windows={[{ id: "w1", name: "Session", used: 60 }]} />
         </Panel>
       </div>
     </div>

@@ -267,6 +267,25 @@ clean.
     `Contents/Resources` holds exactly the correct Q-mark `icon.icns`,
     byte-identical to source.
 
+27. **The design system's own exhibits tell the truth again** — the card
+    pages and the `ui_kits/quotos` interactive demo were a full component
+    generation behind the app: the prebuilt `_ds_bundle.js` still carried
+    round-1 components (eight states, `remaining` %-left fields, per-
+    subscription pinning), and the pages fed them matching stale props. The
+    bundle is now regenerable from source (`design/system/_build_bundle.mjs`
+    — a small Node generator reusing quotos-app's esbuild, same in-page
+    contract: per-module try-wrapped IIFEs over a shared scope, public
+    components exposed on the namespace), the demo data and all four card
+    pages speak the shipped vocabulary (`used`/`severity`, the six states,
+    per-window pinning with `id`s, "Not current"/"Needs sign-in" badges),
+    and `MenuBarTile` — the last component still holding %-remaining
+    semantics (`<=10` red / `<=25` amber) — was flipped to consumed
+    (`>=90`/`>=75`, both copies). Verified in a real browser: all five
+    bundle-consuming pages load with zero `__errors`, the severity seam
+    renders (38% headline amber because an 82% window exists), and the
+    interactive demo's per-window pin toggle adds/removes tray figures in
+    subscription order.
+
 ## Honest gaps, still open
 
 - **Where `claude setup-token` writes for the default account** is unverified

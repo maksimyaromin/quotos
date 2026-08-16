@@ -62,32 +62,32 @@
         "message": "<Button> size must be one of 'sm' | 'base' | 'lg'."
       },
       {
-        "selector": "JSXOpeningElement[name.name='CapacityBar'] > JSXAttribute > JSXIdentifier[name!=/^(?:remaining|reading|stale|height|style|key|ref|className|style|children)$/]",
-        "message": "<CapacityBar> doesn't accept that prop. Declared props: remaining, reading, stale, height, style."
+        "selector": "JSXOpeningElement[name.name='CapacityBar'] > JSXAttribute > JSXIdentifier[name!=/^(?:used|reading|stale|severity|height|style|key|ref|className|style|children)$/]",
+        "message": "<CapacityBar> doesn't accept that prop. Declared props: used, reading, stale, severity, height, style."
       },
       {
         "selector": "JSXOpeningElement[name.name='IconButton'] > JSXAttribute > JSXIdentifier[name!=/^(?:size|active|disabled|label|onClick|children|key|ref|className|style|children)$/]",
         "message": "<IconButton> doesn't accept that prop. Declared props: size, active, disabled, label, onClick, children."
       },
       {
-        "selector": "JSXOpeningElement[name.name='LimitWindow'] > JSXAttribute > JSXIdentifier[name!=/^(?:name|remaining|resetLabel|scope|stale|style|key|ref|className|style|children)$/]",
-        "message": "<LimitWindow> doesn't accept that prop. Declared props: name, remaining, resetLabel, scope, stale, style."
+        "selector": "JSXOpeningElement[name.name='LimitWindow'] > JSXAttribute > JSXIdentifier[name!=/^(?:id|name|used|resetLabel|scope|stale|pinned|onTogglePin|style|key|ref|className|style|children)$/]",
+        "message": "<LimitWindow> doesn't accept that prop. Declared props: id, name, used, resetLabel, scope, stale, pinned, onTogglePin, style."
       },
       {
-        "selector": "JSXOpeningElement[name.name='PinnedFigure'] > JSXAttribute > JSXIdentifier[name!=/^(?:remaining|state|key|ref|className|style|children)$/]",
-        "message": "<PinnedFigure> doesn't accept that prop. Declared props: remaining, state."
+        "selector": "JSXOpeningElement[name.name='PinnedFigure'] > JSXAttribute > JSXIdentifier[name!=/^(?:used|state|key|ref|className|style|children)$/]",
+        "message": "<PinnedFigure> doesn't accept that prop. Declared props: used, state."
       },
       {
-        "selector": "JSXOpeningElement[name.name='Panel'] > JSXAttribute > JSXIdentifier[name!=/^(?:title|beak|headerActions|footer|maxBodyHeight|children|style|key|ref|className|style|children)$/]",
-        "message": "<Panel> doesn't accept that prop. Declared props: title, beak, headerActions, footer, maxBodyHeight, children, style."
+        "selector": "JSXOpeningElement[name.name='Panel'] > JSXAttribute > JSXIdentifier[name!=/^(?:title|docked|beakLeft|dragging|onHeaderPointerDown|leading|headerActions|footer|maxBodyHeight|position|children|style|key|ref|className|style|children)$/]",
+        "message": "<Panel> doesn't accept that prop. Declared props: title, docked, beakLeft, dragging, onHeaderPointerDown, leading, headerActions, footer, maxBodyHeight, position, children, style."
       },
       {
         "selector": "JSXOpeningElement[name.name='StatusDot'] > JSXAttribute > JSXIdentifier[name!=/^(?:state|size|style|key|ref|className|style|children)$/]",
         "message": "<StatusDot> doesn't accept that prop. Declared props: state, size, style."
       },
       {
-        "selector": "JSXOpeningElement[name.name='SubscriptionRow'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|provider|account|state|remaining|resetLabel|lastRead|windows|reason|pinned|expanded|actionLabel|onAction|onTogglePin|onToggleExpand|style|key|ref|className|style|children)$/]",
-        "message": "<SubscriptionRow> doesn't accept that prop. Declared props: label, provider, account, state, remaining, resetLabel, lastRead, windows, reason, pinned, expanded, actionLabel, onAction, onTogglePin, onToggleExpand, style."
+        "selector": "JSXOpeningElement[name.name='SubscriptionRow'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|provider|account|state|used|severity|resetLabel|lastRead|windows|reason|badge|pinnedCount|headlinePinned|expanded|menuOpen|actionLabel|actionDisabled|footerNote|onAction|onTogglePin|onToggleWindowPin|onToggleExpand|onToggleMenu|onRename|onReadNow|canMoveUp|canMoveDown|onMoveUp|onMoveDown|onStopTracking|signInInProgress|onSubmitSignInCode|onCancelSignIn|style|key|ref|className|style|children)$/]",
+        "message": "<SubscriptionRow> doesn't accept that prop. Declared props: label, provider, account, state, used, severity, resetLabel, lastRead, windows, reason, badge, pinnedCount, headlinePinned, expanded, menuOpen, actionLabel, actionDisabled, footerNote, onAction, onTogglePin, onToggleWindowPin, onToggleExpand, onToggleMenu, onRename, onReadNow, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onStopTracking, signInInProgress, onSubmitSignInCode, onCancelSignIn, style."
       },
       {
         "selector": "JSXOpeningElement[name.name='TextField'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|value|placeholder|mono|invalid|disabled|onChange|style|key|ref|className|style|children)$/]",

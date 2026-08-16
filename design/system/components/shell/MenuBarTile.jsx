@@ -26,8 +26,8 @@ const AttentionMark = () => (
 export function MenuBarTile({ pins = [], onClick, showStrip = true, style }) {
   const tintFor = (p) => {
     if (p.state === "broken" || p.state === "behind") return "var(--amber)";
-    if (typeof p.remaining === "number" && p.remaining <= 10) return "var(--red)";
-    if (typeof p.remaining === "number" && p.remaining <= 25) return "var(--amber)";
+    if (typeof p.used === "number" && p.used >= 90) return "var(--red)";
+    if (typeof p.used === "number" && p.used >= 75) return "var(--amber)";
     return "inherit";
   };
 
@@ -45,7 +45,7 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }) {
         <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: tintFor(p) }}>
           {p.state === "broken"
             ? <AttentionMark />
-            : <>{typeof p.remaining === "number" ? `${p.remaining}%` : "—"}
+            : <>{typeof p.used === "number" ? `${p.used}%` : "—"}
                 {p.state === "behind" ? <span style={{ opacity: 0.7 }}><AttentionMark /></span> : null}</>}
         </span>
       ))}

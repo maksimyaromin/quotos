@@ -354,8 +354,12 @@ rewritten each round, not appended to.
   `filter`, `backdrop-filter`, `perspective`, `will-change` or `contain` on
   `Panel`'s wrappers (the blurred backdrop layer is a *sibling*). Deliberately
   not a React portal — `design/system/`'s components are consumed through a
-  prebuilt `_ds_bundle.js`, so adding a `react-dom` import there would need
-  that bundle regenerated.
+  prebuilt `_ds_bundle.js`, and its generator
+  (`design/system/_build_bundle.mjs`, run `node` on it after any component
+  edit) only knows how to rewrite `react` imports against the page-global
+  React — a `react-dom` import would need the generator taught about it
+  first. The bundle feeds only the design card pages and
+  `ui_kits/quotos/index.html`, never the app.
 - **R4-3: "Stop tracking" untracks immediately; the undo window is only a
   slot the panel keeps.** `Subscription.pendingRemoval` marks a row that the
   panel still draws (as the Undo row, in place) while `trackedSubscriptions`

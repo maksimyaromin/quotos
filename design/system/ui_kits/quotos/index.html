@@ -180,8 +180,8 @@ function AddFlow({ onClose, onDone }) {
       <div style={pad}>
         <div style={lead}>Read succeeded. Is this the account you meant?</div>
         <div style={{ padding: "var(--space-3)", background: "var(--bg-elevated)", border: "0.5px solid var(--border-default)", borderRadius: "var(--radius-md)", textAlign: "center" }}>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--numeral-xl)", fontWeight: "var(--weight-medium)", color: "var(--teal)", lineHeight: 1, letterSpacing: "-.02em" }}>{v.remaining}<span style={{ fontSize: 24 }}>%</span></div>
-          <div style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", color: "var(--text-tertiary)", marginTop: 4 }}>left · {v.resetLabel}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--numeral-xl)", fontWeight: "var(--weight-medium)", color: "var(--teal)", lineHeight: 1, letterSpacing: "-.02em" }}>{v.used}<span style={{ fontSize: 24 }}>%</span></div>
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", color: "var(--text-tertiary)", marginTop: 4 }}>used · {v.resetLabel}</div>
           <div style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-md)", fontWeight: "var(--weight-semibold)", color: "var(--text-primary)", marginTop: 10 }}>{v.label}</div>
           <div style={{ fontFamily: "var(--font-sans)", fontSize: "var(--text-sm)", color: "var(--text-tertiary)" }}>{v.account} · {v.provider}</div>
         </div>
@@ -236,25 +236,28 @@ function App() {
   React.useEffect(() => { window.addEventListener("resize", placePopover); return () => window.removeEventListener("resize", placePopover); }, [placePopover]);
 
   const shownSubs = demo === "empty" ? [] : subs;
-  const pinned = shownSubs.filter(s => s.pinned).map(s => ({ remaining: s.remaining, state: s.state }));
+  // Pinning is per-window: the menu bar shows every pinned window's figure.
+  const pinned = shownSubs.flatMap(s => (s.windows || []).filter(w => w.pinned).map(w => ({ used: w.used, state: s.state })));
 
-  const togglePin = id => setSubs(s => s.map(x => x.id === id ? { ...x, pinned: !x.pinned } : x));
+  const withPinDerived = (x, windows) => ({ ...x, windows, pinnedCount: windows.filter(w => w.pinned).length, headlinePinned: !!(windows[0] && windows[0].pinned) });
+  const toggleHeadlinePin = id => setSubs(s => s.map(x => x.id === id ? withPinDerived(x, x.windows.map((w, i) => i === 0 ? { ...w, pinned: !w.pinned } : w)) : x));
+  const toggleWindowPin = (id, windowId) => setSubs(s => s.map(x => x.id === id ? withPinDerived(x, x.windows.map(w => w.id === windowId ? { ...w, pinned: !w.pinned } : w)) : x));
   const toggleExpand = id => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
   const refresh = () => {
     setSubs(s => s.map(x => (x.state === "working" || x.state === "behind") ? { ...x, state: "reading" } : x));
     setTimeout(() => {
       setSubs(s => s.map(x => x.state === "reading" ? {
-        ...x, state: "working", lastRead: "just now",
-        remaining: window.quotosJitter(x.remaining),
-        windows: (x.windows || []).map(w => ({ ...w, remaining: window.quotosJitter(w.remaining) })),
+        ...x, state: "working", lastRead: "just now", badge: null, footerNote: null,
+        used: window.quotosJitter(x.used),
+        windows: (x.windows || []).map(w => ({ ...w, used: window.quotosJitter(w.used) })),
       } : x));
     }, 1200);
   };
 
   const addSub = v => {
     setView("list");
-    setSubs(s => [{ id: "added-" + Date.now(), label: v.label, provider: v.provider, account: v.account, state: "working", remaining: v.remaining, resetLabel: v.resetLabel, lastRead: "just now", pinned: false, windows: v.windows }, ...s]);
+    setSubs(s => [{ id: "added-" + Date.now(), label: v.label, provider: v.provider, account: v.account, state: "working", used: v.used, severity: "healthy", resetLabel: v.resetLabel, lastRead: "just now", pinnedCount: 0, headlinePinned: false, windows: v.windows }, ...s]);
   };
 
   const wallpaper = appearance === "dark"
@@ -306,7 +309,8 @@ function App() {
                     <SubscriptionRow key={s.id} {...s}
                       expanded={!!expanded[s.id]}
                       onToggleExpand={() => toggleExpand(s.id)}
-                      onTogglePin={() => togglePin(s.id)}
+                      onTogglePin={() => toggleHeadlinePin(s.id)}
+                      onToggleWindowPin={wid => toggleWindowPin(s.id, wid)}
                       onAction={() => setView("add")} />
                   ))}
                 </div>

@@ -2,8 +2,8 @@ import * as React from "react";
 import type { SubscriptionState } from "../indicators/StatusDot";
 
 export interface PinnedFigure {
-  /** % remaining for this pinned subscription. */
-  remaining?: number | null;
+  /** % consumed shown for this pinned figure. */
+  used?: number | null;
   state?: SubscriptionState;
 }
 
