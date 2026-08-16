@@ -31,12 +31,12 @@
 //!     special-casing anywhere.
 //!
 //! This is a scoped exception to the provider-adapter seam documented in
-//! AGENTS.md. The feed's own vocabulary, `five_hour` and `seven_day`, is
-//! Claude Code CLI vocabulary, not a generic shape, but the install,
-//! backup, restore, and read plumbing here is per-config-dir infrastructure
-//! with nothing Claude-specific in how it works. This puts it in the same
-//! category as `persistence.rs` and `scheduler.rs`, which are shell-owned
-//! even though Claude is their only current caller.
+//! docs/architecture.md. The feed's own vocabulary, `five_hour` and
+//! `seven_day`, is Claude Code CLI vocabulary, not a generic shape, but the
+//! install, backup, restore, and read plumbing here is per-config-dir
+//! infrastructure with nothing Claude-specific in how it works. This puts
+//! it in the same category as `persistence.rs` and `scheduler.rs`, which
+//! are shell-owned even though Claude is their only current caller.
 
 use std::fs;
 use std::io::Read;
