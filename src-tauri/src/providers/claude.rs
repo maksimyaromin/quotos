@@ -181,19 +181,10 @@ fn keychain_service_hashed(config_dir: &Path) -> String {
 }
 
 /// What `CLAUDE_CONFIG_DIR` must be set to when Quotos runs the Claude Code
-/// CLI for this account. `None` means it must not be set at all.
-///
-/// Setting `CLAUDE_CONFIG_DIR=~/.claude` is not the same as leaving it
-/// unset. With it set, the CLI reads `<dir>/.claude.json`, one level below
-/// where the default account's real config lives at `~/.claude.json`, and
-/// looks up the hashed keychain service for that path. That hashed service
-/// does not exist for the default dir, because the default account's
-/// credential is stored under the bare service name.
-/// `CLAUDE_CONFIG_DIR=$HOME/.claude claude auth status --json` reports
-/// `"loggedIn": false` for the same account that reports `"loggedIn":
-/// true`, with the variable unset. Setting it for the default account
-/// makes the CLI treat a signed-in account as signed out and renew
-/// nothing.
+/// CLI for this account. `None` means it must not be set at all, which is
+/// the default account. See "CLAUDE_CONFIG_DIR" in claude-provider.md for
+/// why setting it to the default account's own directory is not the same
+/// as leaving it unset.
 fn claude_config_dir_env(home: &Path, config_dir: &Path) -> Option<PathBuf> {
     if is_default_config_dir(home, config_dir) {
         None
@@ -304,23 +295,7 @@ fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
         })?;
 
     if !output.status.success() {
-        // Only "there is no such item" means the account is not signed in.
-        // Anything else, such as a denied ACL, a locked keychain, or a
-        // tool that will not run, is a local problem. Saying "sign in" for
-        // any of those would misreport a local failure as a missing
-        // sign-in.
-        return Err(match output.status.code() {
-            Some(KEYCHAIN_ITEM_NOT_FOUND_EXIT) => FetchError::NotConnected {
-                message: "Claude Code isn't signed in for this account. Sign in there and Quotos will pick it up."
-                    .to_string(),
-            },
-            Some(code) => FetchError::Other {
-                message: format!("Quotos couldn't read this account's credential from the Keychain (security exited {code})."),
-            },
-            None => FetchError::Other {
-                message: "Quotos couldn't read this account's credential from the Keychain.".to_string(),
-            },
-        });
+        return Err(classify_keychain_failure(&output.status));
     }
 
     let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -331,19 +306,33 @@ fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
     })
 }
 
-/// Where the `claude` CLI actually is. A menu bar app cannot rely on
-/// `$PATH`. An app launched from Finder or the Dock inherits no `PATH` at
-/// all, since Finder's own environment carries no `PATH` entry and the
-/// launchd GUI domain sets only `SSH_AUTH_SOCK`, so `Command::new("claude")`
-/// falls back to the libc default `/usr/bin:/bin:/usr/sbin:/sbin` and never
-/// finds a per-user install. A packaged build launched this way would find
-/// no CLI to renew a credential with, while the same code path works under
-/// `npm run tauri dev` from a terminal, which inherits a real `PATH`.
+/// Only "there is no such item" means the account is not signed in.
+/// Anything else, such as a denied ACL, a locked keychain, or a tool that
+/// will not run, is a local problem. Saying "sign in" for any of those
+/// would misreport a local failure as a missing sign-in.
+fn classify_keychain_failure(status: &std::process::ExitStatus) -> FetchError {
+    match status.code() {
+        Some(KEYCHAIN_ITEM_NOT_FOUND_EXIT) => FetchError::NotConnected {
+            message: "Claude Code isn't signed in for this account. Sign in there and Quotos will pick it up."
+                .to_string(),
+        },
+        Some(code) => FetchError::Other {
+            message: format!(
+                "Quotos couldn't read this account's credential from the Keychain (security exited {code})."
+            ),
+        },
+        None => FetchError::Other {
+            message: "Quotos couldn't read this account's credential from the Keychain.".to_string(),
+        },
+    }
+}
+
+/// Where the `claude` CLI actually is. See "Finding the claude CLI" in
+/// claude-provider.md for why a menu bar app can't rely on `$PATH`.
 ///
-/// Resolution order, most authoritative first. Nothing here is specific to
-/// one machine: the login-shell probe asks the running system where its
-/// `claude` is, and the fallback list is Claude Code's own documented
-/// install locations rebuilt from `$HOME`.
+/// Resolution order, most authoritative first: `$PATH`, then a login-shell
+/// probe of the running system, then Claude Code's own documented install
+/// locations rebuilt from `$HOME`. Nothing here is specific to one machine.
 fn claude_cli_path() -> Option<PathBuf> {
     static CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
@@ -688,12 +677,8 @@ fn rate_limited(retry_after_secs: Option<u64>) -> FetchError {
 }
 
 /// A completed usage read: the payload plus the moment its HTTP response
-/// arrived. The snapshot's `fetched_at` must be this moment, not
-/// snapshot-assembly time. The statusline feed's freshest-wins comparison
-/// in `statuslineMerge.ts` runs against it, and the feed file is only read
-/// after this fetch returns, so a stamp taken any later would make
-/// `written_at < fetched_at` always hold and silently disable the second
-/// source.
+/// arrived, `fetched_at`. See "The statusline feed" in claude-provider.md
+/// for why that moment, not snapshot-assembly time, is load-bearing.
 pub struct UsageRead {
     pub body: serde_json::Value,
     pub fetched_at: String,
@@ -706,10 +691,8 @@ pub struct UsageRead {
 ///     past its own expiry. Claude Code's tokens live roughly 8 hours, so
 ///     this is the ordinary case, and handling it locally means an
 ///     aged-out token never reaches the user as a 401 at all.
-///  2. On an unexpected 401, renew once, but only retry the request if the
-///     stored credential actually changed. A refresh that did nothing must
-///     not cost a second request against a budget shared with Claude Code
-///     itself, and must not be reported as an expired sign-in.
+///  2. On an unexpected 401, renew once, retrying only if the credential
+///     actually changed. See "Sign-in recovery" in claude-provider.md.
 ///  3. Reserve one budget slot per real request, not per read attempt.
 pub async fn fetch_usage(
     client: &reqwest::Client,
@@ -928,15 +911,7 @@ mod tests {
         assert!(found.is_empty());
     }
 
-    /// `CLAUDE_CONFIG_DIR` must not be set when the account is the default
-    /// config dir. Setting it makes Claude Code look for
-    /// `<dir>/.claude.json` and a hashed keychain service that do not exist
-    /// for the default account, so it considers that account signed out
-    /// and renews nothing. This can turn an ordinary roughly-8-hourly token
-    /// expiry into a reported "sign-in expired" on an account that stayed
-    /// signed in the whole time. `CLAUDE_CONFIG_DIR=$HOME/.claude claude
-    /// auth status --json` reports `loggedIn: false` for the same account
-    /// that reports `loggedIn: true` with the variable unset.
+    /// See `claude_config_dir_env`'s doc comment for why this split matters.
     #[test]
     fn the_default_config_dir_must_not_set_claude_config_dir() {
         let home = PathBuf::from("/Users/someone");
@@ -1128,12 +1103,9 @@ mod tests {
         assert!(locations.iter().all(|p| p.file_name().unwrap() == "claude"));
     }
 
-    /// `fetched_at` is the statusline merge's freshest-wins anchor, so it
-    /// must mark when the response arrived, not when a slow body finished
-    /// streaming, and never when the caller later assembled a snapshot. A
-    /// stamp taken at snapshot-assembly time would make the feed lose
-    /// every comparison. The server in this test delays its body by
-    /// 400ms, so the stamp must land well inside that window.
+    /// See `UsageRead`'s doc comment for why this timing is load-bearing.
+    /// The server here delays its body by 400ms, so the stamp must land
+    /// well inside that window rather than after it.
     #[test]
     fn fetched_at_marks_response_arrival_not_body_completion() {
         use std::io::{Read as _, Write as _};
