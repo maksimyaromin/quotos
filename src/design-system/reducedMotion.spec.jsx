@@ -23,7 +23,7 @@ function sourceFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) files.push(...sourceFiles(full));
-    else if (/\.(jsx|tsx|ts|css)$/.test(entry.name) && !/\.test\./.test(entry.name))
+    else if (/\.(jsx|tsx|ts|css)$/.test(entry.name) && !/\.spec\./.test(entry.name))
       files.push(full);
   }
   return files;
