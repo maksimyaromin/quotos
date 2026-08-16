@@ -62,7 +62,7 @@ export const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   claude: "Anthropic",
 };
 
-export function providerDisplayName(provider: string): string {
+export function resolveProviderDisplayName(provider: string): string {
   return PROVIDER_DISPLAY_NAMES[provider] ?? provider;
 }
 

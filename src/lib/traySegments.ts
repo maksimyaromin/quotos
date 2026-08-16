@@ -6,7 +6,7 @@ import type { Subscription, TraySegment } from "../types/entities";
  * subscription's aggregate `severity`, so a pinned session figure reads by
  * its own number rather than by whatever else the same subscription is
  * doing. */
-function baseFigureColor(used: number): TraySegment["color"] {
+function pickBaseFigureColor(used: number): TraySegment["color"] {
   if (used >= 90) return "red";
   if (used >= 75) return "amber";
   return "neutral";
@@ -17,8 +17,8 @@ function baseFigureColor(used: number): TraySegment["color"] {
  * one fact the whole bar shares, not a per-account one. Scoped to
  * subscriptions that actually contribute a figure right now, so a stale
  * subscription with nothing pinned does not taint the bar. */
-function figureColor(used: number, anyContributingStale: boolean): TraySegment["color"] {
-  return anyContributingStale ? "amber" : baseFigureColor(used);
+function pickFigureColor(used: number, anyContributingStale: boolean): TraySegment["color"] {
+  return anyContributingStale ? "amber" : pickBaseFigureColor(used);
 }
 
 /** One segment per pinned window, in panel order, `subscriptions`' own
@@ -44,7 +44,7 @@ export function buildTraySegments(subscriptions: Subscription[]): TraySegment[] 
   for (const { sub, used } of entries) {
     segments.push({
       text: `${used}%`,
-      color: figureColor(used, anyContributingStale),
+      color: pickFigureColor(used, anyContributingStale),
       groupStart: lastSubId !== null && lastSubId !== sub.id,
     });
     lastSubId = sub.id;
@@ -78,7 +78,7 @@ export function buildTrayTooltip(subscriptions: Subscription[]): string {
  * ones. Deliberately narrower than `severity`, which counts every window.
  * Returns 0, an empty ring, when nothing tracked has any active, numeric
  * window yet. */
-export function worstActiveLimitPercent(subscriptions: Subscription[]): number {
+export function computeWorstActiveLimitPercent(subscriptions: Subscription[]): number {
   let worst = 0;
   for (const sub of subscriptions) {
     for (const w of sub.windows) {

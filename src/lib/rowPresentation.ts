@@ -28,7 +28,7 @@ export interface RowPresentation {
  * `state === "broken"`, because that shortcut would also accuse an offline
  * launch or an HTTP 403 of being signed out.
  */
-export function rowPresentation(sub: Subscription, now: number): RowPresentation {
+export function presentRow(sub: Subscription, now: number): RowPresentation {
   const waitingUntil = pendingWaitUntil(sub, now);
 
   const badge = sub.state === "behind" ? "Not current" : sub.needsSignIn ? "Needs sign-in" : null;

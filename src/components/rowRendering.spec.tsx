@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { SubscriptionRow } from "../design-system/components/subscription/SubscriptionRow";
-import { rowPresentation } from "../lib/rowPresentation";
+import { presentRow } from "../lib/rowPresentation";
 import type { Subscription } from "../types/entities";
 
 const NOW = new Date("2026-08-15T14:00:00Z").getTime();
@@ -36,7 +36,7 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
 /** Renders a row exactly as App.tsx does, so what is asserted is what the
  * panel actually paints. */
 function renderRow(s: Subscription) {
-  const presentation = rowPresentation(s, NOW);
+  const presentation = presentRow(s, NOW);
   return render(
     <SubscriptionRow
       label={s.labelOverride ?? s.label}

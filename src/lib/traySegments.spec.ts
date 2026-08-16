@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { LimitWindowEntity, Subscription } from "../types/entities";
-import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "./traySegments";
+import {
+  buildTraySegments,
+  buildTrayTooltip,
+  computeWorstActiveLimitPercent,
+} from "./traySegments";
 
 function window(overrides: Partial<LimitWindowEntity> & { id: string }): LimitWindowEntity {
   return { name: "Window", used: null, resetsAt: null, scope: null, isActive: true, ...overrides };
@@ -204,10 +208,10 @@ describe("buildTrayTooltip", () => {
   });
 });
 
-describe("worstActiveLimitPercent", () => {
+describe("computeWorstActiveLimitPercent", () => {
   test("is 0 when nothing tracked has any active numeric window", () => {
-    expect(worstActiveLimitPercent([])).toBe(0);
-    expect(worstActiveLimitPercent([subscription({ id: "a" })])).toBe(0);
+    expect(computeWorstActiveLimitPercent([])).toBe(0);
+    expect(computeWorstActiveLimitPercent([subscription({ id: "a" })])).toBe(0);
   });
 
   test("is the max used% across every active window, pinned or not", () => {
@@ -221,6 +225,6 @@ describe("worstActiveLimitPercent", () => {
         ],
       }),
     ];
-    expect(worstActiveLimitPercent(subs)).toBe(74);
+    expect(computeWorstActiveLimitPercent(subs)).toBe(74);
   });
 });

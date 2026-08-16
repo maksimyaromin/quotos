@@ -37,7 +37,7 @@ vi.mock("../lib/persistence", () => ({
 
 // vi.mock calls above are hoisted by Vitest, so this static import safely
 // resolves against the mocked modules.
-import { accountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from "./useSubscriptions";
+import { deriveAccountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from "./useSubscriptions";
 
 async function flush() {
   await act(async () => {
@@ -1208,14 +1208,22 @@ describe("useSubscriptions display names are consistent between the panel and th
   });
 
   test("titles the id-derived fallback the way every other name in the panel is titled", () => {
-    expect(accountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" })).toBe(
-      "Claude",
-    );
     expect(
-      accountLabel({ id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" }),
+      deriveAccountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" }),
+    ).toBe("Claude");
+    expect(
+      deriveAccountLabel({
+        id: "claude:claude-team",
+        provider: "claude",
+        config_dir: "~/.claude-team",
+      }),
     ).toBe("Claude Team");
     expect(
-      accountLabel({ id: "claude:work_eu", provider: "claude", config_dir: "~/.claude-work_eu" }),
+      deriveAccountLabel({
+        id: "claude:work_eu",
+        provider: "claude",
+        config_dir: "~/.claude-work_eu",
+      }),
     ).toBe("Work Eu");
   });
 

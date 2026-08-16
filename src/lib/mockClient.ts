@@ -31,7 +31,7 @@ function delay<T>(value: T): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), DELAY_MS));
 }
 
-function usagePayload(fiveHourPct: number, sevenDayPct: number, fablePct: number) {
+function buildUsagePayload(fiveHourPct: number, sevenDayPct: number, fablePct: number) {
   return {
     limits: [
       {
@@ -65,7 +65,7 @@ function usagePayload(fiveHourPct: number, sevenDayPct: number, fablePct: number
   };
 }
 
-function profilePayload(name: string, orgType: string) {
+function buildProfilePayload(name: string, orgType: string) {
   return { organization: { name, organization_type: orgType, subscription_status: "active" } };
 }
 
@@ -113,8 +113,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         provider: "claude",
         config_dir: account.config_dir,
         fetched_at: new Date().toISOString(),
-        usage: usagePayload(2, 3, 3),
-        profile: profilePayload("Personal", "claude_max"),
+        usage: buildUsagePayload(2, 3, 3),
+        profile: buildProfilePayload("Personal", "claude_max"),
       });
     case "claude:claude-team":
       return delay({
@@ -122,8 +122,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         provider: "claude",
         config_dir: account.config_dir,
         fetched_at: new Date().toISOString(),
-        usage: usagePayload(78, 82, 45),
-        profile: profilePayload("Scompler", "claude_team"),
+        usage: buildUsagePayload(78, 82, 45),
+        profile: buildProfilePayload("Scompler", "claude_team"),
       });
     case "claude:demo-critical":
       return delay({
@@ -131,8 +131,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         provider: "claude",
         config_dir: account.config_dir,
         fetched_at: new Date().toISOString(),
-        usage: usagePayload(94, 91, 20),
-        profile: profilePayload("Critical demo", "claude_pro"),
+        usage: buildUsagePayload(94, 91, 20),
+        profile: buildProfilePayload("Critical demo", "claude_pro"),
       });
     case "claude:demo-idle":
       return fail({
@@ -149,8 +149,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
           provider: "claude",
           config_dir: account.config_dir,
           fetched_at: new Date().toISOString(),
-          usage: usagePayload(5, 8, 2),
-          profile: profilePayload("Recovered demo", "claude_pro"),
+          usage: buildUsagePayload(5, 8, 2),
+          profile: buildProfilePayload("Recovered demo", "claude_pro"),
         });
       }
       // The first read surfaces the real, diagnosable failure, an expired
@@ -184,8 +184,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         provider: "claude",
         config_dir: account.config_dir,
         fetched_at: new Date().toISOString(),
-        usage: usagePayload(11, 19, 6),
-        profile: profilePayload("Renewed demo", "claude_max"),
+        usage: buildUsagePayload(11, 19, 6),
+        profile: buildProfilePayload("Renewed demo", "claude_max"),
       });
     case "claude:demo-waiting":
       // Never successfully read even once, and rate-limited from the very
@@ -199,8 +199,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
           provider: "claude",
           config_dir: account.config_dir,
           fetched_at: new Date().toISOString(),
-          usage: usagePayload(12, 24, 8),
-          profile: profilePayload("Flaky demo", "claude_pro"),
+          usage: buildUsagePayload(12, 24, 8),
+          profile: buildProfilePayload("Flaky demo", "claude_pro"),
         });
       }
       return fail({ kind: "network", message: "the connection timed out" });
@@ -214,7 +214,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         config_dir: account.config_dir,
         fetched_at: new Date().toISOString(),
         usage: { limits: [] },
-        profile: profilePayload("No limits demo", "claude_pro"),
+        profile: buildProfilePayload("No limits demo", "claude_pro"),
       });
     case "claude:demo-severity":
       // The account-wide weekly headline is low at 20%, but the session is
@@ -227,8 +227,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         provider: "claude",
         config_dir: account.config_dir,
         fetched_at: new Date().toISOString(),
-        usage: usagePayload(85, 20, 8),
-        profile: profilePayload("Severity demo", "claude_pro"),
+        usage: buildUsagePayload(85, 20, 8),
+        profile: buildProfilePayload("Severity demo", "claude_pro"),
       });
     case "claude:demo-statusline":
       // The API read reports a session at 12%, but a statusline reading
@@ -241,8 +241,8 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         provider: "claude",
         config_dir: account.config_dir,
         fetched_at: new Date(Date.now() - 30_000).toISOString(),
-        usage: usagePayload(12, 24, 8),
-        profile: profilePayload("Statusline demo", "claude_pro"),
+        usage: buildUsagePayload(12, 24, 8),
+        profile: buildProfilePayload("Statusline demo", "claude_pro"),
         statusline: {
           written_at: new Date().toISOString(),
           rate_limits: {
@@ -288,7 +288,7 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
             },
           ],
         },
-        profile: profilePayload("Long names demo", "claude_pro"),
+        profile: buildProfilePayload("Long names demo", "claude_pro"),
       });
     default:
       return fail({ kind: "other", message: "unknown demo account" });

@@ -3,7 +3,7 @@ import { Button } from "../design-system/components/controls/Button";
 import { statuslineInstall, statuslineRemove, statuslineStatus } from "../lib/tauriClient";
 import { isStatuslineError, type StatuslineIntegrationStatus } from "../types/entities";
 
-function errorMessage(err: unknown): string {
+function describeError(err: unknown): string {
   if (isStatuslineError(err) && err.kind !== "conflict" && "message" in err) {
     return err.message;
   }
@@ -51,7 +51,7 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
       if (isStatuslineError(err) && err.kind === "conflict") {
         setStatus({ kind: "conflict", existing_command: err.existing_command });
       } else {
-        setError(errorMessage(err));
+        setError(describeError(err));
       }
     } finally {
       setBusy(false);
@@ -65,7 +65,7 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
       await statuslineRemove(configDir);
       setStatus({ kind: "not_installed" });
     } catch (err) {
-      setError(errorMessage(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }

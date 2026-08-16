@@ -11,8 +11,12 @@ import {
   startSignIn as startSignInIpc,
   submitSignInCode as submitSignInCodeIpc,
 } from "../lib/tauriClient";
-import { buildTraySegments, buildTrayTooltip, worstActiveLimitPercent } from "../lib/traySegments";
-import { mapOutcomeFor, normalizeFor, providerDisplayName } from "../providers/registry";
+import {
+  buildTraySegments,
+  buildTrayTooltip,
+  computeWorstActiveLimitPercent,
+} from "../lib/traySegments";
+import { mapOutcomeFor, normalizeFor, resolveProviderDisplayName } from "../providers/registry";
 import type {
   AccountDescriptor,
   FetchError,
@@ -30,23 +34,23 @@ import { isFetchError } from "../types/entities";
  * name across the panel and the Subscriptions screen. This is
  * presentation consistency, not a naming policy: the same words,
  * capitalized the way every other name in the panel is. */
-export function accountLabel(account: AccountDescriptor): string {
+export function deriveAccountLabel(account: AccountDescriptor): string {
   const slug = account.id.split(":")[1] ?? account.id;
   return slug
     .replace(/[-_]/g, " ")
     .replace(/\S+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1));
 }
 
-function initialSubscription(
+function buildInitialSubscription(
   account: AccountDescriptor,
   labelOverride: string | null,
   pinnedWindowIds: string[],
-  label = accountLabel(account),
+  label = deriveAccountLabel(account),
 ): Subscription {
   return {
     id: account.id,
     provider: account.provider,
-    providerName: providerDisplayName(account.provider),
+    providerName: resolveProviderDisplayName(account.provider),
     label,
     labelOverride,
     account: null,
@@ -95,7 +99,7 @@ interface PriorRead {
   needsSignIn: boolean;
 }
 
-function priorReadOf(sub: Subscription | undefined): PriorRead {
+function capturePriorRead(sub: Subscription | undefined): PriorRead {
   return {
     hadGoodRead: !!sub?.lastReadAt,
     state: sub?.state ?? "connecting",
@@ -267,17 +271,17 @@ export function useSubscriptions() {
       // rate-limited outcome restoring `prior` state would read back its
       // own optimistic "reading" or "connecting" patch instead of the real
       // diagnosis that came before it.
-      const prior = priorReadOf(subscriptionsRef.current.find((s) => s.id === account.id));
+      const prior = capturePriorRead(subscriptionsRef.current.find((s) => s.id === account.id));
       patch(account.id, { state: prior.hadGoodRead ? "reading" : "connecting" });
 
       try {
         const raw = await fetchSnapshot(account);
-        applyRefreshResult(account.id, account.provider, accountLabel(account), prior, {
+        applyRefreshResult(account.id, account.provider, deriveAccountLabel(account), prior, {
           ok: true,
           raw,
         });
       } catch (err) {
-        applyRefreshResult(account.id, account.provider, accountLabel(account), prior, {
+        applyRefreshResult(account.id, account.provider, deriveAccountLabel(account), prior, {
           ok: false,
           error: isFetchError(err) ? err : null,
         });
@@ -416,7 +420,7 @@ export function useSubscriptions() {
         }
         return [
           ...prev,
-          initialSubscription(account, null, [], knownLabelsRef.current[account.id]),
+          buildInitialSubscription(account, null, [], knownLabelsRef.current[account.id]),
         ];
       });
       // Verifies by reading once immediately, per docs/design/brief.md
@@ -570,7 +574,7 @@ export function useSubscriptions() {
         if (!Array.isArray(legacy.pinnedWindowIds) && legacy.pinned === true) {
           migrating.add(t.id);
         }
-        return initialSubscription(
+        return buildInitialSubscription(
           { id: t.id, provider: t.provider, config_dir: t.config_dir },
           t.label,
           pinnedWindowIds,
@@ -601,8 +605,8 @@ export function useSubscriptions() {
         // the panel's own row list. Either way, an in-flight read's result
         // must not resurrect it.
         if (!existing || existing.pendingRemoval) return;
-        const prior = priorReadOf(existing);
-        const fallbackLabel = accountLabel({
+        const prior = capturePriorRead(existing);
+        const fallbackLabel = deriveAccountLabel({
           id: accountId,
           provider: existing.provider,
           config_dir: existing.configDir,
@@ -700,7 +704,7 @@ export function useSubscriptions() {
   // its undo window expires.
   useEffect(() => {
     const segments = buildTraySegments(trackedSubscriptions);
-    const worstUsedPercent = worstActiveLimitPercent(trackedSubscriptions);
+    const worstUsedPercent = computeWorstActiveLimitPercent(trackedSubscriptions);
     setTrayStatus(segments, worstUsedPercent, buildTrayTooltip(trackedSubscriptions));
   }, [trackedSubscriptions]);
 
@@ -709,7 +713,7 @@ export function useSubscriptions() {
    * a real read last reported over the directory-derived fallback, so one
    * account reads the same in both halves of that list. */
   const displayLabelFor = useCallback(
-    (account: AccountDescriptor) => knownLabels[account.id] ?? accountLabel(account),
+    (account: AccountDescriptor) => knownLabels[account.id] ?? deriveAccountLabel(account),
     [knownLabels],
   );
 

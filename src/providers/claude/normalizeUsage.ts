@@ -46,7 +46,7 @@ function asString(value: unknown): string | null {
  * window list. `kind` alone collides when more than one window shares it,
  * for example two `weekly_scoped` entries, one per model, so scope
  * disambiguates. */
-function windowId(kind: string, scope: string | null): string {
+function buildWindowId(kind: string, scope: string | null): string {
   return scope ? `${kind}:${scope}` : kind;
 }
 
@@ -65,7 +65,7 @@ function windowFromLimit(limit: RawLimit): LimitWindowEntity {
   const scopeSurface = asString(limit.scope?.surface);
   const scope = scopeModel ?? scopeSurface;
   return {
-    id: windowId(kind, scope),
+    id: buildWindowId(kind, scope),
     name,
     scope,
     used: clampPercent(limit.percent),
@@ -79,7 +79,7 @@ function windowFromFixed(key: string, entry: unknown): LimitWindowEntity | null 
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as { utilization?: unknown; resets_at?: unknown };
   return {
-    id: windowId(key, null),
+    id: buildWindowId(key, null),
     name: FIXED_WINDOW_LABELS[key] ?? humanizeKind(key),
     scope: null,
     used: clampPercent(record.utilization),
@@ -129,7 +129,7 @@ function pickAccountWideWeekly(
       if (limit.kind !== "weekly_all") continue;
       const used = clampPercent(limit.percent);
       if (used === null) continue;
-      return { used, resetsAt: asString(limit.resets_at), id: windowId("weekly_all", null) };
+      return { used, resetsAt: asString(limit.resets_at), id: buildWindowId("weekly_all", null) };
     }
     return null;
   }
@@ -138,7 +138,7 @@ function pickAccountWideWeekly(
     const record = fixed as { utilization?: unknown; resets_at?: unknown };
     const used = clampPercent(record.utilization);
     if (used !== null)
-      return { used, resetsAt: asString(record.resets_at), id: windowId("seven_day", null) };
+      return { used, resetsAt: asString(record.resets_at), id: buildWindowId("seven_day", null) };
   }
   return null;
 }
@@ -205,7 +205,7 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
         const used = clampPercent(e.utilization);
         if (used !== null) {
           windows.push({
-            id: windowId("extra_usage", null),
+            id: buildWindowId("extra_usage", null),
             name: "Extra usage",
             scope: null,
             used,

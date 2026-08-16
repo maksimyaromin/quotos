@@ -7,7 +7,7 @@ import { IconButton } from "./design-system/components/controls/IconButton";
 import { Panel } from "./design-system/components/shell/Panel";
 import { SubscriptionRow } from "./design-system/components/subscription/SubscriptionRow";
 import { useSubscriptions } from "./hooks/useSubscriptions";
-import { rowPresentation } from "./lib/rowPresentation";
+import { presentRow } from "./lib/rowPresentation";
 import {
   debugRateLimitSnapshot,
   dragWindowStep,
@@ -397,7 +397,7 @@ export default function App() {
           // action and footer note are decided together, see
           // lib/rowPresentation.ts for the two rules that keep them from
           // contradicting each other.
-          const presentation = rowPresentation(sub, now);
+          const presentation = presentRow(sub, now);
           const label = sub.labelOverride ?? sub.label;
           const windows = sub.windows.map((w) => ({
             id: w.id,
