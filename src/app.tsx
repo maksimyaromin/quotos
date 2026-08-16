@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "@/components/icons";
-import { SubscriptionsScreen } from "@/components/SubscriptionsScreen";
-import { UndoRow } from "@/components/UndoRow";
+import { SubscriptionsScreen } from "@/components/subscriptions-screen";
+import { UndoRow } from "@/components/undo-row";
 import { Button, IconButton, Panel, SubscriptionRow } from "@/design-system";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { presentRow } from "@/lib/rowPresentation";

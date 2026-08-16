@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import App from "./app";
 import "./design-system/styles.css";
 
 // macOS can switch between light and dark appearance while the app runs, so

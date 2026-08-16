@@ -31,7 +31,7 @@ this page is the map between them.
 
 | Module | Owns |
 | --- | --- |
-| `App.tsx` | Composes the panel shell, the subscription rows, and the Subscriptions screen. |
+| `app.tsx` | Composes the panel shell, the subscription rows, and the Subscriptions screen. |
 | `hooks/useSubscriptions.ts` | The state machine: tracked-subscription membership, refresh, the rate-limit interception rule, persistence, and status item segment derivation. |
 | `providers/registry.ts` | The frontend half of the provider seam: dispatches normalization and outcome mapping to the right provider by its slug. |
 | `providers/claude/` | The Claude adapter: usage and profile normalization, headline selection, outcome-to-state mapping, statusline reconciliation. |

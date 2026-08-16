@@ -27,7 +27,7 @@ entry. Vite and vitest read the same `paths` field natively, so there is
 one alias definition, not one per tool.
 
 The rule for when to alias: an import crossing from one top-level `src/`
-directory into another, or from a root file such as `App.tsx` into any
+directory into another, or from a root file such as `app.tsx` into any
 of them, uses `@/...`. An import staying inside one top-level directory's
 own tree, including the design system talking to itself, stays relative.
 `grep -rn 'from "\.\./' src` should only ever match design system

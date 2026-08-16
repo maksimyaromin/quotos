@@ -24,7 +24,7 @@ vi.mock("../lib/tauriClient", () => ({
 }));
 
 // vi.mock is hoisted, so this static import safely resolves against it.
-import { SubscriptionsScreen } from "./SubscriptionsScreen";
+import { SubscriptionsScreen } from "./subscriptions-screen";
 
 const ACCOUNT_A: AccountDescriptor = {
   id: "claude:claude",

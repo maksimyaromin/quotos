@@ -70,7 +70,7 @@ vi.mock("./lib/persistence", () => ({
 
 // vi.mock calls above are hoisted by Vitest, so this static import safely
 // resolves against the mocked modules.
-import App from "./App";
+import App from "./app";
 
 async function renderAppWithRow() {
   render(<App />);
