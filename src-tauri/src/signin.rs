@@ -1,34 +1,22 @@
-//! R2-6: drives Claude Code's own sign-in for one account, without Quotos
-//! ever touching the Keychain or handling a credential itself — the
-//! captain's own decision, verbatim: "Quotos drives Claude Code's own
-//! login. Claude Code writes the credential. Quotos never touches the
-//! Keychain and never handles a credential."
+//! Drives Claude Code's own sign-in for one account. Quotos never touches
+//! the Keychain and never handles a credential itself; Claude Code writes
+//! the credential.
 //!
-//! `claude setup-token` already does exactly what the captain asked for —
-//! confirmed by reading `claude setup-token --help` and by one careful,
-//! throwaway-`CLAUDE_CONFIG_DIR` observation of its real behavior: it opens
-//! a browser at the authorization URL *itself*, then waits for a pasted
-//! code on stdin. So Quotos's job is only to start that process pointed at
-//! the right account's `CLAUDE_CONFIG_DIR`, relay a pasted code back into
-//! its stdin, and notice when it's done — never to parse the URL out or
-//! open a browser itself.
+//! `claude setup-token` opens a browser at the authorization URL itself,
+//! then waits for a pasted code on stdin, confirmed by reading `claude
+//! setup-token --help` and by observing its real behavior. So Quotos's job
+//! is only to start that process pointed at the right account's
+//! `CLAUDE_CONFIG_DIR`, relay a pasted code back into its stdin, and notice
+//! when it is done. It never parses the URL out and never opens a browser
+//! itself.
 //!
-//! That one observation also showed the CLI rendering an interactive,
-//! cursor-positioning prompt (ANSI cursor movement, not plain line output),
-//! so it's spawned attached to a real pty via `portable-pty` rather than
-//! plain pipes — a plain pipe risks the CLI detecting a non-tty stdin and
-//! refusing or silently changing behavior. Quotos never reads or displays
-//! that output; it only needs the pty alive long enough for the CLI to
-//! behave as it does in a real terminal.
-//!
-//! **What is verified and what isn't** (see also AGENTS.md and the round's
-//! status report): confirmed — the CLI accepts `CLAUDE_CONFIG_DIR`, prints
-//! an authorization URL, attempts to open a browser, and then prints a
-//! "paste code here" prompt. Not verified — what happens after a real code
-//! is pasted (whether the process exits 0 and Claude Code has written a
-//! working credential), because completing that would have meant finishing
-//! a real login, which is explicitly the captain's own final check to make,
-//! not this agent's.
+//! The CLI renders an interactive, cursor-positioning prompt using ANSI
+//! cursor movement rather than plain line output, so it is spawned
+//! attached to a real pty through `portable-pty` rather than plain pipes.
+//! A plain pipe risks the CLI detecting a non-tty stdin and refusing or
+//! silently changing behavior. Quotos never reads or displays that output.
+//! It only needs the pty alive long enough for the CLI to behave as it
+//! does in a real terminal.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -63,8 +51,8 @@ impl SignInRegistry {
 
     /// Starts `claude setup-token` for one account. Fails fast if a session
     /// for that account is already running rather than starting a second
-    /// one — the row's action should be disabled while in progress, but
-    /// this is the actual guard.
+    /// one. The row's action should be disabled while in progress, but this
+    /// is the actual guard.
     pub fn start(
         &self,
         app: AppHandle,
@@ -88,16 +76,13 @@ impl SignInRegistry {
             })
             .map_err(|e| e.to_string())?;
 
-        // R3-4: resolve the CLI and its environment through the provider,
-        // never by name. Two things were wrong here, both silent: a
-        // Finder-launched .app inherits no `PATH`, so `CommandBuilder::new
-        // ("claude")` could not spawn anything at all (which is why the
-        // paste-code field appeared and vanished in the same instant — the
-        // spawn failed, the row dropped straight back out of the flow), and
-        // forcing `CLAUDE_CONFIG_DIR` for the *default* account pointed
+        // The CLI and its environment are resolved through the provider,
+        // never by name. A Finder-launched .app inherits no PATH, so
+        // spawning "claude" directly would fail to find anything. Forcing
+        // CLAUDE_CONFIG_DIR for the default account would also point
         // Claude Code at a config it treats as signed out, so any sign-in
-        // that did run would have written a credential Quotos never reads.
-        // See `providers::claude::cli_invocation`.
+        // that ran would write a credential Quotos never reads. See
+        // providers::claude::cli_invocation.
         let invocation = crate::providers::claude::cli_invocation(Path::new(&config_dir)).ok_or_else(|| {
             "Quotos couldn't find the Claude Code command on this Mac. Open Claude Code once, then try again."
                 .to_string()
@@ -112,8 +97,8 @@ impl SignInRegistry {
         cmd.env("PATH", &invocation.path_env);
 
         let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-        // Our copy of the slave must close so the pty can signal EOF once
-        // the child itself exits — otherwise the reader thread below never
+        // This copy of the slave must close so the pty can signal EOF once
+        // the child itself exits. Otherwise the reader thread below never
         // sees end-of-stream.
         drop(pair.slave);
 
@@ -122,9 +107,9 @@ impl SignInRegistry {
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
         // Drain output continuously so the child never blocks writing to a
-        // full pty buffer. Quotos doesn't parse or display any of it — the
-        // CLI already opens the browser and prints the URL on its own; this
-        // thread's only job is to keep the pipe flowing.
+        // full pty buffer. Quotos does not parse or display any of it. The
+        // CLI already opens the browser and prints the URL on its own.
+        // This thread's only job is to keep the pipe flowing.
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -135,11 +120,11 @@ impl SignInRegistry {
             }
         });
 
-        // Owns `child` (and, by extension, `pair.master` — dropping the
-        // master before the child exits can tear down the pty out from
-        // under it) for the rest of the session; `killer`, cloned above, is
-        // the independent handle `cancel` uses so it never has to contend
-        // with this thread's blocking `.wait()`.
+        // This thread owns child for the rest of the session, and by
+        // extension pair.master, since dropping the master before the
+        // child exits can tear down the pty out from under it. killer,
+        // cloned above, is the independent handle cancel uses, so cancel
+        // never has to contend with this thread's blocking wait call.
         let master = pair.master;
         let wait_app = app.clone();
         let wait_account_id = account_id.clone();
@@ -185,8 +170,9 @@ impl SignInRegistry {
         writer.flush().map_err(|e| e.to_string())
     }
 
-    /// Kills the in-progress process for `account_id`, if any — the panel's
-    /// own cancel action, or cleanup if the row is removed mid-flow.
+    /// Kills the in-progress process for `account_id`, if any. Called
+    /// either as the panel's own cancel action or as cleanup when the row
+    /// is removed mid-flow.
     pub fn cancel(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         if let Some(session) = sessions.remove(account_id) {
@@ -198,8 +184,8 @@ impl SignInRegistry {
         }
     }
 
-    /// Drops bookkeeping once a session has finished (called after the
-    /// frontend receives `sign-in-finished`), so a retry starts clean.
+    /// Drops bookkeeping once a session has finished. Called after the
+    /// frontend receives `sign-in-finished`, so a retry starts clean.
     pub fn forget(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         sessions.remove(account_id);
