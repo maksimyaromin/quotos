@@ -71,6 +71,32 @@ function buildInitialSubscription(
  * This is only how long the Undo row keeps its slot in the panel. */
 export const STOP_TRACKING_UNDO_MS = 5_000;
 
+/** An older tracked record's `pinned: true` becomes "that subscription's
+ * headline window is pinned" once a read reveals which window that is, so
+ * a record without the newer `pinnedWindowIds` array but with the older
+ * flag set comes back needing that one-shot migration. */
+function migrateLegacyTracked(tracked: TrackedAccount[]): {
+  subscriptions: Subscription[];
+  migratingPinIds: Set<string>;
+} {
+  const migratingPinIds = new Set<string>();
+  const subscriptions = tracked.map((t) => {
+    const legacy = t as unknown as { pinnedWindowIds?: unknown; pinned?: unknown };
+    const pinnedWindowIds = Array.isArray(legacy.pinnedWindowIds)
+      ? (legacy.pinnedWindowIds as string[])
+      : [];
+    if (!Array.isArray(legacy.pinnedWindowIds) && legacy.pinned === true) {
+      migratingPinIds.add(t.id);
+    }
+    return buildInitialSubscription(
+      { id: t.id, provider: t.provider, config_dir: t.config_dir },
+      t.label,
+      pinnedWindowIds,
+    );
+  });
+  return { subscriptions, migratingPinIds };
+}
+
 /** The persisted projection of a subscription: membership, custom name,
  * pin, and nothing that a read produced. */
 function toTrackedAccounts(subscriptions: Subscription[]): TrackedAccount[] {
@@ -469,22 +495,8 @@ export function useSubscriptions() {
     void (async () => {
       const tracked = await loadTracked();
       if (cancelled) return;
-      const migrating = new Set<string>();
-      const loaded = tracked.map((t) => {
-        const legacy = t as unknown as { pinnedWindowIds?: unknown; pinned?: unknown };
-        const pinnedWindowIds = Array.isArray(legacy.pinnedWindowIds)
-          ? (legacy.pinnedWindowIds as string[])
-          : [];
-        if (!Array.isArray(legacy.pinnedWindowIds) && legacy.pinned === true) {
-          migrating.add(t.id);
-        }
-        return buildInitialSubscription(
-          { id: t.id, provider: t.provider, config_dir: t.config_dir },
-          t.label,
-          pinnedWindowIds,
-        );
-      });
-      pendingPinMigrationRef.current = migrating;
+      const { subscriptions: loaded, migratingPinIds } = migrateLegacyTracked(tracked);
+      pendingPinMigrationRef.current = migratingPinIds;
       setSubscriptions(loaded);
       lastSavedRef.current = JSON.stringify(toTrackedAccounts(loaded));
       hasLoadedRef.current = true;
