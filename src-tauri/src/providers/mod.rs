@@ -28,7 +28,7 @@ pub struct RawSnapshot {
     /// unreadable" identically. See `statusline.rs`'s `read_feed`. The
     /// frontend's provider adapter reconciles this against `usage` itself,
     /// where the freshest reading wins. See
-    /// `providers/claude/statuslineMerge.ts`.
+    /// `providers/claude/statusline-merge.ts`.
     pub statusline: Option<crate::statusline::StatuslineFeedDto>,
 }
 

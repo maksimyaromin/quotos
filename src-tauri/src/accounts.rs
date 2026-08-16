@@ -288,7 +288,7 @@ pub(crate) async fn kick_scheduler(app: tauri::AppHandle) {
 }
 
 /// Read-only introspection of the shared rate budget, for the frontend's
-/// developer-only state dump. App.tsx gates the dump on
+/// developer-only state dump. app.tsx gates the dump on
 /// `import.meta.env.DEV`, so it never ships in a production build's UI.
 /// The command itself is harmless either way, since it is read-only and
 /// touches no credentials.

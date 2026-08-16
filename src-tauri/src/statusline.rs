@@ -20,7 +20,7 @@
 //!  6. This is a second source. [`read_feed`] only ever hands back a
 //!     timestamped reading for the frontend to reconcile, where the
 //!     freshest reading wins and the provider owns that reconciliation. See
-//!     `providers/claude/statuslineMerge.ts`. It never invents a window the
+//!     `providers/claude/statusline-merge.ts`. It never invents a window the
 //!     API did not already report; see [`read_feed`]'s own doc comment for
 //!     what a missing or malformed feed degrades to.
 //!

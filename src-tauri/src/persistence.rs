@@ -21,7 +21,7 @@ pub struct TrackedAccount {
     pub pinned_window_ids: Vec<String>,
     /// Present only when this record was loaded from a file that predates
     /// `pinnedWindowIds` and wrote `pinned: true` or `pinned: false`
-    /// instead. `useSubscriptions.ts`'s `pendingPinMigrationRef` reads this
+    /// instead. `use-subscriptions.ts`'s `pendingPinMigrationRef` reads this
     /// to detect and migrate such a record, and never sends it back on
     /// `save_tracked`, so `skip_serializing_if` sheds it from disk on the
     /// very next save; it appears only on the one load that still has the

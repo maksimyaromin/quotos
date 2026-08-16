@@ -2,7 +2,7 @@
 //! attempt rather than a free-running timer.
 //!
 //! Scheduling lives here, in a plain OS-level timer in the Rust process,
-//! rather than in a JS `setInterval` in `useSubscriptions.ts`. The app
+//! rather than in a JS `setInterval` in `use-subscriptions.ts`. The app
 //! starts hidden and only shows on a status item click, and a JS timer
 //! lives in the WKWebView, which macOS and WebKit suspend while occluded:
 //! measured, an 8-second interval produced zero ticks over 150 seconds

@@ -307,7 +307,7 @@ fn schedule_resync_after_icon_change(app: &tauri::AppHandle, status_item: tauri:
 /// Decorations must stay off in both states: with `titleBarStyle: Overlay`
 /// in `tauri.conf.json`, turning decorations on paints real traffic
 /// lights over the content and a native title-bar strip regardless of the
-/// window's own transparency. Dragging comes from `App.tsx`'s own
+/// window's own transparency. Dragging comes from `app.tsx`'s own
 /// header-drag calling `drag_window_step` on every `mousemove`, which
 /// needs no native title bar at all.
 #[tauri::command]
