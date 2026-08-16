@@ -67,16 +67,30 @@ pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
 /// initial guess of 6 physical px measured 8 CSS-px ink-to-ink live, so this
 /// is 2 less.
 const GLYPH_TO_CELL_GAP_PX: u32 = 2;
-/// **The cell reserve — never resize this per digit count.** Fixed 30 CSS-px
-/// width per pinned figure, text centred inside it, regardless of whether
-/// the figure reads one digit or three: this is what keeps the status item's
-/// own width (and therefore the beak's position, and every other digit's
-/// position) from moving on a value change (§5 "things not to undo";
+/// **The cell reserve — never resize this per digit count, for every
+/// segment except the trailing one.** Fixed 30 CSS-px width per pinned
+/// figure, text centred inside it, regardless of whether the figure reads
+/// one digit or three: this is what keeps every digit *before* the last one
+/// (and therefore the beak's position, which is derived from the glyph, not
+/// this) from moving on a value change (§5 "things not to undo";
 /// `every_bare_glyph_path_produces_the_same_image_width` guards the
 /// zero-segment case this reserve is the general form of). Consecutive
 /// figures inside one group sit in adjacent cells with no additional gap —
 /// the visible ~8px ink-to-ink gap between them falls out of each cell's own
 /// centring margin, not a separate constant.
+///
+/// quotos-tray-frame-t1 followup: the *trailing* segment — the last one in
+/// `segments`, whichever figure that happens to be — does not get this
+/// reserve. `render()` sizes its cell to that one segment's own measured
+/// width instead, tight, because nothing ever sits to its right for it to
+/// shift: the followup found the fixed reserve on that one cell was most of
+/// the captain's reported "gap to the next menu bar extra" (measured: ~8.5pt
+/// of unused reserve after "0%"'s own ~15pt of a 30pt cell), the only piece
+/// of the gap this app actually draws and controls. The item's own width can
+/// now change when the *trailing* segment's own digit count changes — the
+/// followup accepted that explicitly ("it already resizes when the segment
+/// count changes"); an *earlier* segment's digit count still can't move
+/// anything, which is the invariant that actually matters.
 const CELL_WIDTH_PX: u32 = 60; // 30 CSS-px
 /// Between two adjacent-cell groups: gutter, hairline, gutter — 5 + 1 + 5
 /// CSS-px, matching the table's "19px across an 11px hairline" once each
@@ -913,10 +927,19 @@ pub fn render(
     // draw loop below excludes it.
     let boundaries = segments.iter().skip(1).filter(|s| s.group_start).count() as u32;
     let gutter_px = GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
+    // quotos-tray-frame-t1 followup: every cell except the trailing one keeps
+    // the fixed `CELL_WIDTH_PX` reserve; the trailing cell is sized to that
+    // one segment's own measured width instead (see `CELL_WIDTH_PX`'s own
+    // doc comment for why only the last one is safe to trim).
+    let last_width = *widths.last().unwrap_or(&0);
+    let non_last_segments = segments.len().saturating_sub(1) as u32;
     let text_area = if segments.is_empty() {
         0
     } else {
-        GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX * segments.len() as u32 + boundaries * gutter_px
+        GLYPH_TO_CELL_GAP_PX
+            + CELL_WIDTH_PX * non_last_segments
+            + last_width
+            + boundaries * gutter_px
     };
     let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + text_area;
     let total_h = GLYPH_PX;
@@ -948,13 +971,19 @@ pub fn render(
     }
 
     let mut x = SIDE_PAD_PX + GLYPH_PX + GLYPH_TO_CELL_GAP_PX;
+    let last_index = segments.len().saturating_sub(1);
     for (i, (seg, w)) in segments.iter().zip(widths.iter()).enumerate() {
         if seg.group_start && i > 0 {
             x += GROUP_GUTTER_PRE_PX;
             draw_hairline(&mut buf, total_w, total_h, x, dark);
             x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
         }
-        let text_x = x + CELL_WIDTH_PX.saturating_sub(*w) / 2;
+        // The trailing segment's cell is exactly its own width (no
+        // centring offset falls out of that automatically); every earlier
+        // segment keeps the fixed reserve. See `CELL_WIDTH_PX`'s doc
+        // comment.
+        let cell_width = if i == last_index { *w } else { CELL_WIDTH_PX };
+        let text_x = x + cell_width.saturating_sub(*w) / 2;
         text::draw_text(
             &mut buf,
             total_w,
@@ -964,7 +993,7 @@ pub fn render(
             &seg.text,
             seg.color.rgba(dark),
         );
-        x += CELL_WIDTH_PX;
+        x += cell_width;
     }
 
     (buf, total_w, total_h)
@@ -1186,24 +1215,81 @@ mod tests {
         assert_eq!(two.2, GLYPH_PX);
     }
 
-    // v4 §1/§5: "the cell reserve is the important part" — the status item
-    // must be the same width whether a figure reads one digit or three,
-    // because `compute_docked_layout` derives the beak's position from the
-    // glyph's own (unrelated) position, but *other* digits sliding around
-    // next to it is exactly the "reflow on a value change" bug §5 forbids.
+    // v4 §1/§5, narrowed by the quotos-tray-frame-t1 followup: the reserve
+    // exists so a segment's own digit count can never move anything *else*
+    // — for a single (and therefore also trailing) segment there is nothing
+    // else to move, so the followup explicitly lifted the freeze for that
+    // one case (measured: it was most of the captain's reported gap to the
+    // next menu bar extra). `compute_docked_layout` still derives the
+    // beak's position from the glyph's own, unrelated, fixed-offset
+    // position, so this is safe.
     #[test]
-    fn a_single_figures_width_never_changes_with_its_own_digit_count() {
+    fn a_trailing_figures_width_now_tracks_its_own_digit_count() {
         let one_digit = render(&[seg("9%", TrayColor::Neutral)], false, 0);
         let two_digit = render(&[seg("42%", TrayColor::Neutral)], false, 0);
         let three_digit = render(&[seg("100%", TrayColor::Neutral)], false, 0);
-        assert_eq!(
-            one_digit.1, two_digit.1,
-            "1 vs 2 digits must reserve the same cell width"
+        assert!(
+            one_digit.1 < two_digit.1,
+            "a single (and so trailing) segment's own wider text should now widen the image"
+        );
+        assert!(
+            two_digit.1 < three_digit.1,
+            "three digits should reserve more than two, now that the trailing cell is tight"
+        );
+    }
+
+    // The invariant the reserve actually protects, restated precisely now
+    // that only the trailing cell is exempt: an EARLIER segment's own digit
+    // count must never move what comes after it. Both variants below end in
+    // the identical trailing segment, so equal total widths here can only
+    // mean the first segment's own cell reserve held fixed regardless of
+    // its own text.
+    #[test]
+    fn a_non_trailing_figures_digit_count_never_moves_what_follows_it() {
+        let narrow_first = render(
+            &[
+                seg("9%", TrayColor::Neutral),
+                seg("50%", TrayColor::Neutral),
+            ],
+            false,
+            0,
+        );
+        let wide_first = render(
+            &[
+                seg("100%", TrayColor::Neutral),
+                seg("50%", TrayColor::Neutral),
+            ],
+            false,
+            0,
         );
         assert_eq!(
-            two_digit.1, three_digit.1,
-            "2 vs 3 digits must reserve the same cell width"
+            narrow_first.1, wide_first.1,
+            "a non-trailing segment's own digit count must not change the image width"
         );
+    }
+
+    // quotos-tray-frame-t1 followup: re-pin the click/panel-open frame
+    // invariant against the new axis this change introduced — the
+    // *trailing* segment's own digit count now drives the image width, so
+    // confirm `highlighted` still never does, across several trailing
+    // digit counts, not just the one fixed segment set the original pinned
+    // test above (`click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned`)
+    // already covers.
+    #[test]
+    fn click_highlight_and_panel_open_share_one_frame_width_even_as_the_trailing_digit_count_varies(
+    ) {
+        for text in ["0%", "9%", "42%", "100%"] {
+            let segs = [
+                seg("51%", TrayColor::Neutral),
+                seg(text, TrayColor::Neutral),
+            ];
+            let unhighlighted = render(&segs, false, 50);
+            let highlighted = render(&segs, true, 50);
+            assert_eq!(
+                unhighlighted.1, highlighted.1,
+                "trailing text {text:?}: image width must not depend on `highlighted`"
+            );
+        }
     }
 
     #[test]
@@ -1355,6 +1441,44 @@ mod tests {
         assert!(
             found,
             "expected an unmodified red digit pixel somewhere in a {w}x{h} highlighted buffer"
+        );
+    }
+
+    // quotos-tray-frame-t1 followup: pins exactly how much dead space is
+    // still allowed after the trailing segment's own ink — the intentional
+    // `SIDE_PAD_PX` breathing room A11's highlight needs (see its own doc
+    // comment), plus a couple of physical px of slack for CoreText's own
+    // antialiasing/advance-width rounding, never a leftover slice of
+    // `CELL_WIDTH_PX`'s much larger reserve. Measured on this machine's
+    // real CoreText output at the time this test was written: 11 physical
+    // px (SIDE_PAD_PX is 10) — the bound below is deliberately a few px
+    // looser than that single measurement so a different installed font
+    // (MonoLisa missing, falling back to the system tabular-figure font;
+    // see `text::load_font`) doesn't make this flaky, while still failing
+    // hard if the old ~60px cell reserve ever came back.
+    #[test]
+    fn nothing_but_the_side_pad_survives_after_the_trailing_segments_own_ink() {
+        let (buf, w, h) = render(
+            &[
+                seg("51%", TrayColor::Neutral),
+                seg("0%", TrayColor::Neutral),
+            ],
+            false,
+            0,
+        );
+        let mut last_ink_x = 0u32;
+        for y in 0..h {
+            for x in 0..w {
+                let a = buf[(((y * w) + x) * 4 + 3) as usize];
+                if a > 0 {
+                    last_ink_x = last_ink_x.max(x);
+                }
+            }
+        }
+        let trailing_gap = w - 1 - last_ink_x;
+        assert!(
+            trailing_gap <= SIDE_PAD_PX + 8,
+            "trailing gap {trailing_gap}px should track SIDE_PAD_PX ({SIDE_PAD_PX}px), not a leftover cell reserve (would be tens of px)"
         );
     }
 }

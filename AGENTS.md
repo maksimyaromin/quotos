@@ -790,20 +790,40 @@ each round, not appended to.
   matching AppKit's own minimal button content inset. That fully fixes the
   two-frames defect (`click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned`
   pins the underlying invariant: `render`'s width never depends on
-  `highlighted`, which is what lets a fixed length work for both states).
-  **It does not fully close the neighbour-gap defect on its own, and
-  should not be assumed to**: measured live before and after with the same
-  five segments, the visual gap from the last digit's own ink to the next
-  extra's ink held at 32pt either way, because most of that number was
-  never AppKit's per-item margin — a large piece is `CELL_WIDTH_PX`'s own
-  intentional reserve leaving air after a short string like "0%" (content
-  layout, out of scope per the captain's own explicit instruction not to
-  touch anything inside Quotos's drawn area), and another piece is
-  whatever a *different* app's own status item leaves as its own margin
-  (measured independently at 19-21pt between two unrelated neighbours on
-  the same bar — not Quotos's to close at all). If the gap still reads as
-  too large after this fix, that is a real, separate, content-layout
-  question for a follow-up task, not a sign this fix is incomplete.
+  `highlighted`, which is what lets a fixed length work for both states) —
+  the captain accepted this half on first report.
+  **The length pin alone did not close the neighbour-gap defect, and a
+  followup resolved exactly why rather than leaving it as a loose
+  contradiction.** "Remove 9pt of margin per side" sounds like it should
+  move a 9pt-away neighbour 9pt closer; it measurably didn't (32pt gap
+  either side of that fix). Reconciled with more measurement, not
+  hand-waving: `setLength` re-centres the button about its own midpoint
+  (confirmed live — the item's *left* edge moved right by the same ~8pt its
+  right edge moved left), so only about half the removed margin ever
+  reaches the trailing edge; the other half just widens dead space between
+  Quotos's new right edge and the neighbour, which never moves on its own
+  (nothing compacts sibling status items together, and no evidence turned
+  up of any macOS-enforced minimum inter-item spacing either — the
+  button-edge-to-neighbour component measured 17.5-18.5pt on its own,
+  already at or under the 19-21pt baseline gap between two *unrelated*
+  neighbours measured on the same bar). What the followup then traced the
+  *rest* of the 32pt to was real content layout: `tray_render`'s own
+  `CELL_WIDTH_PX` reserve on the trailing segment's cell, leaving ~8.5pt of
+  unused space after a short string like "0%" out of its 30pt reserve. The
+  followup explicitly lifted the content-layout freeze for exactly that one
+  piece (not the reserve in general — see `CELL_WIDTH_PX`'s own doc
+  comment): `render()` now sizes only the *trailing* segment's cell to its
+  own measured text width, tight, while every earlier segment keeps the
+  fixed reserve untouched (so an earlier segment's own digit count still
+  can never move anything after it — `a_non_trailing_figures_digit_count_never_moves_what_follows_it`
+  pins this). Measured live: gap dropped from 32pt to 25pt, now within
+  `SIDE_PAD_PX` (5pt, kept — still needed for A11's highlight pill to read
+  as a pressed button rather than hugging the last digit) plus a couple of
+  points of CoreText rounding of the 19-21pt baseline. The item's own width
+  can now change when the *trailing* segment's digit count changes — the
+  followup accepted that explicitly, since the item already resizes when
+  the pinned segment *count* changes, and nothing sits after the trailing
+  cell for it to visually jostle.
 - **This machine is live and shared — not a clean test box — and
   screenshotting this app's own windows only ever shows whatever's on the
   *currently active macOS Space*, which is frequently not where a tray

@@ -246,24 +246,32 @@ fn repaint_tray_icon(app: &tauri::AppHandle, tray: &tauri::tray::TrayIcon) -> Re
 /// own minimal button content inset, not a reintroduced margin) — both
 /// draws then share one frame, which is the whole fix for defect 2.
 ///
-/// This does **not** fully close defect 1's gap to the next menu bar
-/// extra on its own, and must not be read as though it does: measured
-/// live before and after, with the same five pinned segments, the visual
-/// gap from the last digit's own ink to the neighbouring extra's ink held
-/// at 32pt either way. The ~18pt this removes was genuinely real (AppKit's
-/// own margin, gone from the button's reported width), but the trailing
-/// slack the captain is seeing is dominated by two things outside this
-/// function's reach: this app's own intentional per-segment
-/// `CELL_WIDTH_PX` reserve (content layout — explicitly out of scope, see
-/// the constant's own doc comment and the task brief) leaving air after a
-/// short string like "0%", and macOS's own baseline spacing to a
-/// *different* app's status item (measured independently at 19-21pt
-/// between two unrelated neighbours on the same bar, so some of that 32pt
-/// was never Quotos's to close at all). Must run on every repaint, not
-/// just once: unlike a variable-length item, a fixed-length one never
-/// resizes itself when a new, differently-sized image is set — leaving it
-/// stale would clip or under-fill the button the next time the digit
-/// count changes.
+/// This alone does **not** fully close defect 1's gap to the next menu bar
+/// extra, and the reason is a real, resolved finding, not a loose end: this
+/// function shrinks the button *symmetrically* about its own centre (AppKit
+/// re-centres on `setLength`, confirmed live — the item's left edge moved
+/// right by the same ~8pt its right edge moved left), so only about half of
+/// the removed margin ever reaches the trailing edge. Measured live before
+/// and after this function alone, with the same five pinned segments, the
+/// visual gap from the last digit's own ink to the neighbouring extra's ink
+/// held at 32pt either way — the ~8pt freed on the trailing side just
+/// became a wider no-man's-land between Quotos's new (narrower) right edge
+/// and the neighbour, which doesn't move: nothing here compacts sibling
+/// status items together, and no evidence of a macOS-enforced minimum
+/// inter-item spacing was found either (that "no-man's-land" component
+/// measured 17.5-18.5pt across this investigation, already at or under the
+/// 19-21pt baseline gap between two *unrelated* neighbours on the same
+/// bar). The quotos-tray-frame-t1 followup traced the rest of the 32pt to
+/// `tray_render`'s own trailing `CELL_WIDTH_PX` reserve — genuinely
+/// content layout, but the one piece of it the followup authorized trimming
+/// (see that constant's own doc comment) — and closing that got the
+/// measured gap from 32pt down to 25pt, within `SIDE_PAD_PX` plus a couple
+/// of points of the 19-21pt baseline. `sync_status_item_length` itself
+/// didn't change for that; it just now reflects a narrower image. Must run
+/// on every repaint, not just once: unlike a variable-length item, a
+/// fixed-length one never resizes itself when a new, differently-sized
+/// image is set — leaving it stale would clip or under-fill the button the
+/// next time the digit count changes.
 #[cfg(target_os = "macos")]
 pub(crate) fn sync_status_item_length(tray: &tauri::tray::TrayIcon, icon_width_px: u32) {
     // `tray_render`'s buffer is always 2x an 18pt-tall image (see
