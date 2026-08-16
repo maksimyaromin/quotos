@@ -34,8 +34,7 @@ export function presentRow(sub: Subscription, now: number): RowPresentation {
   const badge = sub.state === "behind" ? "Not current" : sub.needsSignIn ? "Needs sign-in" : null;
 
   if (sub.signInInProgress) {
-    // The row is showing the paste-code field. It owns the body and needs
-    // no competing action of its own.
+    // The paste-code field owns the row body; it needs no competing action.
     return { badge, actionLabel: null, footerNote: null };
   }
 

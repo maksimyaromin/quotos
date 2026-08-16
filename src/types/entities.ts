@@ -44,7 +44,6 @@ export interface Subscription {
   provider: string;
   providerName: string;
   label: string;
-  /** Overrides the provider-derived label whenever set. */
   labelOverride: string | null;
   account: string | null;
   state: SubscriptionState;
@@ -99,12 +98,10 @@ export interface RawSnapshot {
   usage: unknown;
   profile: unknown | null;
   /** The Claude Code statusline feed's most recent reading for this config
-   * dir, attached by the Rust side on every read attempt, manual or
-   * scheduled. Null or absent whenever nothing was ever installed, no
-   * session has fed it yet, or the feed file is stale or unreadable. See
-   * `providers/claude/statuslineMerge.ts` for how this reconciles with
-   * `usage`: the freshest reading wins, and it never invents a window the
-   * API did not already report. */
+   * dir, attached by the Rust side on every read attempt. Null or absent
+   * whenever nothing was installed or no session has fed it yet. See
+   * `providers/claude/statuslineMerge.ts`: the freshest reading wins, and
+   * it never invents a window the API did not already report. */
   statusline?: StatuslineFeedWire | null;
 }
 
@@ -189,17 +186,15 @@ export interface NormalizedRead {
 
 /** Pushed by the Rust-side scheduler, `src-tauri/src/scheduler.rs`, for
  * each automatic, once-a-minute read. The frontend applies these the same
- * way it applies a manual refresh's direct result. It just arrives as an
- * event instead of an `invoke` return value. */
+ * way it applies a manual refresh's direct result. */
 export type ScheduledRefreshEvent =
   | { kind: "ok"; snapshot: RawSnapshot }
   | { kind: "err"; account_id: string; error: FetchError };
 
-/** Pushed once when a `start_sign_in` session ends, meaning the `claude
- * setup-token` process exited, so the panel can re-read the account and
- * drop out of the waiting-for-a-pasted-code UI. `success` only reflects the
- * process's own exit status. Quotos never inspects the credential itself,
- * so the row's next read is still the real proof either way. */
+/** Pushed once a `start_sign_in` session's `claude setup-token` process
+ * exits, so the panel can re-read the account and drop out of the
+ * waiting-for-a-pasted-code UI. `success` reflects only the process's own
+ * exit status; the row's next read is the real proof either way. */
 export interface SignInFinishedEvent {
   account_id: string;
   success: boolean;

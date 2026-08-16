@@ -13,11 +13,10 @@ export interface TrackedAccount extends AccountDescriptor {
   label: string | null;
   /** The persisted set of pinned window ids, see
    * `Subscription.pinnedWindowIds`. An older record on disk may instead
-   * carry a `pinned: boolean` field. `useSubscriptions.ts`'s mount effect
-   * migrates that into "that subscription's headline window is pinned"
+   * carry a `pinned: boolean` field, which `useSubscriptions.ts`'s mount
+   * effect migrates into "that subscription's headline window is pinned"
    * once the first read after load reveals the headline window's id. This
-   * type describes only the current, post-migration shape that gets
-   * written back out. */
+   * type describes only the current, post-migration shape. */
   pinnedWindowIds: string[];
 }
 
