@@ -1,0 +1,6 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Quotos v5",
+  "identifier": "com.quotos.desktop.v4",
+  "build": { "beforeBuildCommand": "npm run build" }
+}

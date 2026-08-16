@@ -1037,7 +1037,15 @@ each round, not appended to.
   live). A fresh identifier would boot empty and migrate nothing. The next
   person tidying up packaging configs should not "fix" this back to a
   unique identifier without checking whether the same reasoning still
-  applies.
+  applies. **v5 follows the same v3 precedent, not v4's**:
+  `tauri.v5.conf.json` (`productName` "Quotos v5") reuses v4's
+  `com.quotos.desktop.v4` rather than minting a new one — v5 is a
+  repository layout flatten with no change to the persisted data shape, so
+  there is nothing new to isolate a fresh identity from, and reusing v4's
+  identity is what lets the flattened build prove itself against the
+  captain's real tracked-subscription list at
+  `~/Library/Application Support/com.quotos.desktop.v4/tracked.json`
+  instead of booting empty.
 
 ## Maintaining this file
 
