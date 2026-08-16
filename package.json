@@ -2,6 +2,7 @@
   "name": "quotos-app",
   "private": true,
   "version": "0.5.1",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=24"

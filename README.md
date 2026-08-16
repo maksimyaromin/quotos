@@ -72,3 +72,7 @@ The single quality gate: formatting and linting, both TypeScript
 projects, the test suite, a handful of repository checks, and the Rust
 equivalents. [AGENTS.md](AGENTS.md) covers what each lane checks and
 where the rest of the documentation lives.
+
+## License
+
+[MIT](LICENSE)

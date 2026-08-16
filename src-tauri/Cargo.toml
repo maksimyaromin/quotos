@@ -2,6 +2,7 @@
 name = "quotos-app"
 version = "0.5.1"
 description = "Quotos: menu bar quota tracker for AI subscriptions"
+license = "MIT"
 edition = "2024"
 
 [lib]
