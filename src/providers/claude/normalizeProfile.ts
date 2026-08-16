@@ -1,7 +1,7 @@
-/** Turn `/api/oauth/profile` into label fields. Per the research report:
- * label from `organization.name` + `organization_type`, never from
- * `account.email` / `account.full_name` — those are identical across a
- * person's accounts and would make two subscriptions indistinguishable. */
+/** Turns `/api/oauth/profile` into label fields. Label comes from
+ * `organization.name` and `organization_type`, never from `account.email`
+ * or `account.full_name`, since those are identical across a person's
+ * accounts and would make two subscriptions indistinguishable. */
 
 function humanizeOrgType(type: string): string {
   return type

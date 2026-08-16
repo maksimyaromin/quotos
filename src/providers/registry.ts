@@ -6,11 +6,11 @@ import type {
 } from "../types/entities";
 import { mapOutcome as mapOutcomeClaude, normalize as normalizeClaude } from "./claude";
 
-/** S2: everything a provider's normalizer needs about *this particular
- * read* beyond the raw usage/profile payloads — when it was fetched, and
+/** Everything a provider's normalizer needs about this particular read
+ * beyond the raw usage and profile payloads: when it was fetched, and
  * whatever the statusline feed most recently reported, so a provider can
- * reconcile the two itself (see `providers/claude/index.ts`'s `normalize`
- * and `statuslineMerge.ts`). A provider with no such feed just ignores it. */
+ * reconcile the two itself. See `providers/claude/index.ts`'s `normalize`
+ * and `statuslineMerge.ts`. A provider with no such feed just ignores it. */
 export interface NormalizeContext {
   fetchedAt: string;
   statuslineFeed?: StatuslineFeedWire | null;
@@ -23,9 +23,9 @@ export type Normalizer = (
   context: NormalizeContext,
 ) => NormalizedRead;
 
-/** What a refresh attempt produced, for the provider's outcome→state
- * mapper. Deliberately excludes `rate_limited` — B5/B6: a self-imposed
- * budget wait is never a health state, so the shell (`useSubscriptions.ts`)
+/** What a refresh attempt produced, for the provider's outcome-to-state
+ * mapper. Deliberately excludes `rate_limited`, since a self-imposed
+ * budget wait is never a health state. The shell in `useSubscriptions.ts`
  * intercepts it before it ever reaches a provider's mapper. */
 export type ReadOutcome =
   | { kind: "ok"; normalized: NormalizedRead }
@@ -34,16 +34,16 @@ export type ReadOutcome =
 export interface OutcomeResult {
   state: SubscriptionState;
   reason: string | null;
-  /** R3-4: whether signing in is what this outcome actually calls for. See
+  /** Whether signing in is what this outcome actually calls for. See
    * `Subscription.needsSignIn` for why this is classified here rather than
    * inferred from `state === "broken"` at render time. */
   needsSignIn: boolean;
 }
 
-/** R2-3: maps a (non-rate-limited) read outcome to a health state + reason.
+/** Maps a non-rate-limited read outcome to a health state and reason.
  * Provider-owned so a second provider can encode its own read outcomes
- * without touching the shell — see `providers/claude/index.ts`'s
- * `mapOutcome` for the reference implementation and its B5/B6 note. */
+ * without touching the shell. See `providers/claude/index.ts`'s
+ * `mapOutcome` for the reference implementation. */
 export type OutcomeMapper = (outcome: ReadOutcome, hadGoodRead: boolean) => OutcomeResult;
 
 /** One entry per provider adapter. Adding a second provider means one new
