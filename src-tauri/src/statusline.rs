@@ -211,7 +211,7 @@ fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), Strin
 /// sidecar bundling, meaning target-triple-suffixed binaries staged into a
 /// `binaries/` folder before `tauri build`. `main.rs` intercepts
 /// [`INGEST_FLAG`] before any Tauri or GUI code runs at all, so invoking
-/// the copy costs a process spawn and a JSON parse. No window, no tray,
+/// the copy costs a process spawn and a JSON parse. No window, no status item,
 /// and no webview ever initializes on this path. The tradeoff is disk,
 /// tens of megabytes, for a local desktop app, not correctness.
 fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, StatuslineError> {

@@ -1,5 +1,5 @@
 //! Makes the panel window a non-activating `NSPanel`, which is what stops
-//! a tray click from taking focus away from a full-screen Space.
+//! a status item click from taking focus away from a full-screen Space.
 //!
 //! ## Why activation is the trigger
 //!

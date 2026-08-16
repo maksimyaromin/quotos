@@ -2,7 +2,7 @@
 //! pins, lives in a plain JSON file rather than the WKWebView's
 //! `localStorage`. A `localStorage` write returns as soon as the in-memory
 //! page state updates, and WebKit flushes its backing store to disk on its
-//! own schedule. Whether an abrupt process exit, such as the tray's "Quit
+//! own schedule. Whether an abrupt process exit, such as choosing "Quit
 //! Quotos", can race that flush was never conclusively pinned down, but a
 //! file written synchronously and `fsync`'d before `save` returns has no
 //! dependency on that flush timing at all. Once `save` returns `Ok`, the

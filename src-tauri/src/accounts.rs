@@ -1,7 +1,7 @@
 //! The account-data plane: discovery, the one real fetch path, the shared
 //! per-account rate budget, the native refresh scheduler, and the IPC
 //! commands for the tracked list, the statusline integration, and sign-in.
-//! Nothing here knows a window or a tray icon exists. That layer stays in
+//! Nothing here knows a window or a status item exists. That layer stays in
 //! `shell.rs`, which keeps "what we know about accounts" and "how the
 //! panel shows it" separately readable.
 

@@ -15,7 +15,7 @@
 //! the owning process exits, however it exits, so there is no stale lock
 //! file to detect or repair and no pid to misread after reuse. A pid file
 //! would need both. This module also does not depend on
-//! `tauri-plugin-single-instance`: a tray app has no window to focus, so it
+//! `tauri-plugin-single-instance`: a menu bar app has no window to focus, so it
 //! needs none of the plugin's second-launch argv forwarding, and the Rust
 //! standard library has had file locking since 1.89, which makes the
 //! plugin a dependency for one syscall.

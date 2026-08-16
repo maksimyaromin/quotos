@@ -13,7 +13,7 @@
 //!
 //! `ServiceManagement` is not linked by anything else in the dependency
 //! tree, so the `#[link]` block below is the entire link directive.
-//! `tray_render`'s `text` module takes the same zero-new-crates approach
+//! `status_item_render`'s `text` module takes the same zero-new-crates approach
 //! with Core Text.
 
 /// What the OS currently says about Quotos's login item.

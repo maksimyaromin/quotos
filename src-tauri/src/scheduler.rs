@@ -4,7 +4,7 @@
 //! Scheduling lives here, in a plain OS-level timer in the Rust process,
 //! rather than in a JS `setInterval` in `useSubscriptions.ts`. A JS timer
 //! lives in the WKWebView, which is hidden whenever the panel is closed,
-//! since the app starts hidden and only shows on a tray click. macOS and
+//! since the app starts hidden and only shows on a status item click. macOS and
 //! WebKit suspend JS timers in an occluded webview: measured, an 8-second
 //! interval produced zero ticks over 150 seconds while the window stayed
 //! hidden and the process itself stayed alive and idle. An OS-level timer

@@ -1213,7 +1213,7 @@ mod tests {
     /// A 200 whose body is not JSON, such as a proxy's HTML error page or
     /// a truncated stream, must be a failed read. Treating it as `Ok(Null)`
     /// would read as a healthy "no limits reported yet" to the whole
-    /// pipeline, wiping every window and tray digit while still bumping
+    /// pipeline, wiping every window and status item digit while still bumping
     /// lastReadAt. A failed read instead lets the frontend's
     /// prior-good-data logic say "behind" honestly.
     #[test]
