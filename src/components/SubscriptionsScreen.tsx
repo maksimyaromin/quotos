@@ -3,6 +3,7 @@ import { Button } from "@/design-system";
 import { listAccounts, onPanelVisibility } from "@/lib/tauriClient";
 import type { AccountDescriptor, Subscription } from "@/types/entities";
 import { StatuslineControl } from "./StatuslineControl";
+import styles from "./SubscriptionsScreen.module.css";
 
 interface Row {
   id: string;
@@ -85,66 +86,17 @@ export function SubscriptionsScreen({
   const rows = [...trackedRows, ...untrackedRows];
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--space-2)",
-        padding: "var(--space-1-5) var(--space-1-5) var(--space-1)",
-      }}
-    >
-      <p
-        style={{
-          margin: 0,
-          fontFamily: "var(--font-sans)",
-          fontSize: "var(--text-sm)",
-          color: "var(--text-tertiary)",
-          lineHeight: "var(--leading-snug)",
-        }}
-      >
+    <div className={styles.list}>
+      <p className={styles.description}>
         Accounts Quotos can see on this Mac. Adding one reads it once, right away.
       </p>
 
       {rows.map((r) => (
-        <div
-          key={r.id}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--space-1-5)",
-            padding: "var(--space-2)",
-            borderRadius: "var(--radius-md)",
-            border: "0.5px solid var(--border-subtle)",
-            background: r.tracked ? "var(--bg-elevated)" : "transparent",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: "var(--text-sm)",
-                  fontWeight: "var(--weight-medium)",
-                  color: r.tracked ? "var(--text-primary)" : "var(--text-secondary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {r.name}
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "var(--text-xs)",
-                  color: "var(--text-quaternary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {r.path}
-              </div>
+        <div key={r.id} className={styles.row} data-tracked={r.tracked ? "true" : undefined}>
+          <div className={styles.rowHeader}>
+            <div className={styles.rowInfo}>
+              <div className={styles.rowName}>{r.name}</div>
+              <div className={styles.rowPath}>{r.path}</div>
             </div>
             <Button
               size="sm"
@@ -161,14 +113,7 @@ export function SubscriptionsScreen({
         </div>
       ))}
 
-      <div
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: "var(--text-xs)",
-          lineHeight: "var(--leading-snug)",
-          color: "var(--text-quaternary)",
-        }}
-      >
+      <div className={styles.footerNote}>
         {/* Deliberately does not say "Quit and reopen Quotos to pick it
             up": discovery reruns on every mount and on every panel
             re-show above, so quitting is not required to see a new

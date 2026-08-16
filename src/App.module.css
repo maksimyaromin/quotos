@@ -1,0 +1,13 @@
+.backButton {
+  margin-left: -6px;
+}
+
+.footerSpacer {
+  flex: 1;
+}
+
+.footerSummary {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-quaternary);
+}

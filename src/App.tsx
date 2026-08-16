@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Button, IconButton, Panel, SubscriptionRow } from "@/design-system";
 import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "@/components/icons";
 import { SubscriptionsScreen } from "@/components/SubscriptionsScreen";
 import { UndoRow } from "@/components/UndoRow";
+import { Button, IconButton, Panel, SubscriptionRow } from "@/design-system";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { presentRow } from "@/lib/rowPresentation";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/lib/tauriClient";
 import { formatClockTime, formatExactReset, formatRelativePast } from "@/lib/time";
 import "./app.css";
+import styles from "./App.module.css";
 
 const NOW_TICK_MS = 30_000;
 
@@ -276,7 +277,7 @@ export default function App() {
       position={position}
       leading={
         screen === "manage" ? (
-          <IconButton label="Back" onClick={goList} style={{ marginLeft: -6 }}>
+          <IconButton label="Back" onClick={goList} className={styles.backButton}>
             <BackIcon />
           </IconButton>
         ) : null
@@ -306,16 +307,8 @@ export default function App() {
             <Button variant="ghost" size="sm" icon={<PlusIcon />} onClick={goManage}>
               Add subscription
             </Button>
-            <div style={{ flex: 1 }} />
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "var(--text-xs)",
-                color: "var(--text-quaternary)",
-              }}
-            >
-              {footerSummary}
-            </span>
+            <div className={styles.footerSpacer} />
+            <span className={styles.footerSummary}>{footerSummary}</span>
           </>
         ) : null
       }

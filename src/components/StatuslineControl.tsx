@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/design-system";
 import { statuslineInstall, statuslineRemove, statuslineStatus } from "@/lib/tauriClient";
 import { isStatuslineError, type StatuslineIntegrationStatus } from "@/types/entities";
+import styles from "./StatuslineControl.module.css";
 
 function describeError(err: unknown): string {
   if (isStatuslineError(err) && err.kind !== "conflict" && "message" in err) {
@@ -9,13 +10,6 @@ function describeError(err: unknown): string {
   }
   return "Quotos couldn't do that. Nothing was changed.";
 }
-
-const noteStyle: React.CSSProperties = {
-  fontFamily: "var(--font-sans)",
-  fontSize: "var(--text-xs)",
-  lineHeight: "var(--leading-snug)",
-  color: "var(--text-quaternary)",
-};
 
 /** The in-app opt-in offer for Claude Code's zero-cost statusline feed, one
  * row per tracked subscription, right where "Add subscription" already
@@ -77,24 +71,28 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
 
   if (status.kind === "installed") {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <span style={noteStyle}>Live updates from Claude Code — on, free</span>
+      <div className={styles.row}>
+        <span className={styles.note}>Live updates from Claude Code — on, free</span>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void turnOff()}>
           Turn off
         </Button>
-        {error ? <span style={{ ...noteStyle, color: "var(--red)" }}>{error}</span> : null}
+        {error ? (
+          <span className={styles.note} data-tone="error">
+            {error}
+          </span>
+        ) : null}
       </div>
     );
   }
 
   if (status.kind === "conflict") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-        <span style={noteStyle}>
+      <div className={styles.column}>
+        <span className={styles.note}>
           Claude Code already runs a different status line:{" "}
-          <span style={{ fontFamily: "var(--font-mono)" }}>{status.existing_command}</span>
+          <span className={styles.code}>{status.existing_command}</span>
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <div className={styles.row}>
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => void enable(true)}>
             Replace with live updates
           </Button>
@@ -107,17 +105,25 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
             Not now
           </Button>
         </div>
-        {error ? <span style={{ ...noteStyle, color: "var(--red)" }}>{error}</span> : null}
+        {error ? (
+          <span className={styles.note} data-tone="error">
+            {error}
+          </span>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+    <div className={styles.row}>
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void enable(false)}>
         Enable live updates from Claude Code
       </Button>
-      {error ? <span style={{ ...noteStyle, color: "var(--red)" }}>{error}</span> : null}
+      {error ? (
+        <span className={styles.note} data-tone="error">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }
