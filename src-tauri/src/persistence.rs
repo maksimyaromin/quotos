@@ -13,19 +13,12 @@ pub struct TrackedAccount {
     pub config_dir: String,
     /// `None` falls back to the provider-derived label.
     pub label: Option<String>,
-    /// Pinning is a property of the limit window, matching
-    /// `LimitWindowEntity.id` on the TypeScript side, not of the
-    /// subscription as a whole, so an account can pin one window and leave
-    /// its others unpinned.
+    /// Pinning is per limit window, matching `LimitWindowEntity.id`, not
+    /// per subscription, so an account can pin one window and leave others.
     #[serde(rename = "pinnedWindowIds", default)]
     pub pinned_window_ids: Vec<String>,
-    /// Present only when this record was loaded from a file that predates
-    /// `pinnedWindowIds` and wrote `pinned: true` or `pinned: false`
-    /// instead. `use-subscriptions.ts`'s `pendingPinMigrationRef` reads this
-    /// to detect and migrate such a record, and never sends it back on
-    /// `save_tracked`, so `skip_serializing_if` sheds it from disk on the
-    /// very next save; it appears only on the one load that still has the
-    /// old shape to read.
+    /// A legacy field, migrated on load and shed on the next save. See
+    /// "Persistence" in docs/architecture.md.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
 }
@@ -43,11 +36,7 @@ pub struct Store {
 
 impl Store {
     /// A file that fails to parse is moved aside to `tracked.json.corrupt`
-    /// first, best effort: starting empty never depends on the move
-    /// succeeding. `save` atomically overwrites `tracked.json`, so leaving
-    /// the unread bytes in place would let the very next save destroy the
-    /// only copy of whatever the file held. The backup keeps exactly one
-    /// slot, so a second corruption overwrites the first.
+    /// first, best effort. See "Persistence" in docs/architecture.md.
     pub fn load(path: PathBuf) -> Self {
         let tracked = match fs::read_to_string(&path) {
             Err(_) => Vec::new(),
@@ -72,15 +61,9 @@ impl Store {
             .clone()
     }
 
-    /// Once this returns `Ok` the data is durably on disk, and disk and
-    /// memory update together under one lock. `save_tracked` is an async
-    /// command the frontend fires on every membership, label, or pin
-    /// change, so two saves can overlap; a writer that renamed its file
-    /// last but locked the mutex first would leave disk and memory
-    /// telling different stories, since the scheduler polls from memory
-    /// while the next launch loads from disk. This runs on a blocking
-    /// thread, never across an `await`, so holding the lock through file
-    /// I/O blocks only sibling saves.
+    /// Once this returns `Ok`, disk and memory have updated together under
+    /// one lock. See "Persistence" in docs/architecture.md for why two
+    /// overlapping saves need that lock held across the whole write.
     pub fn save(&self, tracked: Vec<TrackedAccount>) -> Result<(), String> {
         let shape = PersistedShape {
             version: 1,

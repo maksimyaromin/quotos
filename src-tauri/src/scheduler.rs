@@ -1,13 +1,6 @@
-//! Exactly one automatic read per account per minute, anchored to the last
-//! attempt rather than a free-running timer.
-//!
-//! Scheduling lives here, in a plain OS-level timer in the Rust process,
-//! rather than in a JS `setInterval` in `use-subscriptions.ts`. The app
-//! starts hidden and only shows on a status item click, and a JS timer
-//! lives in the WKWebView, which macOS and WebKit suspend while occluded:
-//! measured, an 8-second interval produced zero ticks over 150 seconds
-//! while the window stayed hidden and the process itself stayed alive and
-//! idle. An OS-level timer has no notion of "hidden" at all.
+//! Exactly one automatic read per account per minute, anchored to the
+//! last attempt rather than a free-running JS timer. See "Refresh
+//! scheduling and the shared request budget" in docs/architecture.md.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -49,17 +42,8 @@ impl Scheduler {
         }
     }
 
-    /// Two independent entrants call `run_due_pass`: the periodic 5-second
-    /// loop and the frontend's launch-time `kick_scheduler`. An account is
-    /// only marked attempted after its fetch completes, so overlapping
-    /// passes would both see the same account as due and fetch it twice,
-    /// spending two slots of the shared 5-per-300s budget on one read. A
-    /// fetch may first run a bounded-20s CLI credential renewal ahead of
-    /// the ordinary roughly 8-hour token expiry, so the kicked pass can
-    /// still be mid-fetch when the loop's own tick arrives. The loser
-    /// skips rather than waits, since whatever is due is already the
-    /// running pass's job, and anything that becomes due later is at most
-    /// one 5-second tick away.
+    /// Lets only one of the scheduler's two independent entrants run a
+    /// due-pass at a time; the loser skips outright. See docs/architecture.md.
     pub fn begin_pass(&self) -> Option<PassGuard<'_>> {
         self.pass_running
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -77,15 +61,8 @@ impl Scheduler {
         }
     }
 
-    /// `fetch_snapshot` is the single call site for a real network attempt,
-    /// used both by this scheduler's loop and by the frontend's
-    /// manual-refresh command, and both funnel through here: the next
-    /// automatic read is anchored 60 seconds out from now, not from
-    /// whenever it was originally supposed to happen, so a manual refresh
-    /// resets the minute automatically with nothing extra to wire up.
-    /// `retry_after` overrides that plain wait when the attempt came back
-    /// rate-limited, since there is no point retrying before the budget
-    /// frees up.
+    /// Anchors the next automatic read 60 seconds out from now, so a
+    /// manual refresh resets the minute for free. See docs/architecture.md.
     pub fn mark_attempted(&self, account_id: &str, retry_after: Option<Duration>) {
         let wait = next_wait(retry_after);
         let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");

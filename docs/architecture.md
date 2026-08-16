@@ -142,6 +142,20 @@ pins, as a plain JSON file rather than trusting the webview's
 `load_tracked` / `save_tracked` commands on a real build, `localStorage`
 in the browser harness, which has no Rust side to call.
 
+A file that fails to parse is moved aside to `tracked.json.corrupt`
+first, best effort, since `Store::load` starting empty never depends on
+the move succeeding; leaving the unread bytes in place would let the
+very next save destroy the only copy of whatever the file held. The
+backup keeps exactly one slot, so a second corruption overwrites the
+first. `save_tracked` is an async command the frontend fires on every
+membership, label, or pin change, so two saves can overlap; `Store::save`
+holds its mutex across the whole write, disk and memory updating
+together, since a writer that renamed its file last but locked the
+mutex first would leave disk and memory telling different stories, and
+the scheduler polls from memory while the next launch loads from disk.
+The save runs on a blocking thread, never across an `await`, so holding
+the lock through file I/O blocks only sibling saves.
+
 A `localStorage` write returns as soon as the in-memory page state
 updates, and WebKit flushes its backing store to disk on its own
 schedule; whether an abrupt quit can race that flush was never
@@ -157,21 +171,49 @@ Pinning is per limit window, not per subscription:
 every window a provider's normalizer builds carries a stable id from
 `normalize-usage.ts`'s `windowId(kind, scope)`. `persistence.rs`'s
 `TrackedAccount` struct mirrors the wire shape field for field, including
-a migration-only field for a tracked list written before per-window
-pinning existed. Any time an entity's wire shape changes, check whether
-this struct still mirrors it, since a mismatched Rust struct does not
-error; it silently reshapes the JSON in transit.
+a migration-only `pinned` field present only when a record was loaded
+from a file that predates `pinnedWindowIds` and wrote `pinned: true` or
+`pinned: false` instead. `use-subscriptions.ts`'s `pendingPinMigrationRef`
+reads that field to detect and migrate such a record, and never sends it
+back on `save_tracked`, so `skip_serializing_if` sheds it from disk on
+the very next save; it appears only on the one load that still has the
+old shape to read. Any time an entity's wire shape changes, check
+whether this struct still mirrors it, since a mismatched Rust struct
+does not error; it silently reshapes the JSON in transit.
 
 ## Refresh scheduling and the shared request budget
 
 `scheduler.rs` runs natively rather than as a JavaScript interval,
-because macOS suspends timers in a hidden or occluded `WKWebView`; a
-native OS-level timer has no notion of a hidden webview to throttle.
+because macOS suspends timers in a hidden or occluded `WKWebView`: a
+measured 8-second `setInterval` produced zero ticks over 150 seconds
+while the window stayed hidden and the process itself stayed alive and
+idle. An OS-level timer has no notion of "hidden" at all.
 `ratelimit.rs`'s sliding window is the account-level budget this
 scheduler's cadence assumes stays full; the request budget itself is
 reserved per real HTTP request, not per read attempt, since a read that
 quietly makes two requests would otherwise spend the shared allowance
 twice as fast as the limiter believes.
+
+Each account is due for an automatic read once a minute, anchored to
+its last attempt rather than a free-running timer: `mark_attempted`
+anchors the next automatic read 60 seconds out from whenever the
+attempt actually happened, whether that attempt came from the
+scheduler's own periodic pass or from a manual refresh, so a manual
+refresh resets the minute for free with nothing extra to wire up. A
+rate-limited `retry_after` under one minute is floored at one minute
+anyway, since retrying earlier would only spend another slot on a
+guaranteed second failure.
+
+Two independent entrants can call the scheduler's due-pass: its own
+periodic loop and the frontend's launch-time kick. An account is only
+marked attempted after its fetch completes, and a fetch may first run a
+bounded credential renewal ahead of the ordinary token expiry, so the
+kicked pass can still be mid-fetch when the loop's own tick arrives.
+Without a gate, both entrants would see the same account as due and
+fetch it twice, spending two slots of the shared budget on one read;
+`begin_pass` lets only one entrant run at a time and the loser skips
+outright, since whatever is due is already the running pass's job and
+anything that becomes due later is at most one tick away.
 
 Because that budget is shared per account and not per process,
 `single_instance.rs` keeps exactly one Quotos running per machine with an

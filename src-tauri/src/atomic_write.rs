@@ -6,11 +6,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Claude Code spawns one ingest helper process per statusline render, and
-/// two live sessions on the same account routinely overlap, so a shared temp
-/// name would let one writer's `File::create` truncate another's file
-/// between its write and its rename. The pid separates processes; this
-/// counter separates concurrent threads within one process.
+/// Overlapping writers to the same path are routine; a shared temp name
+/// would let one's `File::create` truncate another's mid-rename. The pid
+/// separates processes, this counter separates threads within one.
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn write_string(path: &Path, content: &str) -> Result<(), String> {
