@@ -288,9 +288,11 @@ export function useSubscriptions() {
 
   // F4: the per-account guard itself. Every path that spends a real fetch
   // on one account — a row's "Read now", the header refresh's per-account
-  // fan-out, the launch read — goes through here, so two of them hitting
-  // the same account at once join one in-flight read instead of spending
-  // two of the shared 5-per-300s budget slots on it.
+  // fan-out, the launch read, the read a newly-added subscription gets —
+  // goes through here, so two of them hitting the same account at once join
+  // one in-flight read instead of spending two of the shared 5-per-300s
+  // budget slots on it. The invariant: `refreshOne` has exactly one caller,
+  // and it is this function.
   const refreshOneGuarded = useCallback(
     async (account: AccountDescriptor) => {
       const inFlight = refreshOneInFlight.current.get(account.id);
@@ -397,10 +399,15 @@ export function useSubscriptions() {
         return [...prev, initialSubscription(account, null, [], knownLabelsRef.current[account.id])];
       });
       // Brief §5.3 step 4: verify by reading once immediately, so the
-      // person sees what came back rather than a cold placeholder.
-      void refreshOne(account);
+      // person sees what came back rather than a cold placeholder. F4: this
+      // spends a real budget slot, so it goes through the guard like every
+      // other fetch — calling `refreshOne` here left the read unregistered,
+      // and a refresh landing during it (widest window: the bounded-20s CLI
+      // renewal an aged-out token needs) started a second request for the
+      // same account.
+      void refreshOneGuarded(account);
     },
-    [refreshOne, clearRemovalTimer],
+    [refreshOneGuarded, clearRemovalTimer],
   );
 
   /** Hard, immediate removal — the Subscriptions screen's own [Remove], which

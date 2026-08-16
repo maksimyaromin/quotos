@@ -213,6 +213,36 @@ describe("useSubscriptions shared per-account in-flight guard (F4)", () => {
     expect(fetchSnapshot).toHaveBeenCalledTimes(4);
     expect(fetchSnapshot.mock.calls[3]?.[0]).toEqual(expect.objectContaining({ id: "claude:claude-team" }));
   });
+
+  // Adding a subscription reads it once immediately (brief §5.3 step 4), and
+  // that read spends a real budget slot like any other — so it belongs to the
+  // same guard. It used to call `refreshOne` directly, which never registered
+  // the read as in-flight, so a refresh landing during it started a *second*
+  // request for the same account. The window is widest exactly where it hurts:
+  // adding an account whose token has aged out runs a bounded-20s CLI renewal
+  // first, and any refresh in those 20s doubled the spend.
+  it("the add-subscription read joins the guard instead of starting a second request", async () => {
+    const { result } = renderHook(() => useSubscriptions());
+    await flush();
+    fetchSnapshot.mockClear();
+
+    let release!: (value: unknown) => void;
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+
+    await act(async () => {
+      result.current.addSubscription({ id: "claude:other", provider: "claude", config_dir: "~/.claude-other" });
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      const readNow = result.current.refreshAccountById("claude:other");
+      // The add's own read is the only fetch in flight — this joined it.
+      expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+      release({ ...SNAPSHOT, account_id: "claude:other", config_dir: "~/.claude-other" });
+      await readNow;
+    });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+  });
 });
 
 // R2-4: on the native path, automatic reads arrive as pushed `quota-refresh`

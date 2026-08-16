@@ -169,12 +169,17 @@ each round, not appended to.
   signing in never also shows the budget wait, and the wait states its time
   once (it used to appear in the footer note *and* the action label).
   Always attempting has one flip side (F4): every path that spends a real
-  fetch on an account — header refresh, row "Read now", launch read — must go
-  through `useSubscriptions.ts`'s `refreshOneGuarded`, the single per-account
-  in-flight guard; a concurrent request joins the in-flight read instead of
-  spending a second of the shared 5-per-300s slots. Don't add a fetch path
-  that calls `refreshOne` directly (`refreshAll` used to, and a simultaneous
-  header+row press double-spent the budget on one account).
+  fetch on an account — header refresh, row "Read now", launch read, the read
+  a newly-added subscription gets — must go through `useSubscriptions.ts`'s
+  `refreshOneGuarded`, the single per-account in-flight guard; a concurrent
+  request joins the in-flight read instead of spending a second of the shared
+  5-per-300s slots. The invariant is grep-able and is the thing to check, not
+  the prohibition: **`refreshOne` must have exactly one caller, and it is
+  `refreshOneGuarded`** (`grep -n 'refreshOne('` — one hit, inside the guard).
+  Stating it as "don't *add* a direct caller" is what let the pre-existing one
+  in `addSubscription` survive the F4 round; `refreshAll` was converted and it
+  was not, so adding a subscription and refreshing within the same moment
+  still double-spent that account's budget.
 - **Reading Claude Code's Keychain item cannot raise a prompt, and its ACL
   says so.** Both items' decrypt/export ACL trusts exactly `/usr/bin/security`
   with `promptSelector=0` and the `apple-tool:` partition — so `security
