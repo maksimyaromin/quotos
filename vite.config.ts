@@ -7,9 +7,9 @@ export default defineConfig(async () => ({
   plugins: [react()],
 
   resolve: {
-    // The single source of truth for path aliases is tsconfig.json's own
-    // `paths`; Vite reads it natively rather than duplicating the mapping
-    // in a second `resolve.alias` block.
+    // The single source of truth for path aliases is tsconfig.app.json's
+    // own `paths`; Vite reads it natively rather than duplicating the
+    // mapping in a second `resolve.alias` block.
     tsconfigPaths: true,
   },
 

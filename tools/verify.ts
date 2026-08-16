@@ -20,6 +20,8 @@ const lanes: Lane[] = [
   { name: "format", script: "format:check" },
   { name: "lint", script: "lint" },
   { name: "typecheck", script: "typecheck" },
+  { name: "node typecheck", script: "typecheck:node" },
+  { name: "design-system typecheck", script: "typecheck:design-system" },
   { name: "tools typecheck", script: "typecheck:tools" },
   { name: "test", script: "test" },
   { name: "hidden characters", script: "check:hidden-characters" },

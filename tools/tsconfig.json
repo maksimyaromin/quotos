@@ -1,18 +1,12 @@
 {
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
     "types": ["node"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "erasableSyntaxOnly": true,
-    "skipLibCheck": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "erasableSyntaxOnly": true
   },
   "include": ["**/*.ts"]
 }
