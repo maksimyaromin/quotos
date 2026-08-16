@@ -133,8 +133,6 @@ impl SignInRegistry {
         writer.flush().map_err(|e| e.to_string())
     }
 
-    /// Called either as the panel's own cancel action or as cleanup when
-    /// the row is removed mid-flow.
     pub fn cancel(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         if let Some(session) = sessions.remove(account_id) {
@@ -146,8 +144,6 @@ impl SignInRegistry {
         }
     }
 
-    /// Called after the frontend receives `sign-in-finished`, so a retry
-    /// starts clean.
     pub fn forget(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         sessions.remove(account_id);

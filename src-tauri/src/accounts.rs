@@ -1,6 +1,3 @@
-//! The account-data plane: discovery, the one real fetch path, the shared
-//! per-account rate budget, the native refresh scheduler, and the IPC
-//! commands for the tracked list, the statusline integration, and sign-in.
 //! Nothing here knows a window or a status item exists. That layer stays in
 //! `shell.rs`, which keeps "what we know about accounts" and "how the
 //! panel shows it" separately readable.
@@ -18,13 +15,13 @@ use crate::providers::{self, AccountDescriptor, FetchError, RawSnapshot};
 use crate::ratelimit::{RateLimitStatus, RateLimiter};
 use crate::statusline;
 
-/// This command is `async` purely for its threading effect. It never
-/// awaits anything in its body. A `#[tauri::command]` without `async` runs
-/// as `ExecutionContext::Blocking`, meaning Tauri executes it on the main
-/// thread, inline with the IPC call, and this command forks a `security(1)`
-/// process per candidate config dir. See `providers/claude.rs`. On the main
-/// thread that stalls the UI for however long the Keychain takes, which
-/// lands exactly when the user opens the Subscriptions screen. The same
+/// This command is `async` purely for its threading effect; it never
+/// awaits anything in its body. It forks a `security(1)` process per
+/// candidate config dir (see `providers/claude.rs`), and a synchronous
+/// command would run that on the main thread inline with the IPC call
+/// (see "Tauri commands and the main thread" in platform-constraints.md),
+/// stalling the UI for however long the Keychain takes, which lands
+/// exactly when the user opens the Subscriptions screen. The same
 /// reasoning makes the two `tracked_store` commands below `async` as well,
 /// since one of them calls `fsync`.
 #[tauri::command(async)]
@@ -64,9 +61,7 @@ async fn perform_fetch(
         });
     }
 
-    // See claude-provider.md for the 5-per-300s budget this reserves
-    // against, and `providers::RequestBudget`'s doc comment for why the
-    // reservation lives inside the provider rather than here.
+    // See claude-provider.md for the 5-per-300s budget this reserves against.
     let budget = AccountBudget {
         limiter: &state.rate_limiter,
         account_id,
@@ -218,18 +213,13 @@ enum ScheduledRefreshEvent {
     },
 }
 
-/// One pass over every tracked account. Fetches whichever accounts are
-/// currently due and emits a `quota-refresh` event per attempt. Shared by
-/// the periodic loop below and by `kick_scheduler`. See `kick_scheduler`'s
-/// doc comment for why the frontend needs to trigger this directly instead
-/// of only ever waiting on the timer.
+/// One pass over every tracked account: fetches whichever are currently
+/// due and emits a `quota-refresh` event per attempt. Shared by
+/// `spawn_scheduler`'s periodic loop and by `kick_scheduler`.
 async fn run_due_pass(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    // Only one pass runs at a time. Otherwise the launch-time kick and the
-    // periodic tick could both fetch the same still-unmarked account and
-    // spend two budget slots on one read. See Scheduler::begin_pass for the
-    // full argument. Skipping here is safe, because whatever is due is
-    // already the running pass's job.
+    // See Scheduler::begin_pass for why skipping here, rather than
+    // waiting, is the correct behavior when a pass is already running.
     let Some(_pass) = state.scheduler.begin_pass() else {
         return;
     };
@@ -260,22 +250,18 @@ async fn run_due_pass(app: &tauri::AppHandle) {
 }
 
 /// The single native scheduler. It ticks every 5 seconds, which is cheap
-/// because each tick is just a due-time comparison per tracked account with
-/// no network call unless something is actually due. It reads whichever
-/// tracked accounts are due for their once-a-minute automatic read and
-/// pushes each result to the frontend as a `quota-refresh` event. It runs
-/// for the app's lifetime regardless of panel visibility, because a native
+/// because each tick is just a due-time comparison per tracked account
+/// with no network call unless something is actually due. It runs for the
+/// app's lifetime regardless of panel visibility, because a native
 /// OS-level timer has no notion of a hidden webview to be throttled by.
 ///
 /// The first periodic tick is deliberately delayed by 5 seconds instead of
-/// firing immediately. Every tracked account is due the moment the app
-/// starts, since nothing has attempted it yet, and an immediate tick could
-/// fire and emit before the frontend has mounted and subscribed to
-/// `quota-refresh`, silently losing that first read because events are not
-/// queued for late subscribers. `kick_scheduler` below covers the real
-/// read-at-launch case instead, called once the frontend is actually
-/// listening. This loop's own first tick is only a safety net for if that
-/// kick is somehow skipped.
+/// firing immediately: every tracked account is due the moment the app
+/// starts, and an immediate tick could fire and emit before the frontend
+/// has mounted and subscribed to `quota-refresh`, silently losing that
+/// first read because events are not queued for late subscribers.
+/// `kick_scheduler` covers the real read-at-launch case; this loop's own
+/// first tick is only a safety net for if that kick is somehow skipped.
 pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval_at(
@@ -289,14 +275,13 @@ pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     });
 }
 
-/// Lets the frontend trigger one due-check pass immediately instead of
-/// waiting out the periodic loop's first tick. Called once, right after the
-/// frontend has subscribed to `quota-refresh`, so the initial read at
-/// launch is still near-instant. This goes through the exact same `is_due`
-/// and `mark_attempted` bookkeeping as the periodic loop, so it is a nudge
-/// to run the one scheduler sooner rather than a second scheduler.
-/// Whichever of this call or the loop's own tick reaches a given account
-/// first makes the other a no-op.
+/// Called once, right after the frontend has subscribed to
+/// `quota-refresh`, so the initial read at launch is still near-instant
+/// rather than waiting on `spawn_scheduler`'s delayed first tick. This
+/// goes through the exact same `is_due` and `mark_attempted` bookkeeping
+/// as the periodic loop, so it is a nudge to run the one scheduler sooner
+/// rather than a second scheduler: whichever of this call or the loop's
+/// own tick reaches a given account first makes the other a no-op.
 #[tauri::command]
 pub(crate) async fn kick_scheduler(app: tauri::AppHandle) {
     run_due_pass(&app).await;
@@ -315,10 +300,7 @@ pub(crate) fn debug_rate_limit_snapshot(
 }
 
 /// Starts Claude Code's own sign-in for a broken row's account. See
-/// `signin.rs`'s module doc for exactly what this does and does not do. In
-/// short, `claude setup-token` opens the browser and prints the
-/// authorization URL itself; Quotos never touches that, it only starts the
-/// process and later relays a pasted code into it.
+/// `signin.rs`'s module doc for exactly what this does and does not do.
 #[tauri::command]
 pub(crate) fn start_sign_in(
     app: tauri::AppHandle,
