@@ -1,11 +1,6 @@
-//! Claude Code's own statusline feed is a zero-cost, ToS-clean second usage
-//! source. While an interactive Claude Code session is running, its
-//! statusline hook reports the same `rate_limits` numbers the
-//! `/api/oauth/usage` endpoint does, at no cost against the 5-per-300s
-//! request budget, so Quotos installs a tiny helper as that hook and reads
-//! whatever it drops.
-//!
-//! The write mechanism follows six rules:
+//! Claude Code's own statusline feed, a zero-cost second usage source; see
+//! "The statusline feed" in claude-provider.md for why it exists and how
+//! the frontend reconciles it. The write mechanism here follows six rules:
 //!  1. Only written on an explicit in-app opt-in per subscription, never
 //!     automatic. Only the Tauri commands in `accounts.rs` invoke
 //!     [`install`] and [`remove`], and only in response to a click.
@@ -47,10 +42,8 @@ use sha2::{Digest, Sha256};
 use crate::atomic_write::write_string as atomic_write_string;
 
 /// `main.rs` checks for this as `argv[1]` before calling into Tauri at
-/// all. The copied helper binary, see [`ensure_helper_installed`], is the
-/// exact same executable as the GUI app, and this is what keeps a
-/// statusline invocation, which can happen many times a minute during an
-/// active session, from ever spinning up a second GUI instance.
+/// all. See [`ensure_helper_installed`] for why the copied helper is the
+/// same executable as the GUI app rather than a separate binary.
 pub const INGEST_FLAG: &str = "--quotos-statusline-ingest";
 
 /// Hard ceiling on how much of the statusline hook's stdin payload is
@@ -648,7 +641,6 @@ mod tests {
             }
             other => panic!("expected Conflict, got {other:?}"),
         }
-        // Nothing was changed by a refused install.
         let settings: serde_json::Value = serde_json::from_str(&dirs.read_settings_raw()).unwrap();
         assert_eq!(
             settings["statusLine"]["command"],
@@ -773,8 +765,6 @@ mod tests {
             r#"{"statusLine": {"type": "command", "command": "whatever"}, "keepMe": 1}"#,
         );
 
-        // remove() called without ever calling install() first: no backup
-        // metadata exists, so the honest thing to do is clear the key.
         remove(&dirs.app_support_dir, &dirs.config_dir).expect("remove should succeed");
 
         let settings: serde_json::Value = serde_json::from_str(&dirs.read_settings_raw()).unwrap();
@@ -995,8 +985,6 @@ mod tests {
 
     #[test]
     fn absent_rate_limits_extracts_to_none() {
-        // The payload documents this field as absent entirely on a
-        // session's first invocation.
         let empty = serde_json::json!({});
         assert!(extract_rate_limits(&empty).is_none());
     }
