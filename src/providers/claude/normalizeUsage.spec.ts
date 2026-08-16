@@ -201,8 +201,6 @@ describe("normalizeUsage", () => {
         five_hour: { utilization: 40, resets_at: null },
         seven_day: { utilization: 8, resets_at: "2026-08-17T10:00:00Z" },
       });
-      // An empty limits[] falls through to the fixed shape the same way an
-      // absent one does, and seven_day is that shape's account-wide weekly.
       expect(result.used).toBe(8);
     });
 
