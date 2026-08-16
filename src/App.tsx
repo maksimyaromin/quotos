@@ -91,10 +91,10 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openMenuId]);
 
-  // macOS suspends a hidden WKWebView's timers, so the NOW_TICK interval
-  // below does not run while the panel is closed. Re-reading `now` on show
-  // avoids painting stale relative times after a long-closed panel
-  // reopens.
+  // WebKit suspends timers in a hidden webview, so the NOW_TICK interval
+  // below does not run while the panel is closed; see scheduler.rs's
+  // module doc for the measured evidence. Re-reading `now` on show avoids
+  // painting stale relative times after a long-closed panel reopens.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
