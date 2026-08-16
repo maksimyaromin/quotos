@@ -14,12 +14,9 @@ export function formatRelativePast(iso: string | null, now: Date = new Date()): 
   return `${days}d ago`;
 }
 
-// R2-7: "мне не нравится что я вижу Пн по русски" — every formatter here
-// used to build with locale `undefined`, i.e. whatever the system locale
-// is, which is Russian on the captain's Mac. The handoff's strings are
-// fixed to English, 12-hour clock ("Resets today at 4:05 PM"), so the
-// locale is pinned to `en-US` explicitly — the app's own language must not
-// depend on the machine it runs on.
+// Intl.DateTimeFormat falls back to the system locale when none is given.
+// Every formatter in this module is built with an explicit locale instead,
+// so the app's output stays in English regardless of the machine it runs on.
 const LOCALE = "en-US";
 
 const TIME_FMT = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
@@ -43,10 +40,11 @@ export function formatClockTime(iso: string | null): string | null {
   return TIME_FMT.format(then);
 }
 
-/** I3: the exact moment a window resets, not a relative offset the person has
- * to do arithmetic on. "Today at 4:05 PM" / "Tomorrow at 10:00 AM" / "Wed at
- * 10:00 AM" / "Aug 17 at 10:00 AM" depending on how far out it is — close
- * enough to need the day named, far enough to need the date. */
+/** The exact moment a window resets, not a relative offset the caller has to
+ * do arithmetic on. Formats as "Today at 4:05 PM", "Tomorrow at 10:00 AM",
+ * "Wed at 10:00 AM" or "Aug 17 at 10:00 AM" depending on how far out the
+ * reset is, close enough to need the day named and far enough to need the
+ * date. */
 export function formatExactReset(iso: string | null, now: Date = new Date()): string | null {
   if (!iso) return null;
   const then = new Date(iso);
