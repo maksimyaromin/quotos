@@ -4,7 +4,6 @@
    :root defaults to dark; [data-appearance="light"] overrides. */
 
 :root {
-  /* --- base neutral ramp (cool graphite) --- */
   --graphite-0: #0d0f11;
   --graphite-1: #131518;
   --graphite-2: #17191d;
@@ -32,7 +31,6 @@
   --blue: #5b8def;         /* info / waiting-on-limits / connecting */
   --blue-muted: #1b2740;
 
-  /* --- surfaces --- */
   --bg-base: var(--graphite-0);        /* behind the vibrancy blur */
   --bg-panel: rgba(19, 21, 24, 0.86);  /* the popover surface, translucent, vibrancy shows through */
   --bg-row: transparent;               /* rows sit on the panel */
@@ -42,13 +40,11 @@
   --bg-input: var(--graphite-3);
   --bg-selected: var(--teal-muted);
 
-  /* --- borders / hairlines --- */
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-default: rgba(255, 255, 255, 0.10);
   --border-strong: rgba(255, 255, 255, 0.16);
   --border-focus: var(--teal-bright);
 
-  /* --- text --- */
   --text-primary: var(--graphite-11);
   --text-secondary: var(--graphite-9);
   --text-tertiary: var(--graphite-8);
@@ -62,7 +58,6 @@
   --cap-warn: var(--amber);     /* getting low */
   --cap-critical: var(--red);   /* nearly out */
 
-  /* --- status dot / chip colors --- */
   --status-working: var(--teal);
   --status-progress: var(--graphite-8);   /* connecting / reading */
   --status-behind: var(--amber);
