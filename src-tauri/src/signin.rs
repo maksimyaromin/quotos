@@ -50,10 +50,9 @@ impl SignInRegistry {
         }
     }
 
-    /// Starts `claude setup-token` for one account. Fails fast if a session
-    /// for that account is already running rather than starting a second
-    /// one. The row's action should be disabled while in progress, but this
-    /// is the actual guard.
+    /// The row's action should already be disabled while a sign-in is in
+    /// progress, but the check against `sessions` below is the actual
+    /// guard against starting a second one.
     pub fn start(
         &self,
         app: AppHandle,
@@ -77,13 +76,10 @@ impl SignInRegistry {
             })
             .map_err(|e| e.to_string())?;
 
-        // The CLI and its environment are resolved through the provider,
-        // never by name. A Finder-launched .app inherits no PATH, so
-        // spawning "claude" directly would fail to find anything. Forcing
-        // CLAUDE_CONFIG_DIR for the default account would also point
-        // Claude Code at a config it treats as signed out, so any sign-in
-        // that ran would write a credential Quotos never reads. See
-        // providers::claude::cli_invocation.
+        // A Finder-launched .app inherits no PATH, so spawning "claude" by
+        // name would fail to find anything, and forcing CLAUDE_CONFIG_DIR
+        // for the default account would point Claude Code at a config it
+        // treats as signed out, writing a credential Quotos never reads.
         let invocation = crate::providers::claude::cli_invocation(Path::new(&config_dir)).ok_or_else(|| {
             "Quotos couldn't find the Claude Code command on this Mac. Open Claude Code once, then try again."
                 .to_string()
@@ -121,8 +117,6 @@ impl SignInRegistry {
         Ok(())
     }
 
-    /// Relays a pasted authorization code into the waiting process's stdin,
-    /// exactly as if it had been typed into a real terminal.
     pub fn submit_code(&self, account_id: &str, code: &str) -> Result<(), String> {
         let sessions = self.sessions.lock().expect("sign-in registry poisoned");
         let session = sessions
@@ -139,9 +133,8 @@ impl SignInRegistry {
         writer.flush().map_err(|e| e.to_string())
     }
 
-    /// Kills the in-progress process for `account_id`, if any. Called
-    /// either as the panel's own cancel action or as cleanup when the row
-    /// is removed mid-flow.
+    /// Called either as the panel's own cancel action or as cleanup when
+    /// the row is removed mid-flow.
     pub fn cancel(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         if let Some(session) = sessions.remove(account_id) {
@@ -153,8 +146,8 @@ impl SignInRegistry {
         }
     }
 
-    /// Drops bookkeeping once a session has finished. Called after the
-    /// frontend receives `sign-in-finished`, so a retry starts clean.
+    /// Called after the frontend receives `sign-in-finished`, so a retry
+    /// starts clean.
     pub fn forget(&self, account_id: &str) {
         let mut sessions = self.sessions.lock().expect("sign-in registry poisoned");
         sessions.remove(account_id);
@@ -162,9 +155,7 @@ impl SignInRegistry {
 }
 
 /// Drains the pty continuously so the child never blocks writing to a full
-/// buffer. Quotos does not parse or display any of it; the CLI already
-/// opens the browser and prints the URL on its own. This thread's only job
-/// is to keep the pipe flowing.
+/// buffer.
 fn spawn_output_drain(mut reader: Box<dyn Read + Send>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -177,12 +168,11 @@ fn spawn_output_drain(mut reader: Box<dyn Read + Send>) {
     });
 }
 
-/// Waits for the child to exit and tells the frontend. This thread owns
-/// `child` for the rest of the session, and by extension `master`, since
-/// dropping the master before the child exits can tear down the pty out
-/// from under it. `killer`, cloned by the caller before this call, is the
-/// independent handle `cancel` uses, so cancel never contends with this
-/// thread's blocking wait.
+/// This thread owns `child` for the rest of the session, and by extension
+/// `master`, since dropping the master before the child exits can tear
+/// down the pty out from under it. `killer`, cloned by the caller before
+/// this call, is the independent handle `cancel` uses, so cancel never
+/// contends with this thread's blocking wait.
 fn spawn_wait_and_notify(
     app: AppHandle,
     account_id: String,
