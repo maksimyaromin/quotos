@@ -6,7 +6,6 @@ export interface BadgeProps {
   /** Muted color family. `neutral` for scope tags, the semantic tones for states. */
   tone?: "neutral" | "accent" | "warn" | "danger" | "info";
   children?: React.ReactNode;
-  /** Extra class for a caller's own layout constraints, composed alongside the badge's own class. */
   className?: string;
   style?: React.CSSProperties;
 }
