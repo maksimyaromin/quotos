@@ -53,38 +53,47 @@ project extends it, then sets only what makes that project different.
 Strictness, module resolution and library level are each decided once,
 in the project that owns the decision, not restated per file.
 
-Four leaf projects exist, and every TypeScript file in the tree belongs
+Three leaf projects exist, and every TypeScript file in the tree belongs
 to exactly one of them; `tsc --showConfig -p <project>` answers, for any
 file, which project claims it and with which options:
 
 - `tsconfig.app.json` covers `src`: DOM libraries, no Node types, the
-  `@/*` path alias, target ES2020. ES2020 is the ceiling because
-  `src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 11, whose
-  Safari does not carry later syntax or library additions, and Vite does
-  not polyfill missing runtime APIs for older engines, only lowers
-  syntax.
+  `@/*` path alias, target ES2021.
 - `tsconfig.node.json` covers `vite.config.ts`: Node types, bundler
   module resolution to match how Vite itself loads the file, target
   ES2023.
 - `tools/tsconfig.json` covers the repository scripts under `tools/`,
   described below.
-- `src/design-system/tsconfig.json` covers exactly one file,
-  `reducedMotion.spec.tsx`, the one place under `src/` that genuinely
-  needs Node's `fs`/`path`/`url` declarations, to walk the tree for a
-  no-literal-transition-duration check. It extends `tsconfig.app.json`
-  and overrides only `types`; `tsconfig.app.json` excludes that one file
-  in return, so it is claimed by exactly one project rather than two. A
-  `/// <reference types="node" />` in the file itself cannot do this
-  instead: every file in one TypeScript program shares the same global
-  scope, so an ambient reference in one file leaks Node's globals to
-  every other file the program compiles, which is the leak this split
-  exists to prevent.
 
-`tools/` and `vite.config.ts` target ES2023, matching the Node runtime
-that actually executes them — `package.json`'s `engines.node` is `>=24`.
-`src` stays at ES2020 for the reason above; the two targets track two
-genuinely different runtimes rather than one drifting away from the
-other by accident.
+`src`'s target follows the macOS floor the application supports:
+`src-tauri/tauri.conf.json`'s `minimumSystemVersion` is macOS 11, whose
+initial release shipped Safari 14.0.1. ES2021 is the highest level that
+version can run — caniuse.com lists Safari 14 as the first version
+supporting both ES2021 syntax such as the `||=`/`&&=`/`??=` logical
+assignment operators and ES2021 library additions such as `Promise.any`,
+while ES2022 additions such as `Array.prototype.at` need Safari 15.4.
+Vite does not polyfill missing runtime APIs for an older engine, only
+lowers syntax, so a feature outside `lib` reaches that floor as a runtime
+crash, not a caught typecheck error.
+
+`tools/` and `vite.config.ts` target ES2023 instead, matching the Node
+runtime that actually executes them — `package.json`'s `engines.node` is
+`>=24` — because Node's own capability is not bounded by Safari's, and
+holding the tooling back to the browser's ceiling would forbid real,
+currently-available Node APIs for no runtime reason. The two targets
+track two genuinely different runtimes rather than one drifting away
+from the other by accident.
+
+Vite's own production `build.target` is a separate setting from any of
+the above, currently left at Vite's default, `baseline-widely-available`,
+which resolves to Chrome 111, Edge 111, Firefox 114, Safari 16.4 and iOS
+16.4. That default is newer than the ES2021-era floor
+`src-tauri/tauri.conf.json` states, and Vite does the tree's only real
+emission, so a tsconfig `target` change cannot fix that gap on its own.
+Bringing them back into agreement is a product decision, either bumping
+`minimumSystemVersion` to match what the bundle already assumes or
+pinning `vite.config.ts`'s `build.target` down to the stated floor, and
+belongs to whoever owns that call.
 
 ## `tools/`
 
@@ -119,6 +128,14 @@ suffix check; a stray `.test.` file fails the gate. Vitest runs against
 jsdom, which has no real layout engine, so anything that depends on
 actual on-screen geometry needs verifying by hand against `npm run tauri
 dev` or a real bundle, not asserted in a spec.
+
+A spec that needs a stylesheet's actual text, rather than jsdom's
+rendered styles, reads it through Vite's own `?raw` import suffix rather
+than Node's `fs`, for example `import elevation from
+"./tokens/elevation.css?raw"` in `reducedMotion.spec.tsx`. That keeps the
+spec inside the same DOM-only project as every other file under `src`.
+`vite.config.ts`'s `test.css.include` is what makes Vitest serve that
+import's real content instead of its usual empty-string stub for CSS.
 
 ## App icons
 
