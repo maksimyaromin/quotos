@@ -1157,6 +1157,57 @@ first. CI (`.github/workflows/ci.yml`) runs that same command on pull requests.
   identifier also share `instance.lock`, so the second one launched exits
   quietly) is sound; it just isn't in the tree anymore, since a published repo
   ships one product identity, not several.
+- **`cargo fix --edition` does not itself write the `edition` field** — it only
+  prepares source under the current edition for the next one and prints
+  "Migrating Cargo.toml from 2021 edition to 2024" as a description of that
+  analysis, not an action taken. The `edition` key in `src-tauri/Cargo.toml`
+  has to be bumped by hand afterward, and only then do the new edition's real
+  semantics (and any of its lints that are informational-only during the
+  `--edition` prep pass) apply. On the 2021-to-2024 move here, the prep pass's
+  one mechanical fix was `extern "C" {}` → `unsafe extern "C" {}` in
+  `launch_at_login.rs`; everything else was a same-crate ripple from the
+  edition bump itself: rustfmt's import sort moves to plain codepoint order
+  (uppercase before lowercase, so `use crate::{AppState, panel_window}` beats
+  the old `{panel_window, AppState}`) and touches every multi-item `use`
+  group tree-wide, and 2024's stable let-chains turn four nested
+  `if let { if let {` sites into clippy `collapsible_if` **errors** under
+  this repo's `-D warnings` gate, not just style suggestions — collapse them
+  (`if let Ok(x) = a() && let Some(y) = x.as_ref() { ... }`) rather than
+  suppressing, since that is what the edition now considers idiomatic.
+  Two sites also got a `tail-expr-drop-order` compatibility warning during
+  the prep pass (`signin.rs`'s `cancel()`, `status_item_render.rs`'s
+  `monolisa_family_available()`) for a temporary that now drops right after
+  its last use instead of being held until function exit; both warnings
+  disappeared the moment the edition was actually set to 2024 rather than
+  persisting as an ongoing lint, and both were checked by hand to be safe:
+  the narrowed-scope value in each case is an independent reference-counted
+  handle (a `MutexGuard` used only for its own `.kill()` call, a `CFRetained`
+  whose contents were already copied out) with no later use depending on it
+  staying alive longer.
+- **`reqwest` 0.13 renamed the `rustls-tls` feature to plain `rustls`** and
+  resolves `aws-lc-rs` as the crypto provider on its own with no explicit
+  provider feature needed, at least for the `default-features = false,
+  features = ["json", "rustls"]` shape this crate uses. `query()` and
+  `form()` moved behind their own opt-in features in the same release; this
+  crate calls neither.
+- **`single_instance::tests::a_second_claim_is_refused_while_the_first_lives_and_frees_with_it`
+  is a pre-existing flaky test, unrelated to toolchain or edition, reproducible
+  on the plain `main` tree.** It fails only under the *full* `cargo test` run
+  (never in isolation, e.g. `cargo test single_instance`), roughly half the
+  time, always the same way: the third `claim()` call, right after `drop`ing
+  the first, reads back `TakenByOther` instead of `Held`. Root cause, traced
+  with a throwaway diagnostic print of the actual `Claim` variant: BSD
+  `flock()` locks belong to the *open file description*, which `fork()`
+  duplicates into a child before that child's own `exec()` closes its
+  `O_CLOEXEC`-marked copy — so while some unrelated, concurrently-running test
+  in the same suite (this crate has several that shell out or spawn a pty)
+  is between `fork()` and `exec()`, its inherited duplicate of this test's
+  lock file descriptor keeps the flock alive even after this test's own `File`
+  has been dropped. This is real, but it can only happen inside a multi-test
+  process exercising `flock` and process-spawning concurrently on the same
+  thread pool; the shipped app calls `single_instance::claim()` exactly once,
+  at startup, long before anything else forks. Belongs to the planned
+  test-quality pass, not fixed here.
 
 ## Maintaining this file
 
