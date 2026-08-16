@@ -839,23 +839,12 @@ pub fn used_fallback_font() -> bool {
     }
 }
 
-/// Composites the glyph plus every segment's colored digits into one RGBA
-/// buffer. Returns `(rgba, width, height)`. An empty `segments` still
-/// draws the bare glyph, as a non-template colored image whenever
-/// `highlighted` is true, since a plain template image cannot carry a
-/// background tint of its own. A caller with truly nothing pinned and no
-/// highlight should prefer the cheaper template-icon path in `shell.rs`
-/// instead of calling this.
-///
-/// Each segment gets a fixed `CELL_WIDTH_PX` reserve, never the raw text
-/// width. `text::measure` is only used to center text inside that reserve,
-/// not to size the layout.
-/// Every cell except the trailing one keeps the fixed `CELL_WIDTH_PX`
-/// reserve. The trailing cell is sized to that one segment's own measured
-/// width instead. See `CELL_WIDTH_PX`'s own doc comment for why only the
-/// last one is safe to trim. A `group_start` flag on the very first
-/// segment means nothing, since there is no prior group to part from, so
-/// it is excluded here the same way `render`'s draw loop excludes it.
+/// `text::measure`'s widths are used only to center text inside each
+/// segment's own reserve, never to size it; see `CELL_WIDTH_PX`'s doc for
+/// why only the trailing segment's reserve tracks its own width. A
+/// `group_start` flag on the very first segment means nothing, since
+/// there is no prior group to part from, so it is excluded here the same
+/// way `render`'s draw loop excludes it.
 fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
     if segments.is_empty() {
         return 0;
@@ -867,6 +856,13 @@ fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
     GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX * non_last_segments + last_width + boundaries * gutter_px
 }
 
+/// Composites the glyph plus every segment's colored digits into one RGBA
+/// buffer. Returns `(rgba, width, height)`. An empty `segments` still
+/// draws the bare glyph, as a non-template colored image whenever
+/// `highlighted` is true, since a plain template image cannot carry a
+/// background tint of its own. A caller with truly nothing pinned and no
+/// highlight should prefer the cheaper template-icon path in `shell.rs`
+/// instead of calling this.
 pub fn render(
     segments: &[StatusItemSegment],
     highlighted: bool,
@@ -918,10 +914,6 @@ pub fn render(
             draw_hairline(&mut buf, total_w, total_h, x, dark);
             x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
         }
-        // The trailing segment's cell is exactly its own width, so no
-        // centering offset falls out of that automatically. Every earlier
-        // segment keeps the fixed reserve. See CELL_WIDTH_PX's doc
-        // comment.
         let cell_width = if i == last_index { *w } else { CELL_WIDTH_PX };
         let text_x = x + cell_width.saturating_sub(*w) / 2;
         text::draw_text(
@@ -941,12 +933,9 @@ pub fn render(
 
 /// The bare glyph alone, no digits, for reverting to the quiet state, the
 /// most common state, so this path matters at least as much as `render()`'s
-/// embedded glyph. Rendered at full `GLYPH_PX` resolution. See
-/// `glyph_coverage`'s doc comment. White RGB plus alpha, matching a
-/// template image's convention: macOS tints template images itself from
-/// alpha alone, per appearance. `worst_used_percent`: see `render`'s doc
-/// comment. The empty state is still the glyph alone, its arc filled to
-/// this value.
+/// embedded glyph. White RGB plus alpha, matching a template image's
+/// convention: macOS tints template images itself from alpha alone, per
+/// appearance.
 pub fn plain_glyph_rgba(worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
     let used_fraction = worst_used_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
@@ -1055,9 +1044,6 @@ mod tests {
         assert_eq!(buf.len(), (w * h * 4) as usize);
     }
 
-    // render and plain_glyph_rgba swap places whenever the panel opens or
-    // closes. A width mismatch would resize the status item on every
-    // toggle, moving the glyph and the beak with it.
     #[test]
     fn every_bare_glyph_path_produces_the_same_image_width() {
         assert_eq!(plain_glyph_rgba(50).1, render(&[], false, 50, false).1);
@@ -1261,10 +1247,8 @@ mod tests {
         );
     }
 
-    // group_start on the very first segment, where there is no prior
-    // group to part from, must never draw a hairline before it. The
-    // frontend's own buildTraySegments never sets it there, but the Rust
-    // layer should not rely on that alone.
+    // The frontend's own buildTraySegments never sets group_start on the
+    // first segment, but the Rust layer should not rely on that alone.
     #[test]
     fn a_group_start_first_segment_draws_no_leading_hairline() {
         let mut first = seg("9%", StatusItemColor::Neutral);
