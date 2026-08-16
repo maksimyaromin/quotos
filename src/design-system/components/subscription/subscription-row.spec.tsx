@@ -146,7 +146,7 @@ describe("the 'N limits' disclosure is a real, focusable control", () => {
     );
     screen.getByRole("button", { name: /2 limits/ }).click();
     // Exactly once: the button's stopPropagation must keep the row div's
-    // onClick (the pointer expand path) from firing a second toggle.
+    // onClick, the pointer expand path, from firing a second toggle.
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
 
@@ -381,7 +381,7 @@ describe("committing a rename without editing keeps an existing custom name", ()
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  test("clicking away (blur) with an untouched draft is a no-op too", () => {
+  test("clicking away to blur with an untouched draft is a no-op too", () => {
     const onRename = vi.fn();
     const input = openRenameField(onRename);
     fireEvent.blur(input);

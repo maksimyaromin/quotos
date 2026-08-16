@@ -46,7 +46,7 @@ beforeEach(() => {
 // These tests assert the path geometry directly, since jsdom has no
 // renderer to compare against a screenshot.
 describe("buildPanelOutlinePath", () => {
-  test("returns one single path (one M...Z run) whether or not a beak is present", () => {
+  test("returns one single M...Z path run whether or not a beak is present", () => {
     const withBeak = buildPanelOutlinePath(332, 500, 24);
     const withoutBeak = buildPanelOutlinePath(332, 500, null);
     for (const d of [withBeak, withoutBeak]) {
@@ -128,7 +128,7 @@ describe("Panel's docked beak rendering", () => {
     expect(clipPath!.getAttribute("d")).toBe(strokePath!.getAttribute("d"));
   });
 
-  test("there is exactly one element carrying a background fill (no second translucent layer)", () => {
+  test("there is exactly one element carrying a background fill, never a second translucent layer", () => {
     const { container } = render(
       <Panel docked beakLeft={24}>
         <div>content</div>
@@ -190,7 +190,7 @@ describe("Panel's docked beak rendering", () => {
     expect(panelStylesheet).not.toMatch(/backdrop-filter/i);
   });
 
-  test("detached (no beak) still renders the same single-layer shape", () => {
+  test("detached, with no beak, still renders the same single-layer shape", () => {
     const { container } = render(
       <Panel docked={false}>
         <div>content</div>

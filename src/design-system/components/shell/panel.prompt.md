@@ -11,4 +11,4 @@ Use `Panel` as the popover container for the whole product view. Put `IconButton
 </Panel>
 ```
 
-The beak points up at the status item; hide it (`beak={false}`) when previewing the panel detached.
+The beak points up at the status item. Set `beak={false}` to hide it when previewing the panel detached.

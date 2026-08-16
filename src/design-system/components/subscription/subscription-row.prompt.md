@@ -1,4 +1,4 @@
-The core Quotos row. One per subscription in the panel. Drives its layout from whether data exists: a row with a `used` number shows the "% used" headline + capacity bar; one without (`idle` / `connecting` / `broken`, or a good read with nothing to report) shows its `reason` message and an inline action. Age (`lastRead`) is always visible; `behind` turns the numeral and the read time amber — stale data is never presented as current.
+The core Quotos row. One per subscription in the panel. Drives its layout from whether data exists: a row with a `used` number shows the "% used" headline + capacity bar; one without, whether `idle`, `connecting`, `broken`, or a good read with nothing to report, shows its `reason` message and an inline action. The row's age, `lastRead`, is always visible. `behind` turns the numeral and the read time amber, since stale data is never presented as current.
 
 ```jsx
 <SubscriptionRow
@@ -16,4 +16,4 @@ The core Quotos row. One per subscription in the panel. Drives its layout from w
   actionLabel="Reconnect" onAction={fix} lastRead="1h ago" />
 ```
 
-Compose a list of these inside `Panel`. The expander appears only when `windows` is non-empty. `used` is % *consumed* — the whole surface says "used", never "left". The headline and bar tint from `severity` (the provider-computed worst of *every* window), not from the headline number's own magnitude.
+Compose a list of these inside `Panel`. The expander appears only when `windows` is non-empty. `used` is % *consumed*: the whole surface says "used", never "left". The headline and bar tint from `severity`, the provider-computed worst of every window, not from the headline number's own magnitude.

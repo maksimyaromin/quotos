@@ -5,4 +5,10 @@ Use `Button` for any labeled action. One `primary` per surface; everything else 
 <Button variant="ghost" size="sm">Try another way</Button>
 ```
 
-Variants: `primary` (teal fill, the single main action), `secondary` (default, hairline), `ghost` (text only, low emphasis), `danger` (red text, destructive). Sizes: `sm` 22px, `base` 26px (macOS small control), `lg` 30px. Pass `icon` for a 14px leading glyph, `fullWidth` to stretch (the sheet's confirm button), `disabled` to dim to 40%.
+Variants:
+- `primary`: teal fill, the single main action.
+- `secondary`: default, hairline.
+- `ghost`: text only, low emphasis.
+- `danger`: red text, destructive.
+
+Sizes: `sm` at 22px, `base` at 26px, macOS's own small control height, and `lg` at 30px. Pass `icon` for a 14px leading glyph and `disabled` to dim to 40%. `fullWidth` stretches it, which the sheet's confirm button uses.
