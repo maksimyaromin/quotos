@@ -58,20 +58,21 @@ the module CSS, never a `useState` plus mouse handlers standing in for
 one. A value that is genuinely per-render, a measured height, a computed
 menu position, a percentage fill width, stays an inline `style`, since
 neither a CSS Module class nor a token layer can express something only
-known at render time. `joinClassNames` (`src/design-system/join-class-names.ts`)
-composes a component's own module class with a caller-supplied
-`className`, so a consumer can layer its own layout constraints in CSS
-rather than only through the `style` prop. See [Testing](#testing) below
-for how a spec verifies a CSS Module's rules rather than an inline style.
+known at render time. `src/design-system/join-class-names.ts`'s
+`joinClassNames` composes a component's own module class with a
+caller-supplied `className`, so a consumer can layer its own layout
+constraints in CSS rather than only through the `style` prop. See
+[Testing](#testing) below for how a spec verifies a CSS Module's rules
+rather than an inline style.
 
 ## TypeScript configuration
 
 The tree is a solution-style set of project references. The root
 `tsconfig.json` holds only `references`, so an editor opening any file
 finds the right project without being told which one to use.
-`tsconfig.base.json` holds the options every project shares — `strict`,
+`tsconfig.base.json` holds the options every project shares: `strict`,
 `skipLibCheck`, `isolatedModules`, `noEmit`, `noUnusedLocals`,
-`noUnusedParameters`, `noFallthroughCasesInSwitch` — and each leaf
+`noUnusedParameters`, and `noFallthroughCasesInSwitch`. Each leaf
 project extends it, then sets only what makes that project different.
 Strictness, module resolution and library level are each decided once,
 in the project that owns the decision, not restated per file.
@@ -93,9 +94,9 @@ file, which project claims it and with which options:
 initial release shipped Safari 18.0. ES2024 is fully supported by that
 version. Its own two most recent additions, `Object.groupBy` /
 `Map.groupBy` and `Promise.withResolvers`, shipped in Safari 17.4;
-the rest of the year's spec — `Array.fromAsync`, resizable and
+the rest of the year's spec, `Array.fromAsync`, resizable and
 transferable `ArrayBuffer`, growable `SharedArrayBuffer`, and the
-well-formed string methods — had already shipped in Safari 16.4, and
+well-formed string methods, had already shipped in Safari 16.4, and
 the RegExp `v` flag in Safari 17.0. Safari 18 carries the complete set
 well before its own release. Vite does not polyfill missing runtime
 APIs for an older engine, only lowers syntax, so a feature outside
@@ -103,12 +104,12 @@ APIs for an older engine, only lowers syntax, so a feature outside
 error.
 
 `tools/` and `vite.config.ts` stay on ES2023, tracking the Node runtime
-that actually executes them — `package.json`'s `engines.node` is
-`>=24` — not the macOS floor. The app project's target used to land on
-the same spec year by coincidence, because Safari 17 fully supported
-it; the two have now diverged exactly as expected, since they track
-genuinely different runtimes and this macOS floor bump landed on a
-newer Safari's ceiling than ES2023.
+that actually executes them rather than the macOS floor;
+`package.json`'s `engines.node` is `>=24`. The app project's target used
+to land on the same spec year by coincidence, because Safari 17 fully
+supported it; the two have now diverged exactly as expected, since they
+track genuinely different runtimes and this macOS floor bump landed on
+a newer Safari's ceiling than ES2023.
 
 Vite's own production `build.target` is a separate setting from any of
 the above, pinned in `vite.config.ts` to `"safari18"` to match
