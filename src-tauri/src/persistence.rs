@@ -1,18 +1,3 @@
-//! The tracked-subscriptions list, meaning membership, custom names, and
-//! pins, lives in a plain JSON file rather than the WKWebView's
-//! `localStorage`. A `localStorage` write returns as soon as the in-memory
-//! page state updates, and WebKit flushes its backing store to disk on its
-//! own schedule. Whether an abrupt process exit, such as choosing "Quit
-//! Quotos", can race that flush was never conclusively pinned down, but a
-//! file written synchronously and `fsync`'d before `save` returns has no
-//! dependency on that flush timing at all. Once `save` returns `Ok`, the
-//! data is durable regardless of what happens immediately after.
-//!
-//! A JSON file instead of SQLite for the same reason as every other data
-//! store this small in this app: the tracked list is a handful of
-//! accounts, so a plain file is simpler to read, review, and hand-edit than
-//! a database, and it serves every query pattern this data needs.
-
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -26,25 +11,21 @@ pub struct TrackedAccount {
     pub id: String,
     pub provider: String,
     pub config_dir: String,
-    /// The user chooses this name for the account. `None` falls back to the
-    /// provider-derived label.
+    /// `None` falls back to the provider-derived label.
     pub label: Option<String>,
-    /// The persisted set of pinned window ids, matching
-    /// `LimitWindowEntity.id` on the TypeScript side. Pinning is a property
-    /// of the limit window, not the subscription as a whole, so an account
-    /// can pin one window and leave its others unpinned. Serialized as
-    /// `pinnedWindowIds` to match the TypeScript `Subscription` and
-    /// `TrackedAccount` fields' own camelCase spelling.
+    /// Pinning is a property of the limit window, matching
+    /// `LimitWindowEntity.id` on the TypeScript side, not of the
+    /// subscription as a whole, so an account can pin one window and leave
+    /// its others unpinned.
     #[serde(rename = "pinnedWindowIds", default)]
     pub pinned_window_ids: Vec<String>,
     /// Present only when this record was loaded from a file that predates
     /// `pinnedWindowIds` and wrote `pinned: true` or `pinned: false`
-    /// instead. The frontend reads this field to detect and migrate such a
-    /// record, through `useSubscriptions.ts`'s `pendingPinMigrationRef`, and
-    /// never sends it back on `save_tracked`. `skip_serializing_if` means a
-    /// record sheds this field from disk the moment it is next saved, so it
-    /// appears exactly once, on the one load that still has the old shape
-    /// to read.
+    /// instead. `useSubscriptions.ts`'s `pendingPinMigrationRef` reads this
+    /// to detect and migrate such a record, and never sends it back on
+    /// `save_tracked`, so `skip_serializing_if` sheds it from disk on the
+    /// very next save; it appears only on the one load that still has the
+    /// old shape to read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
 }
@@ -61,17 +42,12 @@ pub struct Store {
 }
 
 impl Store {
-    /// Loads the tracked list from `path`. A missing or corrupt file starts
-    /// empty instead of failing app startup.
-    ///
-    /// A file that exists but fails to parse is moved aside to
-    /// `tracked.json.corrupt` first. This is best effort: starting empty
-    /// never depends on the move succeeding. `save` atomically overwrites
-    /// `tracked.json`, so leaving the unread bytes in place would let the
-    /// very next save destroy the only copy of whatever the file held. The
-    /// backup keeps exactly one slot, so a second corruption overwrites the
-    /// first. The goal is to keep recovery possible, not to keep an
-    /// archive.
+    /// A file that fails to parse is moved aside to `tracked.json.corrupt`
+    /// first, best effort: starting empty never depends on the move
+    /// succeeding. `save` atomically overwrites `tracked.json`, so leaving
+    /// the unread bytes in place would let the very next save destroy the
+    /// only copy of whatever the file held. The backup keeps exactly one
+    /// slot, so a second corruption overwrites the first.
     pub fn load(path: PathBuf) -> Self {
         let tracked = match fs::read_to_string(&path) {
             Err(_) => Vec::new(),
@@ -96,18 +72,15 @@ impl Store {
             .clone()
     }
 
-    /// Overwrites the tracked list and durably persists it through
-    /// `atomic_write`, so once this returns `Ok` the data is on disk.
-    ///
-    /// The lock is held across the whole write, not taken only to update
-    /// memory afterward. `save_tracked` is an async command the frontend
-    /// fires on every membership, label, or pin change, so two saves can
-    /// overlap. A writer that renamed its file last but locked the mutex
-    /// first would leave disk and memory telling different stories, since
-    /// the scheduler polls from memory while the next launch loads from
-    /// disk. A failed write changes neither. This is a synchronous function
-    /// running on a blocking thread, so the lock is never held across an
-    /// await, and holding it through file I/O blocks only sibling saves.
+    /// Once this returns `Ok` the data is durably on disk, and disk and
+    /// memory update together under one lock. `save_tracked` is an async
+    /// command the frontend fires on every membership, label, or pin
+    /// change, so two saves can overlap; a writer that renamed its file
+    /// last but locked the mutex first would leave disk and memory
+    /// telling different stories, since the scheduler polls from memory
+    /// while the next launch loads from disk. This runs on a blocking
+    /// thread, never across an `await`, so holding the lock through file
+    /// I/O blocks only sibling saves.
     pub fn save(&self, tracked: Vec<TrackedAccount>) -> Result<(), String> {
         let shape = PersistedShape {
             version: 1,
@@ -265,12 +238,6 @@ mod tests {
         assert!(leftovers.is_empty(), "unexpected files: {leftovers:?}");
     }
 
-    /// Without a lock held across the whole write, two overlapping saves
-    /// can truncate each other's temp file mid-write, corrupting the file
-    /// on the next launch, or land on disk in the opposite order from
-    /// memory, leaving the scheduler polling an account the file no longer
-    /// lists. Whatever the interleaving, disk and memory must agree on one
-    /// intact list afterward.
     #[test]
     fn concurrent_saves_leave_disk_and_memory_agreeing_on_one_intact_list() {
         let dir = TempDir::new();
@@ -303,10 +270,6 @@ mod tests {
         assert!(leftovers.is_empty(), "unexpected files: {leftovers:?}");
     }
 
-    // A file written before pinnedWindowIds existed carries pinned: true or
-    // pinned: false. The Rust side must carry that field through to the
-    // frontend rather than drop it silently, or useSubscriptions.ts's
-    // one-shot migration has nothing to detect.
     #[test]
     fn a_legacy_pinned_file_loads_with_the_flag_intact_and_no_pinned_window_ids() {
         let dir = TempDir::new();
@@ -324,9 +287,6 @@ mod tests {
         assert!(loaded[0].pinned_window_ids.is_empty());
     }
 
-    // The legacy field must not persist forever. Once the frontend saves
-    // this record back in the new shape, which never sends pinned, it
-    // drops out of the file on disk.
     #[test]
     fn saving_a_migrated_record_drops_the_legacy_pinned_field_from_disk() {
         let dir = TempDir::new();

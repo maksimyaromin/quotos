@@ -121,6 +121,16 @@ pins, as a plain JSON file rather than trusting the webview's
 `load_tracked` / `save_tracked` commands on a real build, `localStorage`
 in the browser harness, which has no Rust side to call.
 
+A `localStorage` write returns as soon as the in-memory page state
+updates, and WebKit flushes its backing store to disk on its own
+schedule; whether an abrupt quit can race that flush was never
+conclusively pinned down, so the Rust side owns the durable copy instead,
+synchronously `fsync`'d before `save` returns. A plain JSON file rather
+than SQLite for the same reason as every data store this small in the
+app: a handful of accounts is simpler to read, review, and hand-edit as a
+file than as a database, and a file serves every query pattern this data
+needs.
+
 Pinning is per limit window, not per subscription:
 `Subscription.pinnedWindowIds` is a persisted set of window ids, since
 every window a provider's normalizer builds carries a stable id from
