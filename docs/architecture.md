@@ -192,6 +192,47 @@ stores or compares a physical value. `shell.rs` computes the panel's
 position itself from the tray icon's rect, handed fresh on every click,
 rather than through any positioning plugin.
 
+macOS has exactly one coordinate space in which a multi-display layout
+has a single, consistent meaning: global points (`CGDisplayBounds` /
+`NSScreen.frame`), top-left origin at the main display's top-left. There
+is no global pixel space; "physical pixels" are only ever defined
+relative to one display's own backing scale factor. The three APIs
+`geometry.rs` depends on each hand out a `Physical*` type that is really
+"global points times some display's scale factor", and they disagree on
+which display's: `TrayIconEvent`'s `rect` uses the menu bar display's
+own scale factor, `tao`'s `Monitor::position()`/`size()` use that
+monitor's own scale factor, and `set_position(Physical)` /
+`WindowEvent::Moved` use the window's current scale factor. On a
+single-display machine all three coincide; on displays at different
+scale factors they diverge, so `resolve_status_item_point` tries each
+display's own scale factor against the status item's rect and keeps the
+one whose quotient actually lands inside that display, tie-breaking on
+whichever candidate sits closest to its own display's top edge, since a
+menu bar always hugs it.
+
+`displays_in_points` reads `NSScreen` directly on macOS rather than
+going through `tao`'s `Monitor`, since it is the only API that also
+reports `visibleFrame`, where the menu bar height comes from; it falls
+back to `tao`'s monitor list anywhere else, losing only that height.
+AppKit's global space is y-up from the first screen's bottom-left,
+while the rest of `geometry.rs` is y-down from its top-left, so the
+first screen's own height is the flip constant, its origin being
+`(0,0)` by definition. `visibleFrame` also excludes the Dock, but the
+Dock never sits at the top, so the difference at the top edge is the
+menu bar and nothing else; that height must never be hardcoded, since a
+notched built-in display's menu bar is noticeably taller than an
+unnotched external display's.
+
+The status item glyph's own center, as an offset from the item's left
+edge, is not the whole button's center: `NSStatusItem` centers the
+whole composited image inside a button wider than the image by a system
+margin that grows once pinned digits widen the image.
+`glyph_center_offset_from_item_left_points` derives that margin fresh
+from the item's current width and the composited image's own known
+width, and falls back to treating the glyph as flush with the item's
+left edge if the item's width is unavailable, a plausible worst case
+rather than a crash.
+
 The header's `startDragging()` call fires synchronously on `mousedown`,
 not after the first `mousemove`, since AppKit's window-drag API uses
 whatever the current event is at the moment Rust actually runs it.
@@ -209,3 +250,32 @@ in three files with nothing syncing them automatically: `geometry.rs`'s
 `app.css`'s panel padding. The beak's center stays on the status item
 glyph's own center; the layout solves for the beak's tip, not the
 panel's top edge.
+
+`docked_layout_in_points` derives the window's x from where the beak
+wants to sit rather than positioning the panel first and fitting the
+beak to it afterward: the beak's center must stay exactly on the
+glyph's center, so moving the beak away from the panel's corner can
+only be done by moving the whole panel left, and deriving x from the
+beak's wanted position makes both hold by construction at whatever
+glyph offset the status item reports. The panel is inset inside its own
+window, which is deliberately wider and taller at the top, for the drop
+shadow's blur to fade into rather than be clipped by, and for headroom
+above the beak; both insets live in `app.css` and are load-bearing here
+because the window is what gets positioned while the panel is what is
+actually visible. The x candidate is clamped to the display before the
+beak offset is recomputed from the clamped x, not the wanted one, so a
+screen-edge clamp moves the beak across the panel instead of dragging
+it off the glyph; the clamp only keeps the notch on the panel, since
+`buildPanelOutlinePath` shrinks whichever top corner the notch
+encroaches on rather than letting the notch move off the glyph.
+
+The window's y solves for where the beak's tip should land: the tip
+sits a fixed clearance below the menu bar's bottom edge, read live from
+`NSScreen.visibleFrame` rather than a constant, since the notched
+built-in's menu bar is noticeably taller than an external display's.
+Inside a full-screen Space the menu bar is auto-hidden and
+`visibleFrame` reports no bar height even while the bar sits revealed
+under the cursor, so the fallback reconstructs the bar's bottom from
+the status item itself: macOS centers a status item vertically in its
+bar, so the bar's bottom is the item's own bottom plus the same inset
+that sits above it.

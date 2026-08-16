@@ -1,42 +1,18 @@
-//! Docked-panel placement arithmetic: the global-point coordinate space, the
-//! displays that define it, and the layout math that decides where the
-//! panel and its beak go. Everything here is pure math or a read-only
-//! screen query. The code that actually moves windows stays in `shell.rs`,
-//! which keeps the placement rules unit-testable against real measured
-//! geometry.
+//! Docked-panel placement arithmetic, pure math and read-only screen
+//! queries only; `shell.rs` moves windows. See docs/architecture.md's
+//! "Coordinate spaces and panel placement" and "The beak".
 
 use crate::status_item_render;
 
-/// The window's own fixed logical size, from `tauri.conf.json`'s `width`
-/// and `height`. Duplicated here rather than read back from the window,
-/// which would just report whatever size it currently, possibly wrongly,
-/// is, so the Resized-event guard in `run`'s `setup` has a ground truth to
-/// snap back to.
+/// The window's own fixed logical size, from `tauri.conf.json`. Duplicated
+/// rather than read back from the window, so the Resized-event guard in
+/// `run`'s `setup` has a ground truth to snap back to.
 pub(crate) const PANEL_WINDOW_WIDTH_LOGICAL: f64 = 360.0;
 pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 
 /// The status item glyph's own center, as an offset in points from the
-/// item's own left edge, not the whole button's center. That distinction
-/// is why this needs deriving at all.
-///
-/// `NSStatusItem` centers the whole composited image, glyph alone or glyph
-/// plus pinned digits, inside a button wider than the image by a system
-/// margin that is not fixed once digits widen the image. This derives that
-/// margin fresh from the item's current width, from `status item.rect()`,
-/// queried by the caller so it pairs with the same call's position rather
-/// than a value cached at a different instant, and the composited image's
-/// own known width, from `AppState.last_icon_width_px` halved to undo
-/// `set_icon_for_ns_status_item_button`'s fixed "2x of an 18pt-tall image"
-/// convention. The glyph is always the image's leftmost 18pt, since
-/// `status_item_render.rs`'s `render` draws digits only after it, so half
-/// the leftover margin plus `GLYPH_LEFT_INSET_POINTS` plus 9 points is the
-/// glyph's own center, for however many digits are pinned.
-///
-/// If `status item.rect()` is unavailable, this falls back to treating the
-/// glyph as flush with the item's own left edge rather than failing
-/// outright. That is a plausible worst case, not a crash.
-///
-/// Returns points, never physical pixels; see `DisplayPoints`.
+/// item's own left edge, not the whole button's center. Returns points,
+/// never physical pixels; see docs/architecture.md.
 fn glyph_center_offset_from_item_left_points(
     item_width_points: Option<f64>,
     icon_width_px: f64,
@@ -49,37 +25,9 @@ fn glyph_center_offset_from_item_left_points(
     margin_points + status_item_render::GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0
 }
 
-/// The coordinate space this whole module speaks, and why.
-///
-/// macOS has exactly one coordinate space in which a multi-display layout
-/// has a single, consistent meaning: global points
-/// (`CGDisplayBounds` / `NSScreen.frame`), top-left origin at the main
-/// display's top-left. There is no global pixel space; "physical pixels"
-/// are only ever defined relative to one display's own backing scale
-/// factor.
-///
-/// The three APIs this module depends on each hand out a `Physical*` type
-/// that is really "global points times some display's scale factor", and
-/// they disagree on which display's:
-///
-/// | source | value | scale used |
-/// |---|---|---|
-/// | `TrayIconEvent`'s `rect` (`tray-icon` 0.24.2 `get_tray_rect`) | status item frame | the menu bar display's `backingScaleFactor` |
-/// | `Monitor::position()`/`size()` (`tao` 0.35.3 `monitor.rs`) | `CGDisplayBounds` / `CGDisplayPixelsWide` | that monitor's own scale factor |
-/// | `set_position(Physical)` / `WindowEvent::Moved` (`tao` `window.rs`, `window_delegate.rs`) | window frame | the window's current `backingScaleFactor` |
-///
-/// On a single-display machine all three coincide. On displays at
-/// different scale factors they diverge: a status item click at point
-/// x=1183 on a scale-2 display arrives here as physical x=2366, and
-/// dividing by the wrong display's scale places a window off the edge of
-/// every real display, or at half the intended offset from a display's own
-/// origin.
-///
-/// Everything below converts to points at the edges, `DisplayPoints` and
-/// `resolve_status_item_point`, and never leaves them.
-/// `apply_docked_position` places the window with a `LogicalPosition`,
-/// which `tao`'s `Position::to_logical` passes through untouched, so no
-/// scale factor is consulted on the way out either.
+/// The coordinate space this whole module speaks: global points, never
+/// physical pixels, since the APIs this module depends on disagree on
+/// which display's scale factor a `Physical*` value used. See docs/architecture.md.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct DisplayPoints {
     /// Top-left corner in the global point space.
@@ -89,16 +37,9 @@ pub(crate) struct DisplayPoints {
     /// This display's own backing scale factor. Needed only to undo the
     /// multiplication `tray-icon` applied to the status item rect.
     pub(crate) scale: f64,
-    /// Global-point y of the bottom edge of this display's own menu bar,
-    /// read live from `NSScreen.visibleFrame`. `None` when this display has
-    /// no menu bar, or the screen list was unreachable, either off the main
-    /// thread or off macOS.
-    ///
-    /// This must never be hardcoded: a notched built-in display's menu bar
-    /// can be noticeably taller than an unnotched external display's, so a
-    /// single offset is wrong on at least one of them: too small places
-    /// the panel's top edge inside the bar, where AppKit clamps it flush
-    /// with no gap; too large leaves an oversized gap.
+    /// Global-point y of this display's own menu bar bottom, read live
+    /// from `NSScreen.visibleFrame`, never hardcoded: a notched built-in's
+    /// bar is noticeably taller than an external display's. `None` off macOS.
     pub(crate) menu_bar_bottom: Option<f64>,
 }
 
@@ -111,16 +52,9 @@ impl DisplayPoints {
     }
 }
 
-/// Recovers the global-point position of a `tray-icon` rect, along with
-/// the display it belongs to.
-///
-/// `tray-icon` multiplies the true point coordinate by the menu bar
-/// display's scale factor and reports nothing about which display that
-/// was, so the division cannot be done blind. This tries each display's
-/// own scale factor and keeps the one whose quotient actually lands inside
-/// that display. Where an unusual arrangement could make two candidates
-/// both land in bounds, the tie-break is the one property a menu bar
-/// always has: it hugs its own display's top edge.
+/// Recovers the global-point position of a `tray-icon` rect and the
+/// display it belongs to, by trying each display's own scale factor and
+/// keeping the one whose quotient lands inside that display. See docs/architecture.md.
 pub(crate) fn resolve_status_item_point(
     displays: &[DisplayPoints],
     item_x: f64,
@@ -143,13 +77,9 @@ pub(crate) fn resolve_status_item_point(
     best.map(|(index, x, y, _)| (index, x, y))
 }
 
-/// Every display, in global points. On macOS this reads `NSScreen`
-/// directly rather than going through `tao`'s `Monitor`, since it is one
-/// API, in one coordinate space, and the only one that also reports
-/// `visibleFrame`, which is where the menu bar height comes from. See
-/// `DisplayPoints::menu_bar_bottom`. It needs the main thread. The `tao`
-/// path below is the fallback for anywhere else, and loses only the menu
-/// bar height.
+/// Every display, in global points. Reads `NSScreen` directly on macOS,
+/// the only API that also reports `visibleFrame`, needing the main
+/// thread; the `tao` path below is the fallback, losing the bar height.
 #[cfg(target_os = "macos")]
 pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPoints> {
     use objc2_app_kit::NSScreen;
@@ -159,10 +89,8 @@ pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPo
         return displays_in_points_via_tao(window);
     };
     let screens = NSScreen::screens(mtm);
-    // AppKit's global space is y-up from the first screen's bottom-left.
-    // The rest of this module is y-down from its top-left. That screen's
-    // own height is the flip constant, since its origin is (0,0) by
-    // definition.
+    // AppKit's global space is y-up; this module is y-down. The first
+    // screen's own height is the flip constant, its origin being (0,0).
     let Some(flip) = screens.iter().next().map(|s| s.frame().size.height) else {
         return displays_in_points_via_tao(window);
     };
@@ -240,52 +168,31 @@ pub(crate) fn docked_layout_in_points(
     // the display's right edge.
     const RIGHT_CLAMP: f64 = 340.0;
 
-    // The beak sits a comfortable distance inside the panel's own left
-    // edge, BEAK_INSET_IN_PANEL, rather than pressed against it, and the
-    // panel is pulled up until the beak's tip, not the panel's top edge,
-    // sits BEAK_TIP_CLEARANCE under the menu bar. These interact: since
-    // the beak's center must stay exactly on the glyph's center, "move the
-    // beak away from the corner" can only be done by moving the whole
-    // panel left. Deriving x from the beak's wanted position makes both
-    // hold by construction, at whatever glyph offset the status item
-    // reports, rather than a second constant retuned every time the first
-    // one moves.
+    // x is derived from the beak's wanted position, not the panel's; see
+    // docs/architecture.md's "The beak" for why that construction is required.
     const BEAK_BASE_WIDTH: f64 = 20.0; // BEAK_BASE_HALF * 2 in Panel.jsx
     const BEAK_HEIGHT: f64 = 10.0; // BEAK_HEIGHT in Panel.jsx
     const BEAK_INSET_IN_PANEL: f64 = 20.0; // notch's left edge, from the panel's own left edge
     const BEAK_TIP_CLEARANCE: f64 = 2.0; // how far the tip stops short of the menu bar
 
-    // The panel is inset inside its own window, which is deliberately
-    // wider and taller at the top: (window width - panel width) / 2 of
-    // empty margin per side for the drop shadow's blur to fade into rather
-    // than be clipped by, and padding-top worth of headroom for the beak.
-    // Both live in app.css, and both are load-bearing here because the
-    // window is what gets positioned while the panel is what is actually
-    // visible.
+    // Mirrors app.css's own insets: shadow-blur margin, and headroom for
+    // the beak. Both are load-bearing, since the window is what's positioned.
     const PANEL_INSET_X: f64 = (PANEL_WINDOW_WIDTH_LOGICAL - PANEL_WIDTH) / 2.0;
     const PANEL_INSET_TOP: f64 = 12.0; // app.css's body { padding-top }, Panel.jsx's NOTCH_RESERVE
 
     let glyph_center =
         item_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
 
-    // Places the window so the beak lands at its wanted inset with its
-    // center on the glyph's center, then clamps to the display. The beak
-    // offset recomputed below from the clamped x is what keeps it tracking
-    // the glyph even when the panel itself is clamped at the screen edge.
+    // Places the window so the beak lands at its wanted inset on the
+    // glyph's center, then clamps x to the display.
     let wanted_panel_left = glyph_center - BEAK_INSET_IN_PANEL - BEAK_BASE_WIDTH / 2.0;
     let mut x = wanted_panel_left - PANEL_INSET_X;
     x = x.max(display.origin.0);
     let max_x = (display.origin.0 + display.size.0 - RIGHT_CLAMP).max(display.origin.0);
     x = x.min(max_x);
 
-    // Both candidates for the menu bar's own bottom edge are read from the
-    // running system, never assumed. visibleFrame is the direct answer
-    // where it exists, but not inside a full-screen Space: the menu bar is
-    // auto-hidden there, visibleFrame equals frame, and there is no bar
-    // height to read even while the bar sits revealed on screen under the
-    // cursor. The status item is still measured, though, and since macOS
-    // centers a status item vertically in its bar, the bar's bottom is the
-    // item's bottom plus the same inset that sits above it.
+    // visibleFrame reports no bar height inside a full-screen Space, so
+    // this reconstructs it from the item's own centering; see docs/architecture.md.
     let inset_above_item = (item_top - display.origin.1).max(0.0);
     // NEG_INFINITY, not 0: a display left of the primary has negative
     // coordinates, where 0 is not a neutral floor but a point far below it.
@@ -298,12 +205,7 @@ pub(crate) fn docked_layout_in_points(
     // BEAK_TIP_CLEARANCE below the bar.
     let y = menu_bar_bottom + BEAK_TIP_CLEARANCE - (PANEL_INSET_TOP - BEAK_HEIGHT);
 
-    // Recomputed from the applied x, not the wanted one, so a screen-edge
-    // clamp moves the beak across the panel instead of dragging it off the
-    // glyph. Clamped only to keep the notch on the panel at all:
-    // buildPanelOutlinePath shrinks whichever top corner the notch
-    // encroaches on rather than the notch giving way, since clamping the
-    // notch position instead would move the beak visibly off the glyph.
+    // Recomputed from the applied x, not the wanted one; see docs/architecture.md.
     let panel_left = x + PANEL_INSET_X;
     let beak_left = (glyph_center - panel_left - BEAK_BASE_WIDTH / 2.0)
         .clamp(0.0, PANEL_WIDTH - BEAK_BASE_WIDTH);
@@ -311,21 +213,17 @@ pub(crate) fn docked_layout_in_points(
     DockedLayout { x, y, beak_left }
 }
 
-/// Where a header-drag gesture started: the live cursor and the window's own
-/// top-left at that moment, both in global points (see `DisplayPoints`).
-/// Captured on the gesture's first `mousemove`, held in
-/// `AppState.manual_drag_anchor` until mouseup.
+/// Where a header-drag gesture started: the live cursor and the window's
+/// own top-left, both in global points. Held in `AppState.manual_drag_anchor`.
 #[derive(Clone, Copy)]
 pub(crate) struct DragAnchor {
     pub(crate) mouse: (f64, f64),
     pub(crate) window_top_left: (f64, f64),
 }
 
-/// Pure delta math for `drag_window_step`, split out so it's testable
-/// without a real window: the target keeps the same offset from the live
-/// cursor that it had when the gesture began, so a drag never accumulates
-/// rounding drift across many small steps the way repeatedly re-anchoring
-/// to the previous step would.
+/// Pure delta math for `drag_window_step`. The target keeps the same
+/// offset from the cursor it had when the gesture began, so a drag never
+/// accumulates rounding drift the way re-anchoring to the last step would.
 pub(crate) fn drag_target_from_anchor(anchor: DragAnchor, current_mouse: (f64, f64)) -> (f64, f64) {
     (
         anchor.window_top_left.0 + (current_mouse.0 - anchor.mouse.0),
@@ -373,11 +271,8 @@ mod tests {
     mod docked_layout {
         use super::super::{DisplayPoints, docked_layout_in_points, resolve_status_item_point};
 
-        // A two-display arrangement in the global point space macOS
-        // actually uses, with deliberately different menu bar heights on
-        // each: 33pt on the notched built-in, 24pt on the unnotched
-        // external. A single constant being wrong on one of them is
-        // exactly the bug this module exists to avoid.
+        // Deliberately different menu bar heights per display: 33pt built-in,
+        // 24pt external, so a single wrong constant would fail one of them.
         const BUILT_IN: DisplayPoints = DisplayPoints {
             origin: (0.0, 0.0),
             size: (1728.0, 1117.0),
@@ -418,11 +313,8 @@ mod tests {
             vec![BUILT_IN, EXTERNAL]
         }
 
-        // tray-icon multiplies the status item's true point position,
-        // 1183 here, by the menu bar display's scale factor, so the value
-        // arriving here is 2366. Dividing by the built-in's own scale
-        // recovers 1183; dividing by the external's leaves 2366, off
-        // every display.
+        // tray-icon multiplies 1183 by the built-in's scale, arriving as
+        // 2366; only dividing by that same display's scale recovers 1183.
         #[test]
         fn a_status_item_rect_from_the_retina_built_in_resolves_to_that_display_in_points() {
             let (index, x, y) = resolve_status_item_point(&displays(), 2366.0, 0.0)
@@ -432,10 +324,8 @@ mod tests {
             assert!(y.abs() < 0.01, "got {y}");
         }
 
-        // The mirror case: the menu bar on the 1x external display, whose
-        // point coordinates are negative. Here tray-icon's multiplication
-        // is by 1 and the raw value is already the answer, but only if the
-        // external display's own scale is what undoes it.
+        // The mirror case: negative point coordinates, and a 1x scale
+        // where the raw value is already the answer.
         #[test]
         fn a_status_item_rect_from_the_1x_external_display_resolves_to_that_display_in_points() {
             let (index, x, y) = resolve_status_item_point(&displays(), -400.0, -855.0)
@@ -598,12 +488,8 @@ mod tests {
             );
         }
 
-        // Pinning digits widens the status item, and macOS lays status
-        // items out right-to-left, so the item's own left edge, and the
-        // glyph it carries, moves left. Nothing can hold the beak still
-        // under the glyph, because the glyph itself moved; what must hold
-        // is that the beak lands on the glyph's real center in both
-        // states.
+        // Pinning digits widens the item and moves its left edge, and the
+        // glyph, left; what must hold is the beak on the glyph's real center.
         #[test]
         fn the_beak_lands_on_the_glyph_center_both_before_and_after_pinning() {
             // window x + the 14pt shadow-blur inset + beak_left + half the 12pt notch
