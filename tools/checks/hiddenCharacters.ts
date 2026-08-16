@@ -16,19 +16,26 @@ const NAMED_CODE_POINTS = new Map([
 const PRINTABLE_WHITESPACE = new Set(["\n", "\t", "\r", " "]);
 const NON_PRINTING_CATEGORY = /\p{Cc}|\p{Cf}|\p{Co}|\p{Zl}|\p{Zp}|\p{Zs}/u;
 
-function describe(character) {
-  const codePoint = character.codePointAt(0);
+interface Finding {
+  line: number;
+  column: number;
+  description: string;
+}
+
+function describe(character: string): string {
+  const codePoint = character.codePointAt(0) as number;
   const named = NAMED_CODE_POINTS.get(codePoint);
   return named ?? `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
 }
 
-function isNonPrinting(character) {
+function isNonPrinting(character: string): boolean {
   if (PRINTABLE_WHITESPACE.has(character)) return false;
-  return NAMED_CODE_POINTS.has(character.codePointAt(0)) || NON_PRINTING_CATEGORY.test(character);
+  const codePoint = character.codePointAt(0) as number;
+  return NAMED_CODE_POINTS.has(codePoint) || NON_PRINTING_CATEGORY.test(character);
 }
 
-function findNonPrintingCharacters(text) {
-  const findings = [];
+function findNonPrintingCharacters(text: string): Finding[] {
+  const findings: Finding[] = [];
   let line = 1;
   let column = 0;
   for (const character of text) {
@@ -45,7 +52,7 @@ function findNonPrintingCharacters(text) {
   return findings;
 }
 
-function decodeAsText(buffer) {
+function decodeAsText(buffer: Buffer): string | null {
   try {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer);
   } catch {
@@ -57,10 +64,10 @@ const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" 
   .split("\0")
   .filter(Boolean);
 
-const findingsByFile = [];
+const findingsByFile: { file: string; findings: Finding[] }[] = [];
 
 for (const file of trackedFiles) {
-  let buffer;
+  let buffer: Buffer;
   try {
     buffer = readFileSync(file);
   } catch {

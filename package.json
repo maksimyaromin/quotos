@@ -16,11 +16,12 @@
     "format:check": "biome format .",
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check:hidden-characters": "node tools/checks/hiddenCharacters.mjs",
-    "check:spec-suffix": "node tools/checks/specFileSuffix.mjs",
+    "typecheck:tools": "tsc --noEmit -p tools/tsconfig.json",
+    "check:hidden-characters": "node tools/checks/hiddenCharacters.ts",
+    "check:spec-suffix": "node tools/checks/specFileSuffix.ts",
     "cargo:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "cargo:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
-    "verify": "node tools/verify.mjs"
+    "verify": "node tools/verify.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -31,6 +32,7 @@
     "@biomejs/biome": "2.5.8",
     "@tauri-apps/cli": "^2",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.5",

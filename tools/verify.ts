@@ -6,10 +6,21 @@
 
 import { spawn } from "node:child_process";
 
-const lanes = [
+interface Lane {
+  name: string;
+  script: string;
+}
+
+interface LaneResult extends Lane {
+  code: number | null;
+  output: string;
+}
+
+const lanes: Lane[] = [
   { name: "format", script: "format:check" },
   { name: "lint", script: "lint" },
   { name: "typecheck", script: "typecheck" },
+  { name: "tools typecheck", script: "typecheck:tools" },
   { name: "test", script: "test" },
   { name: "hidden characters", script: "check:hidden-characters" },
   { name: "spec suffix", script: "check:spec-suffix" },
@@ -17,7 +28,7 @@ const lanes = [
   { name: "cargo clippy", script: "cargo:clippy" },
 ];
 
-function runLane(lane) {
+function runLane(lane: Lane): Promise<LaneResult> {
   return new Promise((resolve) => {
     const child = spawn("npm", ["run", "--silent", lane.script], {
       stdio: ["ignore", "pipe", "pipe"],
