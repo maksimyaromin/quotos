@@ -6,7 +6,7 @@
 //! panel shows it" separately readable.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -64,16 +64,9 @@ async fn perform_fetch(
         });
     }
 
-    // The 5-per-300s budget is shared with Claude Code itself. Reserving a
-    // slot before each network call keeps Quotos from ever being the reason
-    // the user's own usage view starts answering 429.
-    //
-    // The reservation lives inside the provider, one per real HTTP request,
-    // rather than one per read attempt. A read that quietly makes two
-    // requests, such as the 401 refresh-and-retry, would otherwise spend
-    // the shared allowance twice as fast as this limiter believes it is
-    // spending it, until the provider itself answers 429 with an hour-long
-    // retry-after.
+    // See claude-provider.md for the 5-per-300s budget this reserves
+    // against, and `providers::RequestBudget`'s doc comment for why the
+    // reservation lives inside the provider rather than here.
     let budget = AccountBudget {
         limiter: &state.rate_limiter,
         account_id,
@@ -81,34 +74,12 @@ async fn perform_fetch(
 
     let path = PathBuf::from(config_dir);
     let usage = providers::claude::fetch_usage(&state.http, &path, &budget).await?;
+    let profile = cached_profile(state, account_id, &path).await;
 
-    let profile = {
-        let cached = {
-            let cache = state.profile_cache.lock().expect("profile cache poisoned");
-            cache.get(account_id).cloned()
-        };
-        match cached {
-            Some(p) => Some(p),
-            None => {
-                let fetched = providers::claude::fetch_profile(&state.http, &path).await;
-                if let Some(p) = &fetched {
-                    let mut cache = state.profile_cache.lock().expect("profile cache poisoned");
-                    cache.insert(account_id.to_string(), p.clone());
-                }
-                fetched
-            }
-        }
-    };
-
-    // This is a plain file read of whatever the statusline helper last
-    // wrote for this config dir, or None if it never has. See
-    // statusline::read_feed's doc comment. It is opportunistic and never
-    // budgeted. The frontend's provider adapter reconciles this against
-    // usage, where the freshest reading wins; this call only attaches it to
-    // the snapshot both the manual and scheduled read paths already share.
-    // Reading it after the usage fetch is deliberate: a feed line written
-    // while that fetch ran is newer than usage.fetched_at and can win the
-    // reconciliation.
+    // Read after the usage fetch, deliberately: a feed line written while
+    // that fetch was in flight is newer than usage.fetched_at and can win
+    // the frontend's freshest-wins reconciliation. See
+    // `statusline::read_feed`'s doc comment for what `None` covers.
     let statusline = statusline::read_feed(&state.statusline_root, &path);
 
     Ok(RawSnapshot {
@@ -120,6 +91,34 @@ async fn perform_fetch(
         profile,
         statusline,
     })
+}
+
+/// A profile changes rarely enough that one read per account per process
+/// lifetime is enough; every later fetch reuses it instead of spending a
+/// second Keychain read and HTTP call on data that has not changed.
+async fn cached_profile(
+    state: &AppState,
+    account_id: &str,
+    path: &Path,
+) -> Option<serde_json::Value> {
+    let cached = state
+        .profile_cache
+        .lock()
+        .expect("profile cache poisoned")
+        .get(account_id)
+        .cloned();
+    if cached.is_some() {
+        return cached;
+    }
+    let fetched = providers::claude::fetch_profile(&state.http, path).await;
+    if let Some(profile) = &fetched {
+        state
+            .profile_cache
+            .lock()
+            .expect("profile cache poisoned")
+            .insert(account_id.to_string(), profile.clone());
+    }
+    fetched
 }
 
 fn extract_retry_after(result: &Result<RawSnapshot, FetchError>) -> Option<Duration> {
