@@ -37,58 +37,54 @@ struct AppState {
     /// loss must never hide it.
     detached: Mutex<bool>,
     tracked_store: Store,
-    /// Quotos's own app-support directory. See `statusline.rs`, which
-    /// stores the installed helper binary, per-account feed readings, and
-    /// install backups underneath it.
+    /// Quotos's own app-support directory; see `statusline.rs`, which
+    /// stores the installed helper, per-account feed readings, and install
+    /// backups underneath it.
     statusline_root: PathBuf,
     scheduler: Scheduler,
-    /// In-progress `claude setup-token` sessions, keyed by account id. See
+    /// In-progress `claude setup-token` sessions, keyed by account id; see
     /// `signin.rs`.
     sign_in: signin::SignInRegistry,
-    /// The status item's own physical-pixel rect, updated on every status
-    /// item event, not just clicks. Re-docking on snap-back is triggered
-    /// from the panel's own header button, not a status item event, so it
-    /// needs this cached value to know where to reposition to. `None`
-    /// until the first such event ever arrives.
+    /// The status item's own rect, updated on every status item event, not
+    /// just clicks: `set_detached`'s snap-back has no event of its own to
+    /// read from, so it needs this cached value to know where to re-dock.
+    /// `None` until the first such event arrives.
     last_status_item_rect: Mutex<Option<(f64, f64)>>,
-    /// The pixel width of the status item image most recently handed to
-    /// `set_icon`, always at the fixed "2x of an 18pt-tall image"
-    /// convention. `compute_docked_layout` needs this to work out how
-    /// much of the item's own measured width is macOS's own margin
-    /// around the image versus the image itself.
+    /// The pixel width of the status item image last handed to `set_icon`,
+    /// always at the fixed "2x of an 18pt-tall image" convention.
+    /// `compute_docked_layout` uses it to separate the item's own AppKit
+    /// margin from the image itself.
     last_icon_width_px: Mutex<u32>,
     /// Whether the panel is currently visible, the only input to the
-    /// "panel open" highlight that is not already known at repaint time
-    /// from segments alone. Flipped by `set_status_item_highlighted`.
+    /// "panel open" highlight not already known at repaint time from
+    /// segments alone. Flipped by `set_status_item_highlighted`.
     status_item_highlighted: Mutex<bool>,
     /// The segments `set_tray_status` last received, cached so toggling
-    /// `status_item_highlighted`, from native show or hide, can repaint
-    /// with the same digits without the frontend resending them.
+    /// `status_item_highlighted` can repaint with the same digits without
+    /// the frontend resending them.
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
     /// The glyph's own arc fill last set by `set_tray_status`, 0 to 100,
-    /// cached the same way and for the same reason as
-    /// `last_status_item_segments`.
+    /// cached for the same reason as `last_status_item_segments`.
     last_status_item_worst_used_percent: Mutex<u8>,
     /// The status item's hover and VoiceOver text last set by
-    /// `set_tray_status`, cached the same way and for the same reason.
-    /// Starts as the plain product name, matching the builder's own
-    /// pre-any-data baseline.
+    /// `set_tray_status`, cached the same way. Starts as the plain product
+    /// name, matching the builder's own pre-any-data baseline.
     last_status_item_tooltip: Mutex<String>,
-    /// The layout the window is supposed to be at right now, while
-    /// docked and visible, in global points. See `DisplayPoints`. `None`
-    /// whenever it is hidden or detached, since dragging must never fight
-    /// this. Read by the debounced correction in the `WindowEvent::Moved`
-    /// handler: anything that relocates the window while it is supposed
-    /// to be docked gets undone.
+    /// The layout the window is supposed to be at right now, while docked
+    /// and visible, in global points; see `DisplayPoints`. `None` whenever
+    /// hidden or detached, since dragging must never fight this. Read by
+    /// the debounced correction in the `WindowEvent::Moved` handler, which
+    /// undoes anything that relocates the window while it is supposed to
+    /// stay docked.
     docked_target: Mutex<Option<DockedLayout>>,
     /// How many `WindowEvent::Moved` events have fired so far, bumped on
     /// every one and read back by a debounced correction task to tell
     /// whether it is still the last one scheduled.
     move_generation: Mutex<u64>,
     /// The most recent position `WindowEvent::Moved` reported, converted
-    /// to global points, so the debounced correction can compare against
-    /// the latest observed position after its delay, not a value
-    /// captured at scheduling time.
+    /// to global points, so the debounced correction compares against the
+    /// latest observed position after its delay, not a value captured at
+    /// scheduling time.
     last_known_position: Mutex<(f64, f64)>,
     /// Anchor for `drag_window_step`'s manual, frame-based detached-window
     /// drag. `None` whenever no manual drag is in progress.
@@ -132,19 +128,19 @@ pub fn run() {
             );
 
             // Built here rather than through the builder's own manage(),
-            // since the tracked-list store needs app.path(), which is not
-            // available until setup.
+            // since the tracked-list store needs app.path(), not available
+            // until setup.
             let app_support_dir = app.path().app_config_dir()?;
-            // Before anything else touches shared state, the tracked
-            // store, the scheduler: if a Quotos is already running, this
-            // one must bow out. Two instances each run their own rate
-            // limiter against the same shared 5-per-300s allowance and
-            // spend it double-speed. See single_instance.rs.
+            // Before anything else touches shared state: if a Quotos is
+            // already running, this one must bow out, since two instances
+            // would each run their own rate limiter against the same
+            // shared 5-per-300s allowance and spend it double-speed. See
+            // single_instance.rs.
             match single_instance::claim(&app_support_dir) {
                 single_instance::Claim::Held(guard) => {
                     // The OS lock lives exactly as long as this handle
-                    // stays open, and its owner is the process itself, so
-                    // the handle is deliberately never closed.
+                    // stays open and is owned by this process, so the
+                    // handle is deliberately never closed.
                     std::mem::forget(guard);
                 }
                 single_instance::Claim::TakenByOther => {
@@ -158,11 +154,10 @@ pub fn run() {
                 }
             }
             let tracked_path = app_support_dir.join("tracked.json");
-            // Computed here, rather than down by the status item builder,
-            // so AppState.last_icon_width_px can start at the exact same
-            // width as the icon the builder below actually sets. Both
-            // reuse this one (rgba, w, h) rather than each calling
-            // plain_glyph_rgba() separately and risking the two drifting.
+            // Computed here, rather than by the status item builder below,
+            // so AppState.last_icon_width_px starts at the exact width of
+            // the icon the builder actually sets; both reuse this one
+            // (rgba, w, h) rather than calling plain_glyph_rgba() twice.
             let (initial_rgba, initial_w, initial_h) = status_item_render::plain_glyph_rgba(0);
             app.manage(AppState {
                 http: reqwest::Client::builder()
@@ -235,20 +230,19 @@ pub fn run() {
                         }
                         tauri::WindowEvent::Resized(size) => {
                             // resizable: false in tauri.conf.json only
-                            // disables the native resize-handle drag. It
-                            // does not stop a third-party window manager
-                            // from resizing this window directly. This
-                            // snaps the size back, since the panel's
-                            // layout math assumes exactly 360x560
-                            // logical and cannot reflow. It does not
-                            // fight a move, only a resize.
+                            // disables the native resize-handle drag, not a
+                            // third-party window manager resizing this
+                            // window directly, so this snaps the size back
+                            // since the panel's layout math assumes
+                            // exactly 360x560 logical and cannot reflow.
+                            // Fights only a resize, never a move.
                             //
-                            // Compared and reasserted in logical units,
-                            // since the incoming PhysicalSize is the
-                            // window's own scale factor applied to its
-                            // point size, and converting with that same
-                            // factor is the only comparison that means
-                            // anything on a mixed-DPI setup.
+                            // Compared and reasserted in logical units:
+                            // the incoming PhysicalSize is the point size
+                            // times the window's own scale factor, and
+                            // converting with that same factor is the only
+                            // comparison that means anything on a
+                            // mixed-DPI setup.
                             let scale = blur_window.scale_factor().unwrap_or(1.0);
                             let (w, h) = (size.width as f64 / scale, size.height as f64 / scale);
                             if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5
@@ -262,22 +256,20 @@ pub fn run() {
                         }
                         // The self-correcting half of AppState.docked_target:
                         // whenever AppKit relocates the window away from
-                        // where it is supposed to be docked, nudges it
-                        // back, but only once the relocating has gone
-                        // quiet for MOVE_SETTLE_MS, not on every single
-                        // Moved event. Tracks its own "am I still the
-                        // most recently scheduled correction" through the
-                        // generation counter, so a burst of AppKit-internal
-                        // relocations gets to finish before this
-                        // reasserts anything.
+                        // where it should be docked, nudges it back, but
+                        // only once relocating has gone quiet for
+                        // MOVE_SETTLE_MS, not on every single Moved event.
+                        // The generation counter tracks whether this is
+                        // still the most recently scheduled correction, so
+                        // a burst of AppKit-internal relocations finishes
+                        // before anything reasserts.
                         tauri::WindowEvent::Moved(pos) => {
                             let state = blur_app.state::<AppState>();
-                            // WindowEvent::Moved reports the frame origin
-                            // in points multiplied by the window's
-                            // current backing scale factor, undone here
-                            // so everything downstream compares in the
-                            // one coordinate space that exists. See
-                            // DisplayPoints.
+                            // Moved reports the frame origin in points
+                            // multiplied by the window's current backing
+                            // scale factor, undone here so everything
+                            // downstream compares in the one coordinate
+                            // space that exists. See DisplayPoints.
                             let scale = blur_window.scale_factor().unwrap_or(1.0);
                             let observed = (pos.x as f64 / scale, pos.y as f64 / scale);
                             *state
@@ -331,9 +323,7 @@ pub fn run() {
                                     // so off whatever was requested, and
                                     // correcting a sub-point gap produced
                                     // an endless correct-drift-correct
-                                    // loop, while a genuinely wrong
-                                    // placement is orders of magnitude
-                                    // larger than this.
+                                    // loop.
                                     const SETTLE_TOLERANCE_POINTS: f64 = 2.0;
                                     if (current.0 - target.x).abs() > SETTLE_TOLERANCE_POINTS
                                         || (current.1 - target.y).abs() > SETTLE_TOLERANCE_POINTS
@@ -348,11 +338,10 @@ pub fn run() {
                 });
             }
 
-            // The status item's right-click menu. "Launch at Login"
-            // drives the OS's own login-item registry. See
-            // launch_at_login.rs. Its checkmark is read from the OS at
-            // build time and re-read after every toggle, never assumed
-            // from the click.
+            // The status item's right-click menu. "Launch at Login" drives
+            // the OS's own login-item registry; see launch_at_login.rs.
+            // Its checkmark is read from the OS at build time and re-read
+            // after every toggle, never assumed from the click.
             let launch_item = CheckMenuItem::with_id(
                 app,
                 "launch-at-login",
@@ -381,18 +370,17 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 // The composited glyph and digits image carries no text
-                // VoiceOver can read. set_tray_status keeps this current
-                // as pinned digits change; this is just the
+                // VoiceOver can read; set_tray_status keeps this current
+                // as pinned digits change, and this is just the
                 // pre-any-data baseline.
                 .tooltip("Quotos")
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "quit" => app.exit(0),
                     "launch-at-login" => {
                         // Toggled relative to what the OS currently
-                        // reports, then the checkmark is set from what
-                        // the OS says afterwards, so a refused
-                        // registration reads as still off rather than
-                        // lying.
+                        // reports, then the checkmark is set from what the
+                        // OS says afterwards, so a refused registration
+                        // reads as still off rather than lying.
                         let target = !launch_at_login::status().is_registered();
                         if let Err(message) = launch_at_login::set_registered(target) {
                             eprintln!("quotos: launch at login: {message}");
@@ -403,7 +391,7 @@ pub fn run() {
                 })
                 .on_tray_icon_event(|status_item, event| {
                     // Carried through raw, exactly as tray-icon reports
-                    // it. The conversion into a coordinate space that
+                    // it; the conversion into a coordinate space that
                     // actually means something happens once, in
                     // compute_docked_layout through
                     // resolve_status_item_point. See DisplayPoints.
