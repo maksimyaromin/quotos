@@ -43,12 +43,10 @@ export function SubscriptionsScreen({
       });
     };
     scan();
-    // Signing in to a new account happens in a terminal, which blurs and so
-    // hides the panel. By the time it is back on screen, the new account is
-    // already discoverable, so a rescan on the hidden-to-visible transition
-    // makes it simply appear. The transition guard also keeps the browser
-    // harness's subscribe-time "visible" signal from double-scanning a
-    // fresh mount.
+    // Signing in happens in a terminal, which blurs and hides the panel, so
+    // rescanning on the hidden-to-visible transition makes a new account
+    // simply appear. The `wasHidden` guard also keeps the browser harness's
+    // subscribe-time "visible" signal from double-scanning a fresh mount.
     let wasHidden = false;
     void onPanelVisibility((visible) => {
       if (!visible) {

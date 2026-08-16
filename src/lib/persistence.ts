@@ -58,16 +58,11 @@ function saveLocalStorage(tracked: TrackedAccount[]): void {
 }
 
 /** Migrates a pre-upgrade `localStorage` list into the native store,
- * exactly once. Only runs when the native store is genuinely empty. Once
- * it has any data, even an empty save from the user removing everything,
- * this never fires again, so a deliberately emptied list cannot be
- * resurrected from stale `localStorage` on a later launch.
- *
- * The old `localStorage` key is deliberately left untouched after
- * migrating, never cleared and never overwritten, so a build predating the
- * native store can still be recovered by rolling back to it. Leftover
- * legacy data is otherwise inert: once the native store is non-empty, this
- * function returns before ever reading `localStorage` again. */
+ * exactly once, only when the native store is genuinely empty. Once it
+ * has any data, even from the user removing everything, this never fires
+ * again. The old `localStorage` key is deliberately left untouched after
+ * migrating, so a build predating the native store can still be
+ * recovered by rolling back to it. */
 async function migrateFromLocalStorageIfEmpty(native: TrackedAccount[]): Promise<TrackedAccount[]> {
   if (native.length > 0) return native;
   const legacy = loadLegacyLocalStorage();
