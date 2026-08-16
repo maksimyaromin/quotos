@@ -153,15 +153,12 @@ export interface SubscriptionRowProps {
    * with them the status item's digit order. */
   onMoveUp?: () => void;
   onMoveDown?: () => void;
-  /** "Stop tracking" menu item. */
   onStopTracking?: () => void;
   /** A `claude setup-token` session is running for this account. Shows
    * the paste-code field in place of the reason text and hides the
    * caller's own action button. */
   signInInProgress?: boolean;
-  /** Called with the pasted code on submit. */
   onSubmitSignInCode?: (code: string) => void;
-  /** Cancels the in-progress sign-in. */
   onCancelSignIn?: () => void;
   style?: React.CSSProperties;
 }
@@ -319,10 +316,7 @@ export function SubscriptionRow({
   const active = expanded || menuOpen;
   const hasWindows = windows.length > 0;
 
-  // The headline number and bar take their color from the
-  // provider-computed severity, the worst of every window, not from the
-  // headline percentage's own magnitude. Tints only from warn upward,
-  // stays neutral below it.
+  // Tints only from warn upward; stays neutral below it.
   const usedLevel = stale ? "stale" : severity !== "healthy" ? severity : undefined;
 
   const handleRowClick = () => {
@@ -417,9 +411,6 @@ export function SubscriptionRow({
       </div>
 
       {signInInProgress ? (
-        // Claude Code's own sign-in is running for this account, see
-        // signin.rs. It opens the browser itself, so Quotos only relays
-        // whatever code comes back. Replaces the reason text while active.
         <div className={styles.signInBlock}>
           <div className={styles.signInText}>
             Finish signing in in the browser, then paste the code here.
