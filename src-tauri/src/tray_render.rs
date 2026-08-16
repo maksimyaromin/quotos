@@ -117,7 +117,7 @@ pub enum TrayColor {
 impl TrayColor {
     fn rgba(self, dark_mode: bool) -> (u8, u8, u8, u8) {
         match self {
-            // --amber (docs/design/system/tokens/colors.css) — same in light and dark.
+            // --amber (src/design-system/tokens/colors.css) — same in light and dark.
             TrayColor::Amber => (0xe0, 0xa9, 0x2b, 0xff),
             // --red — same in light and dark.
             TrayColor::Red => (0xe5, 0x64, 0x6a, 0xff),
@@ -140,7 +140,7 @@ pub struct TraySegment {
 
 /// Per-pixel alpha coverage (0-255, row-major, `canvas_px` square) for the
 /// capacity-gauge mark, drawn procedurally from its exact vector geometry
-/// (`docs/design/system/assets/menubar-glyph.svg`: a faint full-circle track plus
+/// (`src/design-system/assets/menubar-glyph.svg`: a faint full-circle track plus
 /// a bold, round-capped arc with a gap at the bottom) rather than rasterized
 /// from a fixed-size source and scaled — which is what firstmate's on-screen
 /// pass (round 3, `data/quotos-tray-t1/firstmate-findings-1.md`) measured as
