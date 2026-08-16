@@ -125,4 +125,28 @@ describe("persistence (native path — migration, followup-3)", () => {
     await saveTracked([SAMPLE]);
     expect(invoke).toHaveBeenCalledWith("save_tracked", { tracked: [SAMPLE] });
   });
+
+  // R2: the caller holds the "what was last saved" record, so a failure
+  // swallowed here was a save remembered as done — never retried, and the
+  // change died with the process.
+  it("saveTracked rejects when the native write fails, so the caller can retry", async () => {
+    invoke.mockRejectedValue(new Error("disk full"));
+    await expect(saveTracked([SAMPLE])).rejects.toThrow("disk full");
+  });
+
+  it("a failed migration save still returns the legacy list and leaves the migration to re-fire next launch", async () => {
+    const raw = JSON.stringify({ version: 1, tracked: [SAMPLE] });
+    window.localStorage.setItem(LEGACY_KEY, raw);
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "load_tracked" ? Promise.resolve([]) : Promise.reject(new Error("disk full")),
+    );
+
+    const loaded = await loadTracked();
+
+    // This session still shows his real list from memory; the native store
+    // stayed empty and the source key untouched, so the next launch simply
+    // migrates again.
+    expect(loaded).toEqual([SAMPLE]);
+    expect(window.localStorage.getItem(LEGACY_KEY)).toBe(raw);
+  });
 });

@@ -598,13 +598,27 @@ export function useSubscriptions() {
   // calls is a temp-file write plus an `fsync` plus a rename (persistence.rs).
   // Two tracked accounts read once a minute each meant two durable, blocking
   // writes a minute that changed nothing.
+  //
+  // R2: the dedupe record is written before the save settles (so an effect
+  // re-run with identical data never double-writes), but a save that then
+  // *fails* must not stay recorded as saved — that would silence every
+  // retry and the change would die with the process. Clearing the record
+  // (unless a newer save already superseded it) makes the very next effect
+  // run — even one where only read state changed — write again.
   useEffect(() => {
     if (!hasLoadedRef.current) return;
     const tracked = toTrackedAccounts(trackedSubscriptions);
     const serialized = JSON.stringify(tracked);
     if (lastSavedRef.current === serialized) return;
     lastSavedRef.current = serialized;
-    void saveTracked(tracked);
+    void (async () => {
+      try {
+        await saveTracked(tracked);
+      } catch (error) {
+        console.error("Quotos: saving the tracked list failed; will retry on the next change", error);
+        if (lastSavedRef.current === serialized) lastSavedRef.current = null;
+      }
+    })();
   }, [trackedSubscriptions]);
 
   // Mirror pinned subscriptions' headline figures beside the tray glyph

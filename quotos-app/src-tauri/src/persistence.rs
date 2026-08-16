@@ -21,11 +21,12 @@
 //! already serve.
 
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+
+use crate::atomic_write;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TrackedAccount {
@@ -102,11 +103,18 @@ impl Store {
             .clone()
     }
 
-    /// Overwrites the tracked list and durably persists it: written to a
-    /// temp file in the same directory, `fsync`'d, then renamed into place
-    /// (an atomic replace on the same filesystem) — a crash or kill mid-write
-    /// can never leave a half-written, unparseable file behind, and nothing
-    /// observes a partial write via the final path.
+    /// Overwrites the tracked list and durably persists it (temp file +
+    /// `fsync` + atomic rename — see `atomic_write`); by the time this
+    /// returns `Ok`, the data is on disk.
+    ///
+    /// R2: the lock is held across the whole write, not taken after it —
+    /// `save_tracked` is an async command the frontend fires on every
+    /// membership/label/pin change, so two saves can overlap, and a writer
+    /// that renamed last but locked first would leave disk and memory
+    /// telling different stories (the scheduler polls from memory, the next
+    /// launch loads from disk). A failed write changes neither. The lock is
+    /// never held across an `.await` (this is a sync fn on a blocking
+    /// thread), so holding it through file I/O blocks only sibling saves.
     pub fn save(&self, tracked: Vec<TrackedAccount>) -> Result<(), String> {
         let shape = PersistedShape {
             version: 1,
@@ -114,21 +122,9 @@ impl Store {
         };
         let json = serde_json::to_string_pretty(&shape).map_err(|e| e.to_string())?;
 
-        let parent = self
-            .path
-            .parent()
-            .ok_or("tracked store path has no parent directory")?;
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-
-        let tmp_path = self.path.with_extension("json.tmp");
-        {
-            let mut f = fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
-            f.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
-            f.sync_all().map_err(|e| e.to_string())?;
-        }
-        fs::rename(&tmp_path, &self.path).map_err(|e| e.to_string())?;
-
-        *self.tracked.lock().expect("tracked store mutex poisoned") = tracked;
+        let mut in_memory = self.tracked.lock().expect("tracked store mutex poisoned");
+        atomic_write::write_string(&self.path, &json)?;
+        *in_memory = tracked;
         Ok(())
     }
 }
@@ -275,7 +271,52 @@ mod tests {
         let path = dir.path.join("tracked.json");
         let store = Store::load(path.clone());
         store.save(vec![sample("X")]).unwrap();
-        assert!(!path.with_extension("json.tmp").exists());
+        let leftovers: Vec<String> = fs::read_dir(&dir.path)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "tracked.json")
+            .collect();
+        assert!(leftovers.is_empty(), "unexpected files: {leftovers:?}");
+    }
+
+    /// R2: `save` used to run its whole temp+fsync+rename on a *fixed* temp
+    /// name outside the mutex (which it only took at the end, to update
+    /// memory) — so two overlapping `save_tracked` commands could truncate
+    /// each other's temp file mid-write (spliced JSON → `tracked.json.corrupt`
+    /// on the next launch → the whole tracked list lost) or land on disk in
+    /// the opposite order to memory (the scheduler then polls an account the
+    /// disk says is stop-tracked). Whatever the interleaving, one invariant
+    /// must hold afterwards: disk and memory agree on one intact list.
+    #[test]
+    fn concurrent_saves_leave_disk_and_memory_agreeing_on_one_intact_list() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        let store = std::sync::Arc::new(Store::load(path.clone()));
+
+        let writers: Vec<_> = (0..4)
+            .map(|writer| {
+                let store = std::sync::Arc::clone(&store);
+                std::thread::spawn(move || {
+                    for round in 0..25 {
+                        store
+                            .save(vec![sample(&format!("writer-{writer}-round-{round}"))])
+                            .expect("a concurrent save must not fail");
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("writer thread panicked");
+        }
+
+        let on_disk = Store::load(path).list();
+        assert_eq!(on_disk, store.list(), "disk and memory must be one truth");
+        let leftovers: Vec<String> = fs::read_dir(&dir.path)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "tracked.json")
+            .collect();
+        assert!(leftovers.is_empty(), "unexpected files: {leftovers:?}");
     }
 
     // v4 migration: a pre-v4 file on disk carries `pinned: true/false`

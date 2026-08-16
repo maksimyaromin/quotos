@@ -77,7 +77,13 @@ async function migrateFromLocalStorageIfEmpty(native: TrackedAccount[]): Promise
   if (native.length > 0) return native;
   const legacy = loadLegacyLocalStorage();
   if (legacy.length === 0) return native;
-  await saveTracked(legacy);
+  try {
+    await saveTracked(legacy);
+  } catch {
+    // The legacy list is still the right thing to show this session; the
+    // native store stayed empty and the localStorage source is never
+    // touched, so the migration simply re-fires on the next launch.
+  }
   return legacy;
 }
 
@@ -92,16 +98,16 @@ export async function loadTracked(): Promise<TrackedAccount[]> {
   return migrateFromLocalStorageIfEmpty(native);
 }
 
+/** R2: a failed native write rejects rather than being swallowed here — the
+ * caller is the one holding the "what was last saved" record, and a save it
+ * believes succeeded is a save that never gets retried (the tracked list
+ * then silently dies with the process). The browser path keeps its
+ * best-effort shape: `localStorage` is a mock-harness convenience, not the
+ * durable store. */
 export async function saveTracked(tracked: TrackedAccount[]): Promise<void> {
   if (!isTauri()) {
     saveLocalStorage(tracked);
     return;
   }
-  try {
-    await invoke("save_tracked", { tracked });
-  } catch {
-    // Best-effort, matching the old localStorage path's failure mode: a
-    // write failure shouldn't crash the panel — the in-memory list still
-    // works for the rest of this session.
-  }
+  await invoke("save_tracked", { tracked });
 }

@@ -229,10 +229,16 @@ rewritten each round, not appended to.
   tray) was deliberately inverted to one consistent meaning.
 - **I6: nothing is tracked by default, and the tracked list is now natively
   owned.** `quotos-app/src-tauri/src/persistence.rs` writes a plain JSON
-  file (`tracked.json` in the app's config dir) via temp-file + `fsync` +
-  atomic rename, not SQLite (the list is a handful of accounts; a file is
-  simpler, reviewable, and survives everything SQLite would here, and this
-  round confirmed the write itself is durable — see below). `quotos-app/src/lib/persistence.ts`
+  file (`tracked.json` in the app's config dir) via the shared
+  `atomic_write` module (temp-file + `fsync` + atomic rename, unique temp
+  name per writer — the same helper `statusline.rs` uses), not SQLite (the
+  list is a handful of accounts; a file is simpler, reviewable, and
+  survives everything SQLite would here, and this round confirmed the write
+  itself is durable — see below). `Store::save` holds its mutex across the
+  whole write, not just the in-memory update after it — `save_tracked` is
+  an async command fired on every membership/label/pin change, so saves
+  overlap routinely, and a lock taken only at the end let disk and memory
+  finish in different orders (pinned by a concurrency test). `quotos-app/src/lib/persistence.ts`
   is the frontend seam: on the native path it's a thin wrapper over the
   `load_tracked`/`save_tracked` commands; the browser/mock harness (no Rust
   side to call) keeps using `localStorage` as a fallback. Discovery

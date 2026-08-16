@@ -1,4 +1,5 @@
 mod accounts;
+mod atomic_write;
 mod geometry;
 mod launch_at_login;
 mod panel_window;

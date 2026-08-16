@@ -38,12 +38,13 @@
 //! current caller.
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::atomic_write::write_string as atomic_write_string;
 
 /// `main.rs` checks for this as `argv[1]` *before* calling into Tauri at
 /// all — the copied helper binary (see [`ensure_helper_installed`]) is the
@@ -193,43 +194,6 @@ fn build_command(helper: &Path, config_dir: &Path, feed_dir: &Path) -> String {
         shell_quote(&config_dir.to_string_lossy()),
         shell_quote(&feed_dir.to_string_lossy()),
     )
-}
-
-/// Distinguishes concurrent writers aiming at the same target: the counter
-/// separates threads within one process, the pid in the temp name separates
-/// the ingest helper's processes — Claude Code spawns one per statusline
-/// render, so two live sessions on the same account overlap routinely. A
-/// shared temp name let one writer's `File::create` truncate another's file
-/// between its write and its rename (R4).
-static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
-
-fn atomic_write_string(path: &Path, content: &str) -> Result<(), String> {
-    let parent = path.parent().ok_or("path has no parent directory")?;
-    let file_name = path
-        .file_name()
-        .ok_or("path has no file name")?
-        .to_string_lossy();
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    // A sibling in the same directory (required for the rename below to be
-    // an atomic same-filesystem replace), under a name no other writer can
-    // share — see TMP_SEQ above.
-    let tmp_path = parent.join(format!(
-        "{file_name}.tmp.{}-{}",
-        std::process::id(),
-        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let written = (|| {
-        let mut f = fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
-        f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
-        f.sync_all().map_err(|e| e.to_string())?;
-        fs::rename(&tmp_path, path).map_err(|e| e.to_string())
-    })();
-    if written.is_err() {
-        // The unique name is this writer's alone, so a failed write's
-        // leftover is ours to remove — otherwise every failure strands one.
-        let _ = fs::remove_file(&tmp_path);
-    }
-    written
 }
 
 fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {

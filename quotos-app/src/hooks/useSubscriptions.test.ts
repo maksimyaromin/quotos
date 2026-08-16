@@ -802,6 +802,36 @@ describe("useSubscriptions stop-tracking is immediate everywhere but the panel's
 
     expect(saveTracked).not.toHaveBeenCalled();
   });
+
+  // R2: the save effect records what it handed to `saveTracked` before the
+  // write settles (the R4-2 dedupe above), so a write that then failed used
+  // to be remembered as saved — never retried, and the rename died with the
+  // process. A failed save now clears that record, which turns the very
+  // next effect run — even one where only read state changed — into the
+  // retry.
+  it("retries a failed save on the next change instead of remembering it as saved", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useSubscriptions());
+      await flush();
+      saveTracked.mockClear();
+      saveTracked.mockRejectedValueOnce(new Error("disk full"));
+
+      act(() => result.current.renameSubscription("claude:claude", "Renamed Personal"));
+      await flush();
+      expect(saveTracked).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.refreshAll();
+      });
+
+      expect(saveTracked).toHaveBeenCalledTimes(2);
+      expect(saveTracked.mock.calls[1][0]).toEqual(saveTracked.mock.calls[0][0]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });
 
 // v5: "Move up"/"Move down" in the row menu. Panel order is the one order

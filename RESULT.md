@@ -8,7 +8,7 @@
 > `git show 4495bdc:RESULT.md` for the beak-drift measurement round); the few
 > measurements still load-bearing are kept in the appendix below.
 
-**307 automated tests pass** (189 vitest, 118 `cargo test`); `tsc --noEmit`,
+**311 automated tests pass** (192 vitest, 119 `cargo test`); `tsc --noEmit`,
 `cargo check`, `cargo clippy --all-targets`, and `cargo fmt --check` are all
 clean.
 
@@ -24,7 +24,7 @@ clean.
   binary renders **nothing** — without the tauri CLI it resolves the dev
   config and loads `build.devUrl` with no vite behind it, which looks exactly
   like "the window opened on another Space".
-- **Tests**: `npx vitest run` (189) from `quotos-app/`; `cargo test` (118)
+- **Tests**: `npx vitest run` (192) from `quotos-app/`; `cargo test` (119)
   from `quotos-app/src-tauri` (no workspace manifest above it). Standing
   lint/format bars: `cargo clippy --all-targets` and `cargo fmt --check`,
   both clean (neither component was installed before this round).
@@ -315,6 +315,28 @@ clean.
     where a zero-cost second source would matter most; that needs a wire-
     shape and presentation decision (what a "behind" row says when the feed
     is fresher than the last good read), recorded for a future round.
+
+30. **Two overlapping saves can no longer destroy the tracked list.** The
+    native store's `save` ran its whole temp-file + `fsync` + rename on one
+    *fixed* temp name and took its mutex only afterwards, to update memory —
+    and `save_tracked` is an async command the frontend fires on every
+    membership/label/pin change, so two quick panel changes could truncate
+    each other's temp mid-write (spliced JSON → `tracked.json.corrupt` on
+    the next launch → the whole tracked list gone, the exact loss class the
+    native store was built to end) or land on disk in the opposite order to
+    memory (the scheduler then polls an account the disk says is
+    stop-tracked). The lock is now held across the whole write, and the
+    write goes through a new shared `atomic_write` module — the
+    unique-temp-name helper item 29 built for the statusline feed,
+    extracted rather than copied a third time — pinned by a four-writer
+    concurrency test that failed against the old code on its first run
+    (concurrent renames of the shared temp name error with ENOENT). On the
+    frontend, a failed save is no longer swallowed and remembered as saved:
+    `saveTracked` now rejects, and the save effect clears its dedupe record
+    on failure so the next effect run — even one where only read state
+    changed, i.e. within about a minute — retries; a failed *migration*
+    save still shows the legacy list and simply re-fires on the next launch
+    (three regression tests).
 
 ## Honest gaps, still open
 
