@@ -97,7 +97,7 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(left + 178).toBeLessThanOrEqual(360 - 8);
   });
 
-  // App.tsx's click-away handler recognises "inside the menu" by this
+  // app.tsx's click-away handler recognises "inside the menu" by this
   // attribute alone on both the dropdown and its trigger. Moving the
   // dropdown out of the row's own box must not cost it that.
   test("keeps the menu-scope marker the click-away handler matches on", () => {
@@ -437,7 +437,7 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
 
   // jsdom's CSS engine cannot parse a multi-value transition shorthand back
   // into its longhand computed properties, so this reads the rule's actual
-  // text instead of getComputedStyle, the same way reducedMotion.spec.tsx
+  // text instead of getComputedStyle, the same way reduced-motion.spec.tsx
   // reads a stylesheet's real text for a fact jsdom cannot compute.
   test("transitions visibility on the same duration token as grid-template-rows, so content stays visible while the row closes", () => {
     expect(rowStylesheet).toContain("grid-template-rows var(--dur-base)");

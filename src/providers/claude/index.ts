@@ -1,11 +1,11 @@
 import type { FetchError, NormalizedRead } from "@/types/entities";
 import type { NormalizeContext, OutcomeResult, ReadOutcome } from "../registry";
-import { normalizeProfile } from "./normalizeProfile";
-import { normalizeUsage } from "./normalizeUsage";
-import { reconcileWithStatusline } from "./statuslineMerge";
+import { normalizeProfile } from "./normalize-profile";
+import { normalizeUsage } from "./normalize-usage";
+import { reconcileWithStatusline } from "./statusline-merge";
 
 /** Reconciles the zero-cost statusline feed, `context.statuslineFeed`,
- * with the API payload before normalizing. See `statuslineMerge.ts` for
+ * with the API payload before normalizing. See `statusline-merge.ts` for
  * why that happens on the raw shape rather than the normalized window
  * list. A context with no feed, or an older one, leaves `usageRaw`
  * untouched. */
@@ -31,7 +31,7 @@ export function normalize(
 
 /** The outcome-to-state-and-reason mapping is provider-owned, so a second
  * provider can supply its own without touching the generic
- * `useSubscriptions.ts`; the state vocabulary itself, see `types/entities.ts`'s
+ * `use-subscriptions.ts`; the state vocabulary itself, see `types/entities.ts`'s
  * `SubscriptionState` doc, is fixed. See `ReadOutcome`'s doc for why
  * `rate_limited` never reaches this function; the shell restores whatever
  * state this function returned for the previous attempt instead. */

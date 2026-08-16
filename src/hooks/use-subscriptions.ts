@@ -4,7 +4,7 @@ import {
   buildStatusItemSegments,
   buildStatusItemTooltip,
   computeWorstActiveLimitPercent,
-} from "@/lib/statusItemSegments";
+} from "@/lib/status-item-segments";
 import {
   cancelSignIn as cancelSignInIpc,
   fetchSnapshot,
@@ -15,7 +15,7 @@ import {
   renderStatusItem,
   startSignIn as startSignInIpc,
   submitSignInCode as submitSignInCodeIpc,
-} from "@/lib/tauriClient";
+} from "@/lib/tauri-client";
 import { mapOutcomeFor, normalizeFor, resolveProviderDisplayName } from "@/providers/registry";
 import type {
   AccountDescriptor,
@@ -147,7 +147,7 @@ export function useSubscriptions() {
   const knownLabelsRef = useRef<Record<string, string>>(knownLabels);
   knownLabelsRef.current = knownLabels;
 
-  // Owned here, not in App.tsx, since the state these timers resolve into,
+  // Owned here, not in app.tsx, since the state these timers resolve into,
   // membership, is owned here too.
   const removalTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 

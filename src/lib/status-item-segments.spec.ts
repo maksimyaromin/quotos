@@ -4,7 +4,7 @@ import {
   buildStatusItemSegments,
   buildStatusItemTooltip,
   computeWorstActiveLimitPercent,
-} from "./statusItemSegments";
+} from "./status-item-segments";
 
 function window(overrides: Partial<LimitWindowEntity> & { id: string }): LimitWindowEntity {
   return { name: "Window", used: null, resetsAt: null, scope: null, isActive: true, ...overrides };

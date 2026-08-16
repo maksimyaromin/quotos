@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Subscription } from "@/types/entities";
-import { presentRow } from "./rowPresentation";
+import { presentRow } from "./row-presentation";
 
 const NOW = new Date("2026-08-15T14:00:00Z").getTime();
 const IN_AN_HOUR = new Date(NOW + 59 * 60 * 1000).toISOString();

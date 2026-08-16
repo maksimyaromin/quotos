@@ -58,7 +58,7 @@ the module CSS, never a `useState` plus mouse handlers standing in for
 one. A value that is genuinely per-render, a measured height, a computed
 menu position, a percentage fill width, stays an inline `style`, since
 neither a CSS Module class nor a token layer can express something only
-known at render time. `joinClassNames` (`src/design-system/joinClassNames.ts`)
+known at render time. `joinClassNames` (`src/design-system/join-class-names.ts`)
 composes a component's own module class with a caller-supplied
 `className`, so a consumer can layer its own layout constraints in CSS
 rather than only through the `style` prop. See [Testing](#testing) below
@@ -155,7 +155,7 @@ dev` or a real bundle, not asserted in a spec.
 A spec that needs a stylesheet's actual text, rather than jsdom's
 rendered styles, reads it through Vite's own `?raw` import suffix rather
 than Node's `fs`, for example `import elevation from
-"./tokens/elevation.css?raw"` in `reducedMotion.spec.tsx`. That keeps the
+"./tokens/elevation.css?raw"` in `reduced-motion.spec.tsx`. That keeps the
 spec inside the same DOM-only project as every other file under `src`.
 `vite.config.ts`'s `test.css.include` is what makes Vitest serve that
 import's real content instead of its usual empty-string stub for CSS; the

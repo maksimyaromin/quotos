@@ -11,7 +11,7 @@ const cancelSignIn = vi.fn();
 const forgetSignIn = vi.fn();
 const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.resolve(() => {}));
 
-vi.mock("@/lib/tauriClient", () => ({
+vi.mock("@/lib/tauri-client", () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
   renderStatusItem: (...args: unknown[]) => renderStatusItem(...args),
   onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
@@ -37,7 +37,7 @@ vi.mock("@/lib/persistence", () => ({
 
 // vi.mock calls above are hoisted by Vitest, so this static import safely
 // resolves against the mocked modules.
-import { deriveAccountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from "./useSubscriptions";
+import { deriveAccountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from "./use-subscriptions";
 
 async function flush() {
   await act(async () => {

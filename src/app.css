@@ -61,7 +61,7 @@ body {
   height: 0;
 }
 
-/* RefreshIcon's spin, App.tsx's only consumer of this keyframe. */
+/* RefreshIcon's spin, app.tsx's only consumer of this keyframe. */
 @keyframes quotos-spin {
   to {
     transform: rotate(360deg);

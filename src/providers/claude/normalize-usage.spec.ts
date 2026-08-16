@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { normalizeUsage } from "./normalizeUsage";
+import { normalizeUsage } from "./normalize-usage";
 
-describe("normalizeUsage", () => {
+describe("normalize-usage", () => {
   test("prefers limits[] over the fixed top-level windows", () => {
     const result = normalizeUsage({
       five_hour: { utilization: 99, resets_at: "2026-08-11T23:20:00Z" },

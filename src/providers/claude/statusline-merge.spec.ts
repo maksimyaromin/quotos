@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { StatuslineFeedWire } from "@/types/entities";
-import { reconcileWithStatusline } from "./statuslineMerge";
+import { reconcileWithStatusline } from "./statusline-merge";
 
 const API_FETCHED_AT = "2026-08-15T12:00:00.000Z";
 const FRESHER = "2026-08-15T12:00:30.000Z"; // 30s after the API read

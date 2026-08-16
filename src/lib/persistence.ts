@@ -6,7 +6,7 @@ import type { AccountDescriptor } from "@/types/entities";
  * Owned natively as a plain JSON file in the app's config directory,
  * written by Rust, see `src-tauri/src/persistence.rs`. The browser-only
  * mock harness has no Rust side to talk to, so it keeps using
- * `localStorage` directly, branching on that the same way `tauriClient.ts`
+ * `localStorage` directly, branching on that the same way `tauri-client.ts`
  * does. */
 export interface TrackedAccount extends AccountDescriptor {
   /** User's own name for it, or null to use the provider-derived label. */
@@ -14,7 +14,7 @@ export interface TrackedAccount extends AccountDescriptor {
   /** The persisted set of pinned window ids, see
    * `Subscription.pinnedWindowIds`. This type describes only the current,
    * post-migration shape; see `migrateLegacyTracked` in
-   * `useSubscriptions.ts` for the older `pinned: boolean` shape this
+   * `use-subscriptions.ts` for the older `pinned: boolean` shape this
    * migrates from. */
   pinnedWindowIds: string[];
 }

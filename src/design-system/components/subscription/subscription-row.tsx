@@ -332,7 +332,7 @@ export function SubscriptionRow({
   // NSMenu. Home and End jump to the edges. Lives on the row div because
   // the fixed-position dropdown is still this row's DOM child, so keydowns
   // bubble through here. Dismissal is not handled here: Escape and
-  // click-away stay with the window-level layering in App.tsx. The sign-in
+  // click-away stay with the window-level layering in app.tsx. The sign-in
   // code field is excluded so its caret keeps the arrow keys.
   const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!menuOpen || !menuRef.current) return;

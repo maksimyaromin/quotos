@@ -12,7 +12,7 @@ const onPanelVisibility = vi.fn((callback: (visible: boolean) => void) => {
   return Promise.resolve(stopListening);
 });
 
-vi.mock("../lib/tauriClient", () => ({
+vi.mock("../lib/tauri-client", () => ({
   listAccounts: () => listAccounts(),
   onPanelVisibility: (callback: (visible: boolean) => void) => onPanelVisibility(callback),
   // StatuslineControl imports these by name, so the mocked module must

@@ -18,7 +18,7 @@ export type SubscriptionState =
 export interface LimitWindowEntity {
   /** Stable within a subscription's own window list across re-reads. Built
    * from the provider's own `kind`, plus `scope` when more than one window
-   * can share a `kind`, see `providers/claude/normalizeUsage.ts`'s
+   * can share a `kind`, see `providers/claude/normalize-usage.ts`'s
    * `windowId`. Pinning keys off this id instead of a subscription-wide
    * boolean, see `Subscription.pinnedWindowIds`. */
   id: string;
@@ -33,7 +33,7 @@ export interface LimitWindowEntity {
 
 /** Computed by the provider adapter from every window it saw, not just the
  * headline one, so a healthy headline percent does not mask a
- * near-exhausted window elsewhere. See `providers/claude/normalizeUsage.ts`'s
+ * near-exhausted window elsewhere. See `providers/claude/normalize-usage.ts`'s
  * `computeSeverity` for the exact thresholds. */
 export type Severity = "healthy" | "warn" | "critical";
 
@@ -50,7 +50,7 @@ export interface Subscription {
   severity: Severity;
   /** Percent of the headline window consumed, 0 to 100. The headline is
    * the account-wide weekly window, not the most-consumed one, see
-   * `providers/claude/normalizeUsage.ts`. */
+   * `providers/claude/normalize-usage.ts`. */
   used: number | null;
   resetsAt: string | null;
   lastReadAt: string | null;
@@ -62,7 +62,7 @@ export interface Subscription {
   needsSignIn: boolean;
   /** Per limit window, not per subscription, see `LimitWindowEntity.id`.
    * Order does not matter: figure order in the status item comes from
-   * `windows`' own order, see `lib/statusItemSegments.ts`. */
+   * `windows`' own order, see `lib/status-item-segments.ts`. */
   pinnedWindowIds: string[];
   /** Which of this subscription's current `windows` is the headline, see
    * `NormalizedRead.headlineWindowId`. Null before any read. */
@@ -97,7 +97,7 @@ export interface RawSnapshot {
   /** The Claude Code statusline feed's most recent reading for this config
    * dir, attached by the Rust side on every read attempt. Null or absent
    * whenever nothing was installed or no session has fed it yet. See
-   * `providers/claude/statuslineMerge.ts`: the freshest reading wins, and
+   * `providers/claude/statusline-merge.ts`: the freshest reading wins, and
    * it never invents a window the API did not already report. */
   statusline?: StatuslineFeedWire | null;
 }

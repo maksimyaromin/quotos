@@ -10,7 +10,7 @@ import { mapOutcome as mapOutcomeClaude, normalize as normalizeClaude } from "./
  * beyond the raw usage and profile payloads: when it was fetched, and
  * whatever the statusline feed most recently reported, so a provider can
  * reconcile the two itself. See `providers/claude/index.ts`'s `normalize`
- * and `statuslineMerge.ts`. A provider with no such feed just ignores it. */
+ * and `statusline-merge.ts`. A provider with no such feed just ignores it. */
 export interface NormalizeContext {
   fetchedAt: string;
   statuslineFeed?: StatuslineFeedWire | null;
@@ -25,7 +25,7 @@ export type Normalizer = (
 
 /** What a refresh attempt produced, for the provider's outcome-to-state
  * mapper. Deliberately excludes `rate_limited`, since a self-imposed
- * budget wait is never a health state. The shell in `useSubscriptions.ts`
+ * budget wait is never a health state. The shell in `use-subscriptions.ts`
  * intercepts it before it ever reaches a provider's mapper. */
 export type ReadOutcome =
   | { kind: "ok"; normalized: NormalizedRead }

@@ -3,8 +3,8 @@ import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from "@/comp
 import { SubscriptionsScreen } from "@/components/subscriptions-screen";
 import { UndoRow } from "@/components/undo-row";
 import { Button, IconButton, Panel, SubscriptionRow } from "@/design-system";
-import { useSubscriptions } from "@/hooks/useSubscriptions";
-import { presentRow } from "@/lib/rowPresentation";
+import { useSubscriptions } from "@/hooks/use-subscriptions";
+import { presentRow } from "@/lib/row-presentation";
 import {
   debugRateLimitSnapshot,
   dragWindowStep,
@@ -13,7 +13,7 @@ import {
   onPanelBeakOffset,
   onPanelVisibility,
   setDetached as setDetachedIpc,
-} from "@/lib/tauriClient";
+} from "@/lib/tauri-client";
 import { formatClockTime, formatExactReset, formatRelativePast } from "@/lib/time";
 import "./app.css";
 import styles from "./app.module.css";
@@ -233,7 +233,7 @@ export default function App() {
 
   const nowDate = new Date(now);
   // A subscription whose answer is sign in is not waiting on the rate
-  // budget, matching lib/rowPresentation.ts's own exclusion.
+  // budget, matching lib/row-presentation.ts's own exclusion.
   const blockedSubs = trackedSubscriptions.filter(
     (s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now),
   );
@@ -314,7 +314,7 @@ export default function App() {
       }
     >
       {screen === "manage" ? (
-        // See useSubscriptions's trackedSubscriptions doc for what
+        // See use-subscriptions's trackedSubscriptions doc for what
         // "tracked" excludes here.
         <SubscriptionsScreen
           tracked={trackedSubscriptions}

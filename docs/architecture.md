@@ -32,13 +32,13 @@ this page is the map between them.
 | Module | Owns |
 | --- | --- |
 | `app.tsx` | Composes the panel shell, the subscription rows, and the Subscriptions screen. |
-| `hooks/useSubscriptions.ts` | The state machine: tracked-subscription membership, refresh, the rate-limit interception rule, persistence, and status item segment derivation. |
+| `hooks/use-subscriptions.ts` | The state machine: tracked-subscription membership, refresh, the rate-limit interception rule, persistence, and status item segment derivation. |
 | `providers/registry.ts` | The frontend half of the provider seam: dispatches normalization and outcome mapping to the right provider by its slug. |
 | `providers/claude/` | The Claude adapter: usage and profile normalization, headline selection, outcome-to-state mapping, statusline reconciliation. |
 | `lib/persistence.ts` | The frontend seam to the tracked list: the native IPC commands on a real build, `localStorage` as a fallback in the browser harness. |
-| `lib/tauriClient.ts` | Swaps between the real Tauri IPC client and a mock client based on whether `__TAURI_INTERNALS__` exists, so every UI state stays reviewable from a plain browser. |
-| `lib/rowPresentation.ts` | What a row shows besides its numbers: the badge, the one action offered, and the footer note. |
-| `lib/statusItemSegments.ts` | Turns tracked subscriptions into the status item's digit segments, tooltip, and worst-active-limit percentage. |
+| `lib/tauri-client.ts` | Swaps between the real Tauri IPC client and a mock client based on whether `__TAURI_INTERNALS__` exists, so every UI state stays reviewable from a plain browser. |
+| `lib/row-presentation.ts` | What a row shows besides its numbers: the badge, the one action offered, and the footer note. |
+| `lib/status-item-segments.ts` | Turns tracked subscriptions into the status item's digit segments, tooltip, and worst-active-limit percentage. |
 | `types/entities.ts` | The provider-agnostic entities. Nothing above its own dividing line, and nothing that renders UI, references a specific provider by name. |
 | `src/design-system/` | The component library the app builds against. See its own `index.ts` barrel and [contributing.md](contributing.md) for the module-layout rule that keeps consumers on it. |
 
@@ -52,7 +52,7 @@ machine.
 Two things stay provider-owned rather than living in the generic shell,
 because they are genuinely provider-specific policy:
 
-- **Headline selection.** `normalizeUsage.ts`'s `pickAccountWideWeekly`
+- **Headline selection.** `normalize-usage.ts`'s `pickAccountWideWeekly`
   picks the account-wide weekly window as the headline number, never
   simply the most-consumed window, so a heavily used per-model window
   can't outrank the real account total.
@@ -73,7 +73,7 @@ below.
    budget, calls the provider, and returns a normalized snapshot or a
    typed `FetchError` over IPC, never a stale number as if it were
    current.
-3. `useSubscriptions.ts` applies the result the same way whether it
+3. `use-subscriptions.ts` applies the result the same way whether it
    arrived from a direct call or from the scheduler's `quota-refresh`
    push event, through `applyRefreshResult`.
 4. The same state feeds three places at once: the panel row, the
@@ -92,10 +92,10 @@ below.
 - **`idle` and "no limits reported yet" are different states.** `idle`
   means the subscription has never been read successfully. `state:
   "working"` with `used: null` means a good read that had nothing to
-  report. `lib/rowPresentation.ts` shows `reason ?? "No limits reported
+  report. `lib/row-presentation.ts` shows `reason ?? "No limits reported
   yet."` for every state without a number.
 - **Health and the rate-limit budget are separate fields on purpose.** A
-  self-imposed wait must never overwrite a real diagnosis. `useSubscriptions.ts`
+  self-imposed wait must never overwrite a real diagnosis. `use-subscriptions.ts`
   intercepts a `rate_limited` outcome before it reaches a provider's
   outcome mapper and restores the state and reason captured before the
   attempt started, except when that captured state was itself in
@@ -134,7 +134,7 @@ needs.
 Pinning is per limit window, not per subscription:
 `Subscription.pinnedWindowIds` is a persisted set of window ids, since
 every window a provider's normalizer builds carries a stable id from
-`normalizeUsage.ts`'s `windowId(kind, scope)`. `persistence.rs`'s
+`normalize-usage.ts`'s `windowId(kind, scope)`. `persistence.rs`'s
 `TrackedAccount` struct mirrors the wire shape field for field, including
 a migration-only field for a tracked list written before per-window
 pinning existed. Any time an entity's wire shape changes, check whether
@@ -156,7 +156,7 @@ Because that budget is shared per account and not per process,
 `single_instance.rs` keeps exactly one Quotos running per machine with an
 OS file lock. Every path that spends a real fetch on an account, a
 header refresh, a row's manual refresh, a launch read, or a newly added
-subscription's first read, funnels through `useSubscriptions.ts`'s
+subscription's first read, funnels through `use-subscriptions.ts`'s
 `refreshOneGuarded`, the one per-account in-flight guard, so a concurrent
 request joins the in-flight read instead of spending a second slot.
 

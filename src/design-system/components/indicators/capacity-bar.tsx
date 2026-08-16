@@ -15,7 +15,7 @@ function levelColor(level: CapacityLevel): string {
   return "var(--cap-healthy)";
 }
 
-/** Thresholds must match `providers/claude/normalizeUsage.ts`'s severity
+/** Thresholds must match `providers/claude/normalize-usage.ts`'s severity
  *  calculation exactly. */
 export function capacityColor(used: number): string {
   return levelColor(capacityLevel(used));

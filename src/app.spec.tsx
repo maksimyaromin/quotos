@@ -16,7 +16,7 @@ const hidePanel = vi.fn();
 const fetchSnapshotSpy = vi.fn();
 let visibilityCallback: ((visible: boolean) => void) | null = null;
 
-vi.mock("./lib/tauriClient", () => ({
+vi.mock("./lib/tauri-client", () => ({
   listAccounts: () => Promise.resolve([]),
   fetchSnapshot: () => {
     fetchSnapshotSpy();

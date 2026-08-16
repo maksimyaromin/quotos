@@ -75,7 +75,7 @@ separate binary: `main.rs` intercepts an ingest flag as `argv[1]` before
 touching Tauri at all, so the copy Claude Code's hook invokes, possibly
 many times a minute, never starts a second GUI instance.
 
-On the frontend, `statuslineMerge.ts`'s `reconcileWithStatusline` patches
+On the frontend, `statusline-merge.ts`'s `reconcileWithStatusline` patches
 the raw usage shape before `normalizeUsage` ever sees it, so headline
 selection and severity apply exactly as they would to a fresher API
 response. Freshest wins by comparing the feed's own timestamp against the

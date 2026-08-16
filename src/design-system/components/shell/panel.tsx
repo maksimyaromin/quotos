@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { joinClassNames } from "../../joinClassNames";
+import { joinClassNames } from "../../join-class-names";
 import styles from "./panel.module.css";
 
 // Mirrors --panel-width in tokens/spacing.css, duplicated as a plain number

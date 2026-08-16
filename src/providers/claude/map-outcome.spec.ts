@@ -14,7 +14,7 @@ const OK_READ: NormalizedRead = {
   headlineWindowId: "session",
 };
 
-describe("claude mapOutcome", () => {
+describe("claude map-outcome", () => {
   test("a successful read is always 'working'", () => {
     const expected = { state: "working", reason: null, needsSignIn: false };
     expect(mapOutcome({ kind: "ok", normalized: OK_READ }, false)).toEqual(expected);

@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { joinClassNames } from "../../joinClassNames";
+import { joinClassNames } from "../../join-class-names";
 import styles from "./text-field.module.css";
 
 export interface TextFieldProps

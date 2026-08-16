@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { joinClassNames } from "../../joinClassNames";
+import { joinClassNames } from "../../join-class-names";
 import styles from "./status-dot.module.css";
 
 export type SubscriptionState =

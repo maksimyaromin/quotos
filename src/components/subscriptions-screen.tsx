@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/design-system";
-import { listAccounts, onPanelVisibility } from "@/lib/tauriClient";
+import { listAccounts, onPanelVisibility } from "@/lib/tauri-client";
 import type { AccountDescriptor, Subscription } from "@/types/entities";
 import { StatuslineControl } from "./statusline-control";
 import styles from "./subscriptions-screen.module.css";
@@ -17,7 +17,7 @@ interface Row {
  * this Mac. Tracked ones sit highlighted with a Remove button. The rest
  * get an Add button of the same size and style, with only the label color
  * differing. There is no Done button. The panel's header back arrow in
- * App.tsx is the only way out. */
+ * app.tsx is the only way out. */
 export function SubscriptionsScreen({
   tracked,
   onAdd,

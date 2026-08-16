@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { joinClassNames } from "./joinClassNames";
+import { joinClassNames } from "./join-class-names";
 
 test("joins every truthy class name with a single space", () => {
   expect(joinClassNames("button", "primary", "large")).toBe("button primary large");
