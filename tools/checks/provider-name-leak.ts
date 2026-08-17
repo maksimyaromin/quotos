@@ -40,11 +40,11 @@ for (const file of trackedFiles) {
 if (findings.length > 0) {
   console.error(
     "The provider is named outside its registered boundary. The design brief " +
-      "(section 1: \"Not a Claude usage widget\"; section 8: providers other " +
+      '(section 1: "Not a Claude usage widget"; section 8: providers other ' +
       "than the first are out of scope for this version) treats Quotos as a " +
       "multi-provider capacity dashboard. Only src/providers/claude/ and its " +
-      "single registry entry in src/providers/registry.ts may name \"Claude\" " +
-      "as a provider. \"Claude Code\", the external CLI tool Quotos integrates " +
+      'single registry entry in src/providers/registry.ts may name "Claude" ' +
+      'as a provider. "Claude Code", the external CLI tool Quotos integrates ' +
       "with, stays allowed anywhere as a feature reference, not a provider label.",
   );
   for (const { file, line, text } of findings) {
