@@ -13,8 +13,9 @@ here. Application code and repository scripts are both TypeScript; see
 the module-layout rule. `npm run verify` is the single quality gate,
 running format, lint, typecheck, test, `cargo fmt`, `cargo clippy`, and a
 few small repository checks concurrently, reporting every failing lane.
-CI runs the identical command on every pull request. `README.md` covers
-day-to-day run, build, and test commands.
+CI runs the identical command on every pull request and on every push
+to the default branch. `README.md` covers day-to-day run, build, and
+test commands.
 
 ## Sources of truth
 

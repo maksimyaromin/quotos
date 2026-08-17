@@ -13,7 +13,8 @@ including this documentation's link check, `cargo fmt --check`,
 `cargo clippy -- -D warnings`, and `cargo test`. `tools/verify.ts` is the
 source of truth for the exact lane list; every lane runs concurrently,
 and every failure is reported, not just the first. CI runs the identical
-command on every pull request.
+command on every pull request and on every push to `main`, so a direct
+commit cannot skip it either.
 
 ## Module layout
 
