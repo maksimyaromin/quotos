@@ -173,6 +173,14 @@ and double-checks after creation by comparing the resolved font's own
 family name, since `CTFontCreateWithFontDescriptor` never returns null
 and silently substitutes a default font on a mismatch instead.
 
+CI has no MonoLisa license to install, so every run there exercises the
+fallback path regardless of test intent; a developer's own machine, with
+MonoLisa installed, never does on its own. A test asserting a layout
+property that is supposed to hold under either font calls
+`load_font_forcing_fallback`, a `#[cfg(test)]` path that skips
+`try_load_monolisa` outright, so that property is proven on a MonoLisa
+machine too rather than only on the next CI run.
+
 `make_line` builds a `CTLine` through `CTLineCreateWithAttributedString`
 plus `CTLineDraw`, CoreText's own standard path for drawing a short text
 run, rather than manually resolving glyph IDs and advances through
