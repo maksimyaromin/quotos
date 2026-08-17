@@ -1,32 +1,68 @@
 # Quotos
 
-A macOS menu bar utility that shows, at a glance, how much of each Claude
-subscription is left.
-
-Quotos tracks more than one account at once, reading each directly from
-the machine with no server and no account of its own. It currently
-supports Claude; the design leaves room for other providers without
-assuming a single one anywhere. See [the design brief](docs/design/brief.md)
-for the full product specification and [the architecture](docs/architecture.md)
-for how the application is built.
+A macOS menu bar app that shows, at a glance, how much of each Claude
+subscription is left. Quotos reads accounts directly from the machine,
+with no server and no account of its own. See
+[the design brief](docs/design/brief.md) for the full product
+specification and [the architecture](docs/architecture.md) for how the
+application is built.
 
 ## Requirements
 
-- macOS
-- Node.js 24 or newer, the version `.nvmrc` pins
-- a Rust toolchain, since Tauri builds a native backend alongside the web
-  frontend
+- macOS 15 or newer. `src-tauri/tauri.conf.json` sets this as the
+  build's floor. Below that, the build finishes but the app will not
+  launch.
+- Node.js 24 or newer, the version `.nvmrc` pins and `package.json`'s
+  `engines` field enforces.
+- A Rust toolchain, since Tauri builds a native backend alongside the
+  web frontend. Rust needs Xcode's command line tools to link on macOS:
+  ```bash
+  xcode-select --install
+  ```
+- Claude Code, installed and signed in. Quotos reads Claude Code's own
+  configuration directories and Keychain credential; without it there is
+  nothing to show.
+
+## Providers
+
+Quotos supports Claude today. It reads every Claude Code account on the
+machine: the default `~/.claude` directory and any sibling
+`~/.claude-*` directory, so more than one account is picked up
+automatically, with nothing to configure. The provider layer underneath
+is built to take more than Claude; nothing above it assumes there is
+only one.
 
 ## Install
 
-```bash
-npm install
-```
+1. Clone this repository and open a terminal in it.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+   Do this before opening the project in an editor too. Every
+   TypeScript project here resolves its own types from `node_modules`,
+   and skipping it shows up as editor errors that clear once you run
+   it.
+3. Build the app and put it in `/Applications`:
+   ```bash
+   npm run app:install
+   ```
+   This builds the native bundle with `npm run tauri build`, then
+   copies it from `src-tauri/target/release/bundle/macos/Quotos.app`
+   into `/Applications`.
+4. Launch it:
+   ```bash
+   open /Applications/Quotos.app
+   ```
 
-Run this before opening the repository in an editor, not only before
-running a command. Every TypeScript project in the tree resolves its own
-dependency types from `node_modules`, and an uninstalled tree shows
-editor errors that an install clears.
+Quotos appears in the menu bar. Click it to open the panel; it starts
+empty, with an "Add subscription" button that lists every Claude Code
+account Quotos found on the Mac.
+
+If the menu bar icon shows no usage, or the "Add subscription" list is
+empty, Claude Code is not installed or not signed in on this Mac.
+Install it, sign in, then reopen the panel: Quotos rescans for accounts
+each time it opens.
 
 ## Run
 
@@ -34,11 +70,11 @@ editor errors that an install clears.
 npm run tauri dev
 ```
 
-This runs the real application: a status item in the menu bar that opens
-a panel on click.
+This runs the real application without building a bundle: a status item
+in the menu bar that opens a panel on click.
 
-To exercise every interface state without the native shell, against mock
-data, in any browser:
+To exercise every interface state without the native shell, against
+mock data, in any browser:
 
 ```bash
 npm run dev
@@ -54,14 +90,6 @@ npm run typecheck              # TypeScript
 (cd src-tauri && cargo test)   # Rust
 ```
 
-## Build
-
-```bash
-npm run tauri build
-```
-
-The bundle lands at `src-tauri/target/release/bundle/macos/Quotos.app`.
-
 ## Verify
 
 ```bash
@@ -70,8 +98,8 @@ npm run verify
 
 The single quality gate: formatting and linting, both TypeScript
 projects, the test suite, a handful of repository checks, and the Rust
-equivalents. [AGENTS.md](AGENTS.md) covers what each lane checks and
-where the rest of the documentation lives.
+equivalents. [docs/contributing.md](docs/contributing.md) covers what
+each lane checks and where the rest of the documentation lives.
 
 ## License
 
