@@ -3,7 +3,8 @@ use std::process::Command;
 const GLYPH_PX: u32 = 36;
 const SIDE_PAD_PX: u32 = 10;
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
-const FIGURE_GAP_PX: u32 = 8;
+const GLYPH_GAP_PX: u32 = 19;
+const FIGURE_GAP_PX: u32 = 11;
 const GROUP_GUTTER_PRE_PX: u32 = 10;
 const HAIRLINE_WIDTH_PX: u32 = 2;
 const GROUP_GUTTER_POST_PX: u32 = 10;
@@ -124,6 +125,21 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
         }
     }
     cov
+}
+
+/// The glyph's own rightmost ink pixel, scanned from its rendered coverage.
+/// See "Spacing the figures evenly" in docs/status-item-rendering.md.
+fn glyph_ink_right_edge_px(coverage: &[u8], canvas_px: u32) -> f64 {
+    const INK_EDGE_COVERAGE_THRESHOLD: u8 = 127;
+    let mut max_x = None;
+    for y in 0..canvas_px {
+        for x in 0..canvas_px {
+            if coverage[(y * canvas_px + x) as usize] > INK_EDGE_COVERAGE_THRESHOLD {
+                max_x = Some(max_x.map_or(x, |m: u32| m.max(x)));
+            }
+        }
+    }
+    max_x.map_or(canvas_px as f64 / 2.0, |x| x as f64 + 1.0)
 }
 
 pub(crate) fn is_dark_mode() -> bool {
@@ -247,9 +263,17 @@ fn composite_mask(
     }
 }
 
+/// A text run's drawing position: `x0` plus the sub-pixel `local_offset`
+/// CoreText's own text position takes. See docs/status-item-rendering.md.
+#[derive(Clone, Copy)]
+struct TextOrigin {
+    x0: u32,
+    local_offset: f64,
+}
+
 #[cfg(target_os = "macos")]
 mod text {
-    use super::blend_pixel;
+    use super::{TextOrigin, blend_pixel};
     use objc2::rc::Retained;
     use objc2_app_kit::{NSFont, NSFontWeightMedium};
     use objc2_core_foundation::{
@@ -363,11 +387,12 @@ mod text {
         buf: &mut [u8],
         buf_w: u32,
         buf_h: u32,
-        x0: u32,
+        origin: TextOrigin,
         font: &CTFont,
         text: &str,
         rgba: (u8, u8, u8, u8),
     ) -> u32 {
+        let TextOrigin { x0, local_offset } = origin;
         let Some(line) = make_line(font, text, rgba) else {
             return 0;
         };
@@ -378,7 +403,7 @@ mod text {
                 std::ptr::null_mut(),
             )
         };
-        let width = line_width.ceil().max(0.0) as u32;
+        let width = (local_offset + line_width).ceil().max(0.0) as u32;
         if width == 0 {
             return 0;
         }
@@ -413,7 +438,7 @@ mod text {
         // glyphs. The context stays in its native bottom-left/y-up
         // convention, and this baseline is derived for that.
         let baseline_native = ((buf_h as f64) + descent - ascent) / 2.0;
-        CGContext::set_text_position(Some(&ctx), 0.0, baseline_native);
+        CGContext::set_text_position(Some(&ctx), local_offset, baseline_native);
         // CTLineDraw over per-glyph CTFontDrawGlyphs: the per-glyph path
         // produced specific corrupted outlines on this font, OS, and
         // binding combination, such as a 7 missing its top bar.
@@ -451,14 +476,23 @@ mod text {
         buf: &mut [u8],
         buf_w: u32,
         buf_h: u32,
-        x0: u32,
+        origin: TextOrigin,
         font: &LoadedFont,
         text: &str,
         rgba: (u8, u8, u8, u8),
     ) -> u32 {
-        draw_text_impl(buf, buf_w, buf_h, x0, font.handle.as_ct_font(), text, rgba)
+        draw_text_impl(
+            buf,
+            buf_w,
+            buf_h,
+            origin,
+            font.handle.as_ct_font(),
+            text,
+            rgba,
+        )
     }
 
+    #[cfg(test)]
     pub fn measure(font: &LoadedFont, text: &str) -> u32 {
         let Some(line) = make_line(font.handle.as_ct_font(), text, (0, 0, 0, 0)) else {
             return 0;
@@ -472,11 +506,22 @@ mod text {
         };
         width.ceil().max(0.0) as u32
     }
+
+    /// The line's ink bounds, `(left, right)` from a text position of
+    /// `(0.0, _)`: the tight box CoreText draws, not `measure`'s wider box.
+    /// See "Spacing the figures evenly" in docs/status-item-rendering.md.
+    pub fn ink_bounds(font: &LoadedFont, text: &str) -> (f64, f64) {
+        let Some(line) = make_line(font.handle.as_ct_font(), text, (0, 0, 0, 0)) else {
+            return (0.0, 0.0);
+        };
+        let bounds = unsafe { line.image_bounds(None) };
+        (bounds.origin.x, bounds.origin.x + bounds.size.width)
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
 mod text {
-    use super::composite_mask;
+    use super::{TextOrigin, composite_mask};
 
     const CHAR_W: u32 = 3;
     const CHAR_H: u32 = 5;
@@ -556,18 +601,33 @@ mod text {
         buf: &mut [u8],
         buf_w: u32,
         buf_h: u32,
-        x0: u32,
+        origin: TextOrigin,
         _font: &LoadedFont,
         text: &str,
         rgba: (u8, u8, u8, u8),
     ) -> u32 {
         let (mask, mask_w) = render_mask(text, buf_h);
-        composite_mask(buf, buf_w, buf_h, x0, &mask, mask_w, rgba);
+        composite_mask(
+            buf,
+            buf_w,
+            buf_h,
+            origin.x0 + origin.local_offset.round() as u32,
+            &mask,
+            mask_w,
+            rgba,
+        );
         mask_w
     }
 
+    #[cfg(test)]
     pub fn measure(_font: &LoadedFont, text: &str) -> u32 {
         text_width(text)
+    }
+
+    /// This bitmap font has no side bearings: every glyph fills its cell
+    /// edge to edge, so ink bounds and the advance box coincide.
+    pub fn ink_bounds(_font: &LoadedFont, text: &str) -> (f64, f64) {
+        (0.0, text_width(text) as f64)
     }
 }
 
@@ -591,15 +651,47 @@ pub fn used_fallback_font() -> bool {
     }
 }
 
-fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
-    if segments.is_empty() {
-        return 0;
+struct FigurePlacement {
+    origin: TextOrigin,
+    hairline_x0: Option<u32>,
+}
+
+/// Places the glyph and every figure a fixed ink-to-ink gap apart; see
+/// "Spacing the figures evenly" in docs/status-item-rendering.md. Returns
+/// each placement and the absolute x just past the last figure's own ink.
+fn layout_figures(
+    segments: &[StatusItemSegment],
+    ink_bounds: &[(f64, f64)],
+    glyph_ink_right_edge: f64,
+) -> (Vec<FigurePlacement>, f64) {
+    let mut placements = Vec::with_capacity(segments.len());
+    let mut ink_cursor = glyph_ink_right_edge;
+    for (i, seg) in segments.iter().enumerate() {
+        let (gap, hairline_x0) = if i == 0 {
+            (GLYPH_GAP_PX as f64, None)
+        } else if seg.group_start {
+            let hairline_left = ink_cursor + GROUP_GUTTER_PRE_PX as f64;
+            ink_cursor = hairline_left + HAIRLINE_WIDTH_PX as f64;
+            (
+                GROUP_GUTTER_POST_PX as f64,
+                Some(hairline_left.round() as u32),
+            )
+        } else {
+            (FIGURE_GAP_PX as f64, None)
+        };
+        let (ink_min_x, ink_max_x) = ink_bounds[i];
+        let origin = ink_cursor + gap - ink_min_x;
+        ink_cursor = origin + ink_max_x;
+        let x0 = origin.floor();
+        placements.push(FigurePlacement {
+            origin: TextOrigin {
+                x0: x0 as u32,
+                local_offset: origin - x0,
+            },
+            hairline_x0,
+        });
     }
-    let boundaries = segments.iter().skip(1).filter(|s| s.group_start).count() as u32;
-    let gutter_px = GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
-    let figure_gaps = segments.len() as u32 - 1 - boundaries;
-    let total_text_width: u32 = widths.iter().sum();
-    FIGURE_GAP_PX + total_text_width + figure_gaps * FIGURE_GAP_PX + boundaries * gutter_px
+    (placements, ink_cursor)
 }
 
 pub fn render(
@@ -612,11 +704,19 @@ pub fn render(
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     let font = text::load_font(text_font_size_pt());
 
-    let widths: Vec<u32> = segments
+    let ink_bounds: Vec<(f64, f64)> = segments
         .iter()
-        .map(|s| text::measure(&font, &s.text))
+        .map(|s| text::ink_bounds(&font, &s.text))
         .collect();
-    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX + text_area_width(segments, &widths);
+    let glyph_ink_right_edge = SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX);
+    let (placements, content_ink_right) =
+        layout_figures(segments, &ink_bounds, glyph_ink_right_edge);
+
+    let total_w = if segments.is_empty() {
+        SIDE_PAD_PX * 2 + GLYPH_PX
+    } else {
+        (content_ink_right + SIDE_PAD_PX as f64).ceil() as u32
+    };
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
 
@@ -643,27 +743,19 @@ pub fn render(
         }
     }
 
-    let mut x = SIDE_PAD_PX + GLYPH_PX + FIGURE_GAP_PX;
-    for (i, (seg, w)) in segments.iter().zip(widths.iter()).enumerate() {
-        if i > 0 {
-            if seg.group_start {
-                x += GROUP_GUTTER_PRE_PX;
-                draw_hairline(&mut buf, total_w, total_h, x, dark);
-                x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
-            } else {
-                x += FIGURE_GAP_PX;
-            }
+    for (seg, placement) in segments.iter().zip(placements.iter()) {
+        if let Some(hairline_x0) = placement.hairline_x0 {
+            draw_hairline(&mut buf, total_w, total_h, hairline_x0, dark);
         }
         text::draw_text(
             &mut buf,
             total_w,
             total_h,
-            x,
+            placement.origin,
             &font,
             &seg.text,
             seg.color.rgba(dark),
         );
-        x += w;
     }
 
     (buf, total_w, total_h)
@@ -697,6 +789,48 @@ mod tests {
             color,
             group_start: false,
         }
+    }
+
+    /// The x-ranges where some row's ink crosses half coverage. A figure's
+    /// own letterforms can dip below this between two characters, so this
+    /// is finer-grained than "one run per figure"; see `merge_close_runs`.
+    fn ink_column_runs(
+        buf: &[u8],
+        w: u32,
+        h: u32,
+        x_range: std::ops::Range<u32>,
+    ) -> Vec<(u32, u32)> {
+        let has_ink = |x: u32| (0..h).any(|y| buf[(((y * w) + x) * 4 + 3) as usize] > 127);
+        let mut runs = Vec::new();
+        let mut start = None;
+        for x in x_range.clone() {
+            match (has_ink(x), start) {
+                (true, None) => start = Some(x),
+                (false, Some(s)) => {
+                    runs.push((s, x));
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        if let Some(s) = start {
+            runs.push((s, x_range.end));
+        }
+        runs
+    }
+
+    /// Collapses runs separated by less than `min_gap` into one, turning a
+    /// figure's own internal letter-to-letter runs back into one run per
+    /// figure while leaving the real, larger figure-to-figure gaps alone.
+    fn merge_close_runs(runs: Vec<(u32, u32)>, min_gap: u32) -> Vec<(u32, u32)> {
+        let mut merged: Vec<(u32, u32)> = Vec::new();
+        for (start, end) in runs {
+            match merged.last_mut() {
+                Some(last) if start - last.1 < min_gap => last.1 = end,
+                _ => merged.push((start, end)),
+            }
+        }
+        merged
     }
 
     #[test]
@@ -850,7 +984,7 @@ mod tests {
     }
 
     #[test]
-    fn a_non_trailing_figures_same_digit_count_never_moves_what_follows_it() {
+    fn a_non_trailing_figures_same_digit_count_barely_moves_what_follows_it() {
         let a = render(
             &[
                 seg("42%", StatusItemColor::Neutral),
@@ -869,9 +1003,11 @@ mod tests {
             0,
             false,
         );
-        assert_eq!(
-            a.1, b.1,
-            "a non-trailing segment's digit count staying put must not jitter the image width"
+        assert!(
+            a.1.abs_diff(b.1) <= 1,
+            "a non-trailing segment's digit count staying put must not jitter the image width by more than rounding: {} vs {}",
+            a.1,
+            b.1
         );
     }
 
@@ -899,10 +1035,11 @@ mod tests {
             0,
             false,
         );
-        assert_eq!(
-            wide_first.1 - narrow_first.1,
-            wide_width - narrow_width,
-            "a non-trailing segment's own digit count now reserves exactly its own width, so what follows shifts by that segment's width delta"
+        let actual_delta = wide_first.1 - narrow_first.1;
+        let advance_delta = wide_width - narrow_width;
+        assert!(
+            actual_delta.abs_diff(advance_delta) <= 3,
+            "a non-trailing segment's own digit count should shift what follows by roughly its own advance delta ({advance_delta}px), not {actual_delta}px; a small gap remains from each digit's own ink bearing, not from digit count"
         );
     }
 
@@ -975,14 +1112,28 @@ mod tests {
         );
 
         let (buf, w, h) = two_groups;
-        let first_width = text::measure(&text::load_font(text_font_size_pt()), "9%");
-        let gutter_x = SIDE_PAD_PX + GLYPH_PX + FIGURE_GAP_PX + first_width + GROUP_GUTTER_PRE_PX;
+        let segs = [seg("9%", StatusItemColor::Neutral), {
+            let mut s = seg("9%", StatusItemColor::Neutral);
+            s.group_start = true;
+            s
+        }];
+        let font = text::load_font(text_font_size_pt());
+        let ink_bounds: Vec<(f64, f64)> = segs
+            .iter()
+            .map(|s| text::ink_bounds(&font, &s.text))
+            .collect();
+        let glyph_ink_right_edge =
+            SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
+        let (placements, _) = layout_figures(&segs, &ink_bounds, glyph_ink_right_edge);
+        let gutter_x = placements[1]
+            .hairline_x0
+            .expect("the second group's leading segment must carry the hairline");
         let mid_row = h / 2;
         let painted = (gutter_x..gutter_x + HAIRLINE_WIDTH_PX)
             .any(|x| buf[(((mid_row * w) + x) * 4 + 3) as usize] > 0);
         assert!(
             painted,
-            "expected hairline pixels within the reserved gutter"
+            "expected hairline pixels at the layout's own computed gutter position {gutter_x}"
         );
     }
 
@@ -1020,11 +1171,20 @@ mod tests {
 
     #[test]
     fn digit_widths_are_tabular() {
+        let font = text::load_font(text_font_size_pt());
+        assert_eq!(
+            text::measure(&font, "1"),
+            text::measure(&font, "8"),
+            "'1' and '8' must advance the same width (tabular figures)"
+        );
+
         let one = render(&[seg("1", StatusItemColor::Red)], false, 0, false);
         let eight = render(&[seg("8", StatusItemColor::Red)], false, 0, false);
-        assert_eq!(
-            one.1, eight.1,
-            "'1' and '8' must render at the same width (tabular figures)"
+        assert!(
+            one.1.abs_diff(eight.1) <= 1,
+            "'1' and '8' share an advance width, so the rendered image should differ only by ink-bearing rounding, not: {} vs {}",
+            one.1,
+            eight.1
         );
     }
 
@@ -1095,6 +1255,81 @@ mod tests {
         assert!(
             trailing_gap <= SIDE_PAD_PX + 8,
             "trailing gap {trailing_gap}px should track SIDE_PAD_PX ({SIDE_PAD_PX}px), not a leftover cell reserve (would be tens of px)"
+        );
+    }
+
+    #[test]
+    fn every_figure_to_figure_ink_gap_is_equal_across_digit_count_mixes() {
+        for figures in [
+            ["2%", "74%", "100%"],
+            ["9%", "9%", "9%"],
+            ["100%", "1%", "50%"],
+        ] {
+            let segs = figures.map(|t| seg(t, StatusItemColor::Neutral));
+            let (buf, w, h) = render(&segs, false, 0, false);
+            // Skip the glyph's own box: its arc has a real angular gap, so
+            // scanning across it finds several runs, not the one this test
+            // wants. `merge_close_runs` folds a figure's own letter gaps back in.
+            let runs = merge_close_runs(
+                ink_column_runs(&buf, w, h, (SIDE_PAD_PX + GLYPH_PX)..w),
+                FIGURE_GAP_PX / 2,
+            );
+            assert_eq!(
+                runs.len(),
+                3,
+                "{figures:?}: expected one ink run per figure, got {runs:?}"
+            );
+            let figure_gaps: Vec<u32> = runs.windows(2).map(|w| w[1].0 - w[0].1).collect();
+            let (first, rest) = figure_gaps.split_first().unwrap();
+            for gap in rest {
+                assert!(
+                    first.abs_diff(*gap) <= 1,
+                    "{figures:?}: figure-to-figure ink gaps must match, got {figure_gaps:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_glyph_to_first_figure_gap_is_its_own_larger_constant() {
+        let (buf, w, h) = render(&[seg("42%", StatusItemColor::Neutral)], false, 0, false);
+        let glyph_ink_right_edge =
+            SIDE_PAD_PX + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX) as u32;
+        let runs = merge_close_runs(
+            ink_column_runs(&buf, w, h, (SIDE_PAD_PX + GLYPH_PX)..w),
+            FIGURE_GAP_PX / 2,
+        );
+        assert_eq!(runs.len(), 1, "expected one ink run for the lone figure");
+        let glyph_gap = runs[0].0 - glyph_ink_right_edge;
+        assert!(
+            glyph_gap > FIGURE_GAP_PX,
+            "the glyph must read as separate from the figures, not merely another figure-sized gap away: got {glyph_gap}px against a {FIGURE_GAP_PX}px figure gap"
+        );
+    }
+
+    #[test]
+    fn the_glyphs_own_ink_is_unaffected_by_whether_figures_follow_it() {
+        let bare = render(&[], false, 50, false);
+        let with_figures = render(
+            &[
+                seg("9%", StatusItemColor::Neutral),
+                seg("67%", StatusItemColor::Neutral),
+                seg("96%", StatusItemColor::Red),
+            ],
+            false,
+            50,
+            false,
+        );
+        let glyph_region = |buf: &[u8], w: u32| -> Vec<u8> {
+            (0..GLYPH_PX)
+                .flat_map(|y| (0..GLYPH_PX).map(move |x| (y, x)))
+                .map(|(y, x)| buf[(((y * w) + SIDE_PAD_PX + x) * 4 + 3) as usize])
+                .collect()
+        };
+        assert_eq!(
+            glyph_region(&bare.0, bare.1),
+            glyph_region(&with_figures.0, with_figures.1),
+            "the glyph's own drawn pixels must not change when figures are appended after it"
         );
     }
 }

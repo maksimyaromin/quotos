@@ -64,30 +64,77 @@ own width, and lands exactly on the gap's other edge at 100%.
 
 ## Spacing the figures evenly
 
-Every figure sizes to its own measured width, laid out edge to edge
-with a fixed `FIGURE_GAP_PX` ink-to-ink gap, the same gap used between
-the glyph and the first figure. An earlier design reserved a fixed cell
-per figure instead, centering shorter text inside it; a two-character
-`2%` then got roughly twice the air of a three-character `74%` on each
-side, so the visible gap between adjacent figures tracked each one's
-own digit count rather than looking uniform.
+The rule: every horizontal gap in the item is a fixed distance from one
+shape's own rendered ink to the next shape's own rendered ink, never
+from either shape's wider advance box or reserved cell. `GLYPH_GAP_PX`
+is that distance from the glyph to the first figure, `FIGURE_GAP_PX`
+from one figure to the next, and `GROUP_GUTTER_PRE_PX`/
+`GROUP_GUTTER_POST_PX` from a figure to the hairline marking a new
+subscription group, in place of the plain figure gap that boundary
+would otherwise have gotten. `layout_figures` computes every position
+by this one rule; nothing downstream hand-adjusts a value it produces.
 
-The trade: an earlier segment's digit count changing width now does
-move everything to its right, since nothing pins it to a fixed slot any
-more. The glyph itself stays put regardless, since `render` draws it at
-a fixed offset before any figure is laid out, so `geometry.rs`'s
-`glyph_center_offset_from_item_left_points` and the beak it derives are
-unaffected. The font is tabular, so a value replacing another of the
-same digit count, `42%` for `77%`, measures identically and moves
-nothing; only an actual change in digit count shifts what follows, by
-exactly that segment's own width delta.
+An earlier design measured a figure's own advance box, the space
+`CTLineGetTypographicBounds` reports a run occupies, and stepped a
+fixed constant from box edge to box edge. That looked uneven because a
+glyph's ink sits inside its advance box with its own left and right
+side bearing, and that bearing differs per glyph even in a tabular
+font: a leading `1` and a leading `3` carry different amounts of empty
+space before their own ink starts. Since every figure gap sits between
+a `%` and the next figure's leading digit, and the `%` glyph's own
+right bearing is constant while the leading digit's left bearing is
+not, a fixed advance-to-advance step produced a different visible gap
+depending on which digit happened to lead the next figure, even though
+the constant never changed. Measuring from ink to ink removes the
+bearing from the arithmetic entirely, so the constant is the whole
+story and the visible gap no longer depends on which digits are
+adjacent.
 
-A boundary between two different subscriptions' figure groups draws its
-own gutter instead of the plain figure gap: 5-CSS-px, a 1-CSS-px
-hairline, then another 5-CSS-px, doubled for this buffer's 2x
-convention. `render` never draws a hairline before the very first
-segment overall, regardless of what the frontend sets on it, since
-there is no prior group for the first segment to part from.
+A figure's own ink bounds come from `CTLineGetImageBounds`, the tight
+box CoreText actually draws, not the wider box `measure` returns for
+sizing. The glyph has no advance box to begin with, since it is
+painted procedurally rather than laid out as text, so its own ink right
+edge is scanned directly from its rendered coverage buffer: the
+rightmost pixel whose coverage crosses half, matching where
+antialiasing places the visible edge to the eye. `layout_figures`
+threads an ink cursor through the glyph and every figure in order, each
+one's origin computed from the previous shape's own ink edge plus that
+boundary's constant minus the new shape's own leading bearing, so the
+canvas width the buffer is sized to is exactly where the last figure's
+own ink actually ends, not a reserved slot that may not agree with it.
+Because that final origin is rarely a whole pixel, `TextOrigin` carries
+the leftover fraction into CoreText's own text position, so the ink
+lands at the exact position the arithmetic calls for rather than
+snapping to the nearest device pixel.
+
+`GLYPH_GAP_PX` is a separate, larger constant than `FIGURE_GAP_PX`,
+not the same value applied a second time. A mark is a different kind
+of shape than a digit, and the eye expects a wider break between a
+symbol and a run of numbers than between two numbers; where that
+expectation and a shared constant would disagree, the wider break
+wins. Its value, like `FIGURE_GAP_PX`'s, is chosen by looking at
+rendered output at several value sets, not derived from another
+constant.
+
+The trade against the ink measurement: a leading digit's own bearing
+now nudges everything after it by a sub-pixel amount when that digit
+changes, even at the same digit count, since the ink cursor is
+threaded through every figure's own measured bearing rather than a
+digit-count-only advance. That shift is bounded by the spread between
+two digits' own side bearings, under a point, well under what a digit
+count actually changing moves things by; the alternative, positioning
+from the advance box, is exactly the uneven-gap bug this rule replaces.
+The glyph itself stays put regardless of any of this, since `render`
+draws it at a fixed offset before the ink cursor exists, so
+`geometry.rs`'s `glyph_center_offset_from_item_left_points` and the
+beak it derives are unaffected by anything happening to its right.
+
+A boundary between two different subscriptions' figure groups draws a
+hairline between the two gutters: 5-CSS-px, a 1-CSS-px hairline, then
+another 5-CSS-px, doubled for this buffer's 2x convention. `render`
+never draws a hairline before the very first segment overall,
+regardless of what the frontend sets on it, since there is no prior
+group for the first segment to part from.
 
 ## Compositing
 
