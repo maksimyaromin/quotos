@@ -100,6 +100,7 @@ pub fn run() {
                 launch_item,
             )?;
             shell::sync_status_item_length(&status_item, initial_w);
+            shell::disable_status_item_native_highlight(&status_item);
             app.manage(status_item);
 
             spawn_debug_auto_open_if_enabled(app.handle().clone());

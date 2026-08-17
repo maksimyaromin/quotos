@@ -174,6 +174,29 @@ pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn sync_status_item_length(_status_item: &tauri::tray::TrayIcon, _icon_width_px: u32) {}
 
+#[cfg(target_os = "macos")]
+pub(crate) fn disable_status_item_native_highlight(status_item: &tauri::tray::TrayIcon) {
+    use objc2_app_kit::NSCellStyleMask;
+    use objc2_foundation::MainThreadMarker;
+
+    let _ = status_item.with_inner_tray_icon(move |inner| {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(button) = inner.ns_status_item().and_then(|item| item.button(mtm)) else {
+            return;
+        };
+        let Some(cell) = button.cell() else {
+            return;
+        };
+        let _: () =
+            unsafe { objc2::msg_send![&*cell, setHighlightsBy: NSCellStyleMask::NoCellMask] };
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn disable_status_item_native_highlight(_status_item: &tauri::tray::TrayIcon) {}
+
 fn resync_docked_position_after_icon_change(
     app: &tauri::AppHandle,
     status_item: &tauri::tray::TrayIcon,
