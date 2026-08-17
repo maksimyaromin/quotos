@@ -27,22 +27,12 @@ function directives(): Map<string, string[]> {
   return map;
 }
 
-// The app draws every icon and glyph as inline SVG, and the status item's
-// own bitmap is set natively from Rust; nothing in the webview ever
-// resource-fetches an image. `img-src` grants no more than that.
 test("img-src grants only the app's own origin", () => {
   expect(directives().get("img-src")).toEqual(["'self'"]);
 });
 
-// Tauri's own local IPC bridge, not a remote host; see "connect-src ipc:
-// http://ipc.localhost for Tauri's own IPC transport" in
-// docs/platform-constraints.md.
 const IPC_ORIGIN = "http://ipc.localhost";
 
-// See "The policy names no remote host anywhere" in
-// docs/platform-constraints.md: every HTTP request this app makes happens
-// on the Rust side, so no directive here should need a wildcard, a bare
-// scheme, or an external host to do its job.
 test("no directive names a remote host or a wildcard source", () => {
   for (const [name, sources] of directives()) {
     for (const source of sources.filter((s) => s !== IPC_ORIGIN)) {

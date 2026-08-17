@@ -9,8 +9,6 @@ interface LanguageRule {
   lineCommentPrefixes: string[];
 }
 
-// One rule per language this cap has actually been swept for. A language
-// joins this list once its own comments are all three lines or fewer.
 const RULES: LanguageRule[] = [
   { extensions: [".rs"], lineCommentPrefixes: ["///", "//!", "//"] },
   { extensions: [".toml"], lineCommentPrefixes: ["#"] },

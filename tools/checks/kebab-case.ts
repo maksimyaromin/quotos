@@ -5,8 +5,6 @@ import { basename } from "node:path";
 const KEBAB_CASE = /^\.?[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)*$/;
 const RUST_MODULE_FILE = /^[a-z0-9]+(_[a-z0-9]+)*\.rs$/;
 
-// Established ecosystem conventions the owner chose to keep, spelled exactly
-// as their tooling requires.
 const EXACT_EXCEPTIONS = new Set([
   "README.md",
   "AGENTS.md",
@@ -17,9 +15,6 @@ const EXACT_EXCEPTIONS = new Set([
   "LICENSE",
 ]);
 
-// Path prefixes carrying their own naming authority: Rust's own snake_case
-// module convention, Tauri's generated icon set, and vendor font family
-// names.
 const EXEMPT_PREFIXES = ["src-tauri/icons/", "src/design-system/assets/fonts/"];
 
 const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })

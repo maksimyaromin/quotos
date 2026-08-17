@@ -27,7 +27,6 @@
     "rules": {
       "preset": "recommended",
       "a11y": {
-        // TODO: audit these rules individually instead of disabling them wholesale.
         "noSvgWithoutTitle": "off",
         "noStaticElementInteractions": "off",
         "useKeyWithClickEvents": "off",
@@ -47,7 +46,6 @@
   },
   "overrides": [
     {
-      // Non-null assertions are idiomatic in test fixtures. The production rule stays on elsewhere.
       "includes": ["**/*.spec.ts", "**/*.spec.tsx"],
       "linter": {
         "rules": {
