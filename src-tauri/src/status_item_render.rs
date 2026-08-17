@@ -3,8 +3,7 @@ use std::process::Command;
 const GLYPH_PX: u32 = 36;
 const SIDE_PAD_PX: u32 = 10;
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
-const GLYPH_TO_CELL_GAP_PX: u32 = 2;
-const CELL_WIDTH_PX: u32 = 60;
+const FIGURE_GAP_PX: u32 = 8;
 const GROUP_GUTTER_PRE_PX: u32 = 10;
 const HAIRLINE_WIDTH_PX: u32 = 2;
 const GROUP_GUTTER_POST_PX: u32 = 10;
@@ -589,9 +588,9 @@ fn text_area_width(segments: &[StatusItemSegment], widths: &[u32]) -> u32 {
     }
     let boundaries = segments.iter().skip(1).filter(|s| s.group_start).count() as u32;
     let gutter_px = GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
-    let last_width = *widths.last().unwrap_or(&0);
-    let non_last_segments = segments.len().saturating_sub(1) as u32;
-    GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX * non_last_segments + last_width + boundaries * gutter_px
+    let figure_gaps = segments.len() as u32 - 1 - boundaries;
+    let total_text_width: u32 = widths.iter().sum();
+    FIGURE_GAP_PX + total_text_width + figure_gaps * FIGURE_GAP_PX + boundaries * gutter_px
 }
 
 pub fn render(
@@ -635,26 +634,27 @@ pub fn render(
         }
     }
 
-    let mut x = SIDE_PAD_PX + GLYPH_PX + GLYPH_TO_CELL_GAP_PX;
-    let last_index = segments.len().saturating_sub(1);
+    let mut x = SIDE_PAD_PX + GLYPH_PX + FIGURE_GAP_PX;
     for (i, (seg, w)) in segments.iter().zip(widths.iter()).enumerate() {
-        if seg.group_start && i > 0 {
-            x += GROUP_GUTTER_PRE_PX;
-            draw_hairline(&mut buf, total_w, total_h, x, dark);
-            x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
+        if i > 0 {
+            if seg.group_start {
+                x += GROUP_GUTTER_PRE_PX;
+                draw_hairline(&mut buf, total_w, total_h, x, dark);
+                x += HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX;
+            } else {
+                x += FIGURE_GAP_PX;
+            }
         }
-        let cell_width = if i == last_index { *w } else { CELL_WIDTH_PX };
-        let text_x = x + cell_width.saturating_sub(*w) / 2;
         text::draw_text(
             &mut buf,
             total_w,
             total_h,
-            text_x,
+            x,
             &font,
             &seg.text,
             seg.color.rgba(dark),
         );
-        x += cell_width;
+        x += w;
     }
 
     (buf, total_w, total_h)
@@ -841,7 +841,37 @@ mod tests {
     }
 
     #[test]
-    fn a_non_trailing_figures_digit_count_never_moves_what_follows_it() {
+    fn a_non_trailing_figures_same_digit_count_never_moves_what_follows_it() {
+        let a = render(
+            &[
+                seg("42%", StatusItemColor::Neutral),
+                seg("50%", StatusItemColor::Neutral),
+            ],
+            false,
+            0,
+            false,
+        );
+        let b = render(
+            &[
+                seg("77%", StatusItemColor::Neutral),
+                seg("50%", StatusItemColor::Neutral),
+            ],
+            false,
+            0,
+            false,
+        );
+        assert_eq!(
+            a.1, b.1,
+            "a non-trailing segment's digit count staying put must not jitter the image width"
+        );
+    }
+
+    #[test]
+    fn a_non_trailing_figures_different_digit_count_now_moves_what_follows_it() {
+        let font = text::load_font(text_font_size_pt());
+        let narrow_width = text::measure(&font, "9%");
+        let wide_width = text::measure(&font, "100%");
+
         let narrow_first = render(
             &[
                 seg("9%", StatusItemColor::Neutral),
@@ -861,8 +891,9 @@ mod tests {
             false,
         );
         assert_eq!(
-            narrow_first.1, wide_first.1,
-            "a non-trailing segment's own digit count must not change the image width"
+            wide_first.1 - narrow_first.1,
+            wide_width - narrow_width,
+            "a non-trailing segment's own digit count now reserves exactly its own width, so what follows shifts by that segment's width delta"
         );
     }
 
@@ -930,13 +961,13 @@ mod tests {
         );
         assert_eq!(
             two_groups.1 - same_group.1,
-            GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX,
-            "a group boundary must add exactly the gutter+hairline width"
+            GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX - FIGURE_GAP_PX,
+            "a group boundary must replace the plain figure gap it displaces with the gutter+hairline width"
         );
 
         let (buf, w, h) = two_groups;
-        let gutter_x =
-            SIDE_PAD_PX + GLYPH_PX + GLYPH_TO_CELL_GAP_PX + CELL_WIDTH_PX + GROUP_GUTTER_PRE_PX;
+        let first_width = text::measure(&text::load_font(text_font_size_pt()), "9%");
+        let gutter_x = SIDE_PAD_PX + GLYPH_PX + FIGURE_GAP_PX + first_width + GROUP_GUTTER_PRE_PX;
         let mid_row = h / 2;
         let painted = (gutter_x..gutter_x + HAIRLINE_WIDTH_PX)
             .any(|x| buf[(((mid_row * w) + x) * 4 + 3) as usize] > 0);

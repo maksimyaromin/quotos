@@ -62,23 +62,31 @@ constant 100%. It starts right where the gap ends, sweeps forward by
 `used_fraction` of the maximum possible sweep, `TAU` minus the gap's
 own width, and lands exactly on the gap's other edge at 100%.
 
-## Laying out pinned figures
+## Spacing the figures evenly
 
-Every segment but the trailing one reserves a fixed `CELL_WIDTH_PX`
-rather than its own measured width: an earlier segment's digit count
-changing width must never move anything to its right, since
-`geometry.rs` derives the beak's position from the glyph, which sits at
-a fixed offset from the image's own left edge, and only the image's
-total width, driven by the trailing segment, is allowed to change. Only
-the trailing cell sizes itself to its own measured text, centered inside
-whichever reserve applies.
+Every figure sizes to its own measured width, laid out edge to edge
+with a fixed `FIGURE_GAP_PX` ink-to-ink gap, the same gap used between
+the glyph and the first figure. An earlier design reserved a fixed cell
+per figure instead, centering shorter text inside it; a two-character
+`2%` then got roughly twice the air of a three-character `74%` on each
+side, so the visible gap between adjacent figures tracked each one's
+own digit count rather than looking uniform.
 
-A boundary between two different subscriptions' figure groups draws a
-gutter, a 1-CSS-px hairline, then another gutter, 5+1+5 CSS-px doubled
-for this buffer's 2x convention, so the visible gap across the hairline
-also includes each side's own cell-centering margin on top of that
-11px-doubled gutter. `render` never draws a hairline before the very
-first segment overall, regardless of what the frontend sets on it, since
+The trade: an earlier segment's digit count changing width now does
+move everything to its right, since nothing pins it to a fixed slot any
+more. The glyph itself stays put regardless, since `render` draws it at
+a fixed offset before any figure is laid out, so `geometry.rs`'s
+`glyph_center_offset_from_item_left_points` and the beak it derives are
+unaffected. The font is tabular, so a value replacing another of the
+same digit count, `42%` for `77%`, measures identically and moves
+nothing; only an actual change in digit count shifts what follows, by
+exactly that segment's own width delta.
+
+A boundary between two different subscriptions' figure groups draws its
+own gutter instead of the plain figure gap: 5-CSS-px, a 1-CSS-px
+hairline, then another 5-CSS-px, doubled for this buffer's 2x
+convention. `render` never draws a hairline before the very first
+segment overall, regardless of what the frontend sets on it, since
 there is no prior group for the first segment to part from.
 
 ## Compositing
