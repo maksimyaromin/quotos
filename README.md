@@ -111,3 +111,7 @@ security issue instead? See [SECURITY.md](SECURITY.md).
 
 [MIT](LICENSE) for the application. The bundled Inter typeface is
 licensed separately under the [SIL Open Font License, Version 1.1](src/design-system/assets/fonts/OFL.txt).
+The interface's monospace numerals use MonoLisa, a commercial font whose
+license does not allow redistribution, so this repository does not ship
+it; a checkout with MonoLisa's own `.woff2` files in place uses it, and
+any other checkout falls back to a system monospace font.

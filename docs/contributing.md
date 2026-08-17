@@ -189,6 +189,25 @@ files under `src/design-system/assets/fonts/` and the icon set under
 `check:kebab-case` lane of `npm run verify` enforces this across every
 tracked file, with exactly these exceptions.
 
+## Fonts
+
+Inter ships in the tree and is tracked; its SIL Open Font License text sits
+beside it at `src/design-system/assets/fonts/OFL.txt`. MonoLisa is licensed
+per-machine and cannot be redistributed, so its four `.woff2` files are
+untracked and `.gitignore`d, even though a checkout that has them, such as
+the one MonoLisa's owner works from, keeps them on disk.
+
+`src/design-system/tokens/monolisa.generated.css` holds MonoLisa's
+`@font-face` rules and is itself untracked: `tools/generate-monolisa-font-faces.ts`
+writes it from whatever `MonoLisa-*.woff2` files it finds under
+`src/design-system/assets/fonts/`, empty when it finds none, and runs
+automatically before `npm run dev` and `npm run build` through the
+`predev`/`prebuild` npm hooks. `src/design-system/tokens/fonts.css` imports
+the generated file first, since a stylesheet's own `@import` rules must
+precede its other rules. A checkout without the font files still builds
+and runs; the panel's monospace numerals fall back to the next font in
+`--font-mono` (`src/design-system/tokens/typography.css`) instead.
+
 ## Comments
 
 The default is deletion. A comment earns its line by explaining an idea
