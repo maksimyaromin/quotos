@@ -7,6 +7,8 @@ export default defineConfig(async () => ({
   plugins: [react()],
 
   build: {
+    // Pinned to match tauri.conf.json's minimumSystemVersion; Vite's own
+    // default target drifts forward on its own schedule otherwise.
     target: "safari18",
   },
 
@@ -17,6 +19,8 @@ export default defineConfig(async () => ({
   test: {
     environment: "jsdom",
     css: {
+      // Vitest stubs CSS imports as empty strings by default; these
+      // patterns opt module and ?raw imports back into their real content.
       include: [/\?raw$/, /\.module\.css$/],
     },
   },
