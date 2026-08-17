@@ -1,18 +1,8 @@
-//! Docked-panel placement arithmetic, pure math and read-only screen
-//! queries only; `shell.rs` moves windows. See docs/architecture.md's
-//! "Coordinate spaces and panel placement" and "The beak".
-
 use crate::status_item_render;
 
-/// The window's own fixed logical size, from `tauri.conf.json`. Duplicated
-/// rather than read back from the window, so the Resized-event guard in
-/// `run`'s `setup` has a ground truth to snap back to.
 pub(crate) const PANEL_WINDOW_WIDTH_LOGICAL: f64 = 360.0;
 pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 
-/// The status item glyph's own center, as an offset in points from the
-/// item's own left edge, not the whole button's center. Returns points,
-/// never physical pixels; see docs/architecture.md.
 fn glyph_center_offset_from_item_left_points(
     item_width_points: Option<f64>,
     icon_width_px: f64,
@@ -25,21 +15,11 @@ fn glyph_center_offset_from_item_left_points(
     margin_points + status_item_render::GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0
 }
 
-/// The coordinate space this whole module speaks: global points, never
-/// physical pixels, since the APIs this module depends on disagree on
-/// which display's scale factor a `Physical*` value used. See docs/architecture.md.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct DisplayPoints {
-    /// Top-left corner in the global point space.
     pub(crate) origin: (f64, f64),
-    /// Size in points.
     pub(crate) size: (f64, f64),
-    /// This display's own backing scale factor. Needed only to undo the
-    /// multiplication `tray-icon` applied to the status item rect.
     pub(crate) scale: f64,
-    /// Global-point y of this display's own menu bar bottom, read live
-    /// from `NSScreen.visibleFrame`, never hardcoded: a notched built-in's
-    /// bar is noticeably taller than an external display's. `None` off macOS.
     pub(crate) menu_bar_bottom: Option<f64>,
 }
 
@@ -52,15 +32,12 @@ impl DisplayPoints {
     }
 }
 
-/// Recovers the global-point position of a `tray-icon` rect and the
-/// display it belongs to, by trying each display's own scale factor and
-/// keeping the one whose quotient lands inside that display. See docs/architecture.md.
 pub(crate) fn resolve_status_item_point(
     displays: &[DisplayPoints],
     item_x: f64,
     item_y: f64,
 ) -> Option<(usize, f64, f64)> {
-    let mut best: Option<(usize, f64, f64, f64)> = None; // (index, x, y, distance below that display's top)
+    let mut best: Option<(usize, f64, f64, f64)> = None;
     for (index, display) in displays.iter().enumerate() {
         if display.scale <= 0.0 {
             continue;
@@ -77,9 +54,6 @@ pub(crate) fn resolve_status_item_point(
     best.map(|(index, x, y, _)| (index, x, y))
 }
 
-/// Every display, in global points. Reads `NSScreen` directly on macOS,
-/// the only API that also reports `visibleFrame`, needing the main
-/// thread; the `tao` path below is the fallback, losing the bar height.
 #[cfg(target_os = "macos")]
 pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPoints> {
     use objc2_app_kit::NSScreen;
@@ -89,8 +63,6 @@ pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPo
         return displays_in_points_via_tao(window);
     };
     let screens = NSScreen::screens(mtm);
-    // AppKit's global space is y-up; this module is y-down. The first
-    // screen's own height is the flip constant, its origin being (0,0).
     let Some(flip) = screens.iter().next().map(|s| s.frame().size.height) else {
         return displays_in_points_via_tao(window);
     };
@@ -100,9 +72,6 @@ pub(crate) fn displays_in_points(window: &tauri::WebviewWindow) -> Vec<DisplayPo
             let frame = screen.frame();
             let visible = screen.visibleFrame();
             let top = flip - (frame.origin.y + frame.size.height);
-            // visibleFrame also excludes the Dock, but the Dock never sits
-            // at the top, so the difference at the top edge is the menu
-            // bar and nothing else.
             let menu_bar_height =
                 (frame.origin.y + frame.size.height) - (visible.origin.y + visible.size.height);
             DisplayPoints {
@@ -142,9 +111,6 @@ fn displays_in_points_via_tao(window: &tauri::WebviewWindow) -> Vec<DisplayPoint
         .collect()
 }
 
-/// Where the docked panel window belongs, all in global points (see
-/// `DisplayPoints`): the window's own top-left, plus the beak's CSS `left`
-/// inside the panel.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct DockedLayout {
     pub(crate) x: f64,
@@ -152,9 +118,6 @@ pub(crate) struct DockedLayout {
     pub(crate) beak_left: f64,
 }
 
-/// The pure half of `compute_docked_layout`. Takes no `tauri` handles, so
-/// the placement rules are unit-testable against real two-display
-/// geometry instead of only on a live screen.
 pub(crate) fn docked_layout_in_points(
     display: DisplayPoints,
     item_left: f64,
@@ -164,48 +127,32 @@ pub(crate) fn docked_layout_in_points(
     icon_width_px: f64,
 ) -> DockedLayout {
     const PANEL_WIDTH: f64 = 332.0;
-    // However far left the beak wants the panel, it can never hang off
-    // the display's right edge.
     const RIGHT_CLAMP: f64 = 340.0;
 
-    // x is derived from the beak's wanted position, not the panel's; see
-    // docs/architecture.md's "The beak" for why that construction is required.
-    const BEAK_BASE_WIDTH: f64 = 20.0; // BEAK_BASE_HALF * 2 in Panel.jsx
-    const BEAK_HEIGHT: f64 = 10.0; // BEAK_HEIGHT in Panel.jsx
-    const BEAK_INSET_IN_PANEL: f64 = 20.0; // notch's left edge, from the panel's own left edge
-    const BEAK_TIP_CLEARANCE: f64 = 2.0; // how far the tip stops short of the menu bar
+    const BEAK_BASE_WIDTH: f64 = 20.0;
+    const BEAK_HEIGHT: f64 = 10.0;
+    const BEAK_INSET_IN_PANEL: f64 = 20.0;
+    const BEAK_TIP_CLEARANCE: f64 = 2.0;
 
-    // Mirrors app.css's own insets: shadow-blur margin, and headroom for
-    // the beak. Both are load-bearing, since the window is what's positioned.
     const PANEL_INSET_X: f64 = (PANEL_WINDOW_WIDTH_LOGICAL - PANEL_WIDTH) / 2.0;
-    const PANEL_INSET_TOP: f64 = 12.0; // app.css's body { padding-top }, Panel.jsx's NOTCH_RESERVE
+    const PANEL_INSET_TOP: f64 = 12.0;
 
     let glyph_center =
         item_left + glyph_center_offset_from_item_left_points(item_width_points, icon_width_px);
 
-    // Places the window so the beak lands at its wanted inset on the
-    // glyph's center, then clamps x to the display.
     let wanted_panel_left = glyph_center - BEAK_INSET_IN_PANEL - BEAK_BASE_WIDTH / 2.0;
     let mut x = wanted_panel_left - PANEL_INSET_X;
     x = x.max(display.origin.0);
     let max_x = (display.origin.0 + display.size.0 - RIGHT_CLAMP).max(display.origin.0);
     x = x.min(max_x);
 
-    // visibleFrame reports no bar height inside a full-screen Space, so
-    // this reconstructs it from the item's own centering; see docs/architecture.md.
     let inset_above_item = (item_top - display.origin.1).max(0.0);
-    // NEG_INFINITY, not 0: a display left of the primary has negative
-    // coordinates, where 0 is not a neutral floor but a point far below it.
     let menu_bar_bottom = display
         .menu_bar_bottom
         .unwrap_or(f64::NEG_INFINITY)
         .max(item_bottom + inset_above_item);
-    // Solves for the window top from where the beak's tip should end up:
-    // tip = y + PANEL_INSET_TOP - BEAK_HEIGHT, and tip should be
-    // BEAK_TIP_CLEARANCE below the bar.
     let y = menu_bar_bottom + BEAK_TIP_CLEARANCE - (PANEL_INSET_TOP - BEAK_HEIGHT);
 
-    // Recomputed from the applied x, not the wanted one; see docs/architecture.md.
     let panel_left = x + PANEL_INSET_X;
     let beak_left = (glyph_center - panel_left - BEAK_BASE_WIDTH / 2.0)
         .clamp(0.0, PANEL_WIDTH - BEAK_BASE_WIDTH);
@@ -213,17 +160,12 @@ pub(crate) fn docked_layout_in_points(
     DockedLayout { x, y, beak_left }
 }
 
-/// Where a header-drag gesture started: the live cursor and the window's
-/// own top-left, both in global points. Held in `AppState.manual_drag_anchor`.
 #[derive(Clone, Copy)]
 pub(crate) struct DragAnchor {
     pub(crate) mouse: (f64, f64),
     pub(crate) window_top_left: (f64, f64),
 }
 
-/// Pure delta math for `drag_window_step`. The target keeps the same
-/// offset from the cursor it had when the gesture began, so a drag never
-/// accumulates rounding drift the way re-anchoring to the last step would.
 pub(crate) fn drag_target_from_anchor(anchor: DragAnchor, current_mouse: (f64, f64)) -> (f64, f64) {
     (
         anchor.window_top_left.0 + (current_mouse.0 - anchor.mouse.0),
@@ -271,8 +213,6 @@ mod tests {
     mod docked_layout {
         use super::super::{DisplayPoints, docked_layout_in_points, resolve_status_item_point};
 
-        // Deliberately different menu bar heights per display: 33pt built-in,
-        // 24pt external, so a single wrong constant would fail one of them.
         const BUILT_IN: DisplayPoints = DisplayPoints {
             origin: (0.0, 0.0),
             size: (1728.0, 1117.0),
@@ -286,11 +226,8 @@ mod tests {
             menu_bar_bottom: Some(-831.0),
         };
 
-        // A bare status item as it really measures: the 18pt glyph padded
-        // to a 30pt image, status_item_render's SIDE_PAD_PX, inside an
-        // NSStatusItem 8pt wider on each side again.
         const ITEM_W: f64 = 46.0;
-        const ICON_PX: f64 = 60.0; // that 30pt image at the fixed 2x convention
+        const ICON_PX: f64 = 60.0;
 
         fn glyph_center(item_left: f64, item_w: f64, icon_px: f64) -> f64 {
             item_left
@@ -313,8 +250,6 @@ mod tests {
             vec![BUILT_IN, EXTERNAL]
         }
 
-        // tray-icon multiplies 1183 by the built-in's scale, arriving as
-        // 2366; only dividing by that same display's scale recovers 1183.
         #[test]
         fn a_status_item_rect_from_the_retina_built_in_resolves_to_that_display_in_points() {
             let (index, x, y) = resolve_status_item_point(&displays(), 2366.0, 0.0)
@@ -324,8 +259,6 @@ mod tests {
             assert!(y.abs() < 0.01, "got {y}");
         }
 
-        // The mirror case: negative point coordinates, and a 1x scale
-        // where the raw value is already the answer.
         #[test]
         fn a_status_item_rect_from_the_1x_external_display_resolves_to_that_display_in_points() {
             let (index, x, y) = resolve_status_item_point(&displays(), -400.0, -855.0)
@@ -340,9 +273,6 @@ mod tests {
             assert!(resolve_status_item_point(&displays(), 90_000.0, 90_000.0).is_none());
         }
 
-        // tip = y + (panel top inset 12 - beak height 10) lands the
-        // window's own top flush with the bar, at that display's own
-        // menu_bar_bottom plus BEAK_TIP_CLEARANCE.
         #[test]
         fn the_beaks_tip_sits_just_under_the_menu_bar_of_its_own_display() {
             let tip = |l: super::super::DockedLayout| l.y + (12.0 - 10.0);
@@ -411,9 +341,6 @@ mod tests {
             );
         }
 
-        // Reconstructing the bar from the status item, since a status item
-        // is centered in its bar, must land on the same answer as reading
-        // the bar directly.
         #[test]
         fn a_hidden_menu_bar_is_reconstructed_from_the_status_item_to_the_same_answer() {
             let hidden_bar = DisplayPoints {
@@ -488,11 +415,8 @@ mod tests {
             );
         }
 
-        // Pinning digits widens the item and moves its left edge, and the
-        // glyph, left; what must hold is the beak on the glyph's real center.
         #[test]
         fn the_beak_lands_on_the_glyph_center_both_before_and_after_pinning() {
-            // window x + the 14pt shadow-blur inset + beak_left + half the 12pt notch
             let beak_center = |l: super::super::DockedLayout| l.x + 14.0 + l.beak_left + 10.0;
 
             let bare = docked_layout_in_points(
@@ -515,9 +439,6 @@ mod tests {
                 bare.x
             );
 
-            // The item's right edge holds and its left edge moves left as
-            // the composited image widens to fit the glyph plus one
-            // pinned segment.
             let pinned = docked_layout_in_points(
                 BUILT_IN,
                 1155.0,
@@ -538,8 +459,6 @@ mod tests {
                 pinned.x
             );
 
-            // Unpinning restores the bare geometry exactly, no hysteresis,
-            // since every input is re-derived rather than accumulated.
             let unpinned = docked_layout_in_points(
                 BUILT_IN,
                 1183.0,
@@ -553,7 +472,7 @@ mod tests {
 
         #[test]
         fn at_the_right_screen_edge_the_panel_stops_and_the_beak_keeps_tracking() {
-            let item_left = 1728.0 - 40.0; // icon hard against the built-in's right edge
+            let item_left = 1728.0 - 40.0;
             let layout = docked_layout_in_points(
                 BUILT_IN,
                 item_left,
@@ -599,7 +518,6 @@ mod tests {
 
         #[test]
         fn the_target_preserves_the_grab_offset_across_a_move() {
-            // Grabbed 80pt right, 50pt down of the window's own top-left.
             let anchor = DragAnchor {
                 mouse: (500.0, 200.0),
                 window_top_left: (420.0, 150.0),

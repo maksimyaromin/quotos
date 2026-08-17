@@ -1,7 +1,3 @@
-//! Claude Code's own statusline feed, a zero-cost second usage source. See
-//! "The statusline feed" in docs/claude-provider.md for why it exists, the
-//! six rules the write path follows, and how the frontend reconciles it.
-
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -11,39 +7,18 @@ use sha2::{Digest, Sha256};
 
 use crate::atomic_write::write_string as atomic_write_string;
 
-/// `main.rs` checks for this as `argv[1]` before calling into Tauri at
-/// all. See [`ensure_helper_installed`] for why the copied helper is the
-/// same executable as the GUI app rather than a separate binary.
 pub const INGEST_FLAG: &str = "--quotos-statusline-ingest";
 
-/// Ceiling on the statusline hook's stdin payload, a small flat JSON
-/// object, so a misbehaving caller can never make the ingest path buffer
-/// unbounded memory.
 const MAX_STDIN_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StatuslineError {
-    /// The account's settings.json exists but did not parse as a JSON
-    /// object. Refuses and changes nothing.
-    ParseFailed {
-        message: String,
-    },
-    ReadFailed {
-        message: String,
-    },
-    WriteFailed {
-        message: String,
-    },
-    HelperInstallFailed {
-        message: String,
-    },
-    /// A `statusLine` is already configured and differs from Quotos's own.
-    /// Carries what is there so the UI can show it before asking for an
-    /// explicit replace.
-    Conflict {
-        existing_command: String,
-    },
+    ParseFailed { message: String },
+    ReadFailed { message: String },
+    WriteFailed { message: String },
+    HelperInstallFailed { message: String },
+    Conflict { existing_command: String },
 }
 
 impl StatuslineError {
@@ -75,8 +50,6 @@ pub struct InstallOutcome {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StatuslineWindowDto {
     pub used_percentage: f64,
-    /// Unix epoch seconds, exactly as the statusline hook's own
-    /// `rate_limits.*.resets_at` documents it.
     pub resets_at: Option<i64>,
 }
 
@@ -86,9 +59,6 @@ pub struct StatuslineRateLimitsDto {
     pub seven_day: Option<StatuslineWindowDto>,
 }
 
-/// One reading, timestamped by when the helper actually saw it, not when
-/// Quotos later reads the file, so freshest-wins reconciliation is a
-/// plain timestamp comparison.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StatuslineFeedDto {
     pub written_at: String,
@@ -98,17 +68,10 @@ pub struct StatuslineFeedDto {
 #[derive(Serialize, Deserialize, Default)]
 struct BackupRecord {
     backed_up_at: String,
-    /// Empty when there was no previous file at all to back up.
     settings_backup_path: String,
-    /// `None` means the account had no `statusLine` before Quotos touched
-    /// it, so remove() must then delete the key rather than write back a
-    /// null.
     previous_status_line: Option<serde_json::Value>,
 }
 
-/// A stable, filesystem-safe identifier for a config dir, the same
-/// hash-the-absolute-path shape `providers/claude.rs` uses for Keychain
-/// service names, so two accounts never collide on a filename.
 fn slug_for(tag: &str) -> String {
     let digest = Sha256::digest(tag.as_bytes());
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
@@ -138,9 +101,6 @@ fn settings_path(config_dir: &Path) -> PathBuf {
     config_dir.join("settings.json")
 }
 
-/// Single-quotes a path for the shell `statusLine.command` runs under.
-/// Handles the one case that matters for a filesystem path, an embedded
-/// single quote, since macOS home directories can contain spaces.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
@@ -160,9 +120,6 @@ fn atomic_write_json(path: &Path, value: &serde_json::Value) -> Result<(), Strin
     atomic_write_string(path, &json)
 }
 
-/// Copies Quotos's own running executable to a stable path in Application
-/// Support, so `statusLine.command` keeps working after the app moves.
-/// See docs/claude-provider.md for why this reuses the GUI binary.
 fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, StatuslineError> {
     let target = helper_bin_path(app_support_dir);
     let current_exe =
@@ -172,9 +129,6 @@ fn ensure_helper_installed(app_support_dir: &Path) -> Result<PathBuf, Statusline
             ),
         })?;
 
-    // A cheap, best-effort staleness check using size only, not a strict
-    // integrity check, just enough to re-copy after an app update without
-    // re-copying tens of megabytes on every install click.
     let needs_copy = match (fs::metadata(&target), fs::metadata(&current_exe)) {
         (Ok(target_meta), Ok(current_meta)) => target_meta.len() != current_meta.len(),
         _ => true,
@@ -211,9 +165,6 @@ fn mark_executable(path: &Path) -> Result<(), StatuslineError> {
     })
 }
 
-/// Reads and parses `config_dir/settings.json`. A missing file reads as an
-/// empty object, meaning nothing configured yet. A present but unparseable
-/// file is refused rather than guessed at.
 fn read_settings(path: &Path) -> Result<serde_json::Value, StatuslineError> {
     match fs::read_to_string(path) {
         Ok(raw) => parse_settings(&raw),
@@ -239,9 +190,6 @@ fn parse_settings(raw: &str) -> Result<serde_json::Value, StatuslineError> {
     Ok(parsed)
 }
 
-/// What is currently configured for this account: nothing, exactly
-/// Quotos's own helper invocation, or something else, which is a conflict
-/// the UI must show before offering to replace.
 pub fn status(
     app_support_dir: &Path,
     config_dir: &Path,
@@ -267,9 +215,6 @@ pub fn status(
     }
 }
 
-/// Installs the helper if needed and points `settings.json`'s `statusLine`
-/// at it. Idempotent when already installed. Refuses a different existing
-/// `statusLine` unless `force`, re-derived from a fresh read, not `status()`.
 pub fn install(
     app_support_dir: &Path,
     config_dir: &Path,
@@ -331,9 +276,6 @@ pub fn install(
     })
 }
 
-/// A timestamped backup of the whole previous file, plus a metadata
-/// record of the previous `statusLine` value that [`remove`] actually
-/// restores from; the whole-file backup is an inspectable safety net.
 fn backup(
     app_support_dir: &Path,
     config_dir: &Path,
@@ -365,9 +307,6 @@ fn backup(
     Ok(())
 }
 
-/// Restores exactly the previous `statusLine` state, or removes the key
-/// if none existed, and clears the backup metadata. A second `remove()`
-/// with nothing left to restore just clears the key.
 pub fn remove(app_support_dir: &Path, config_dir: &Path) -> Result<(), StatuslineError> {
     let slug = slug_for(&config_dir.to_string_lossy());
     let meta_file = meta_path(app_support_dir, &slug);
@@ -394,9 +333,6 @@ pub fn remove(app_support_dir: &Path, config_dir: &Path) -> Result<(), Statuslin
     Ok(())
 }
 
-/// A best-effort read of the helper's last write for this account. `None`
-/// covers never-installed, never-fed, and unreadable identically, since
-/// all three degrade silently to the API source for the caller.
 pub fn read_feed(app_support_dir: &Path, config_dir: &Path) -> Option<StatuslineFeedDto> {
     let slug = slug_for(&config_dir.to_string_lossy());
     let path = feed_dir(app_support_dir).join(format!("{slug}.json"));
@@ -425,9 +361,6 @@ fn extract_rate_limits(v: &serde_json::Value) -> Option<StatuslineRateLimitsDto>
     })
 }
 
-/// The helper's entire job, run from `main.rs` before any Tauri or GUI
-/// code. Always returns 0 and writes nothing on failure, since Claude
-/// Code's own docs say that just blanks the statusline row, never an error.
 pub fn run_ingest_from_stdin(config_dir_tag: &str, feed_dir_arg: &str) -> i32 {
     let mut buf = String::new();
     if std::io::stdin()
@@ -440,8 +373,6 @@ pub fn run_ingest_from_stdin(config_dir_tag: &str, feed_dir_arg: &str) -> i32 {
     let Ok(payload) = serde_json::from_str::<serde_json::Value>(&buf) else {
         return 0;
     };
-    // Absent entirely on the session's first invocation, or for a
-    // non-subscriber account. Nothing to write yet, not an error.
     let Some(rate_limits_raw) = payload.get("rate_limits") else {
         return 0;
     };
@@ -468,8 +399,6 @@ mod tests {
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    /// A throwaway directory tree under the OS temp dir, cleaned up on
-    /// drop. Never a real `~/.claude*` directory.
     struct TempDirs {
         config_dir: PathBuf,
         app_support_dir: PathBuf,
@@ -630,21 +559,15 @@ mod tests {
     #[test]
     fn a_statusline_that_appears_between_a_status_check_and_install_is_still_caught() {
         let dirs = TempDirs::new();
-        // No statusLine yet. An earlier status() call would have said
-        // NotInstalled.
         assert_eq!(
             status(&dirs.app_support_dir, &dirs.config_dir).unwrap(),
             IntegrationStatus::NotInstalled
         );
 
-        // Something else, such as Claude Code's own /statusline command or
-        // another tool, writes a statusLine in between.
         dirs.write_settings(
             r#"{"statusLine": {"type": "command", "command": "~/.claude/someone-elses.sh"}}"#,
         );
 
-        // install() must re-derive the conflict from the file as it is now,
-        // not from the stale NotInstalled the caller saw earlier.
         let result = install(&dirs.app_support_dir, &dirs.config_dir, false);
         assert!(matches!(result, Err(StatuslineError::Conflict { .. })));
     }
@@ -654,7 +577,6 @@ mod tests {
         let dirs = TempDirs::new();
         install(&dirs.app_support_dir, &dirs.config_dir, false).expect("first install");
 
-        // Something else overwrites Quotos's entry after it installed it.
         dirs.write_settings(
             r#"{"statusLine": {"type": "command", "command": "~/.claude/someone-elses.sh"}}"#,
         );
@@ -861,9 +783,6 @@ mod tests {
         assert_eq!(read_back, feed);
     }
 
-    /// Two live sessions on the same account can write the same feed file
-    /// concurrently. A shared temp name would let one writer's
-    /// `File::create` truncate another's mid-rename, splicing the result.
     #[test]
     fn overlapping_writers_leave_one_intact_payload_and_no_temp_files() {
         let dirs = TempDirs::new();
@@ -929,9 +848,6 @@ mod tests {
     #[test]
     fn a_window_missing_used_percentage_is_skipped_not_zeroed() {
         let raw = serde_json::json!({ "five_hour": { "resets_at": 1738425600 } });
-        // five_hour is present as an object but unusable, so it is treated
-        // as absent. Since seven_day is also absent, the whole thing is
-        // None.
         assert!(extract_rate_limits(&raw).is_none());
     }
 
@@ -941,9 +857,6 @@ mod tests {
         let feeds = feed_dir(&dirs.app_support_dir);
         fs::create_dir_all(&feeds).unwrap();
 
-        // Exercises the same extraction the real stdin path uses. The I/O
-        // wrapper itself, run_ingest_from_stdin, only adds stdin reading,
-        // which is not meaningfully unit-testable without a real pipe.
         let payload: serde_json::Value = serde_json::from_str(
             r#"{"rate_limits": {"five_hour": {"used_percentage": 2, "resets_at": 100}, "seven_day": null}}"#,
         )

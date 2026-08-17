@@ -1,7 +1,3 @@
-//! Claude Code provider adapter. Reads a Keychain-backed OAuth token and
-//! calls the undocumented but first-party `/api/oauth/usage` and
-//! `/api/oauth/profile` endpoints.
-
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -15,26 +11,10 @@ const USER_AGENT: &str = "claude-code/2.1.227";
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 
-/// How close to its own stated expiry an access token has to be before
-/// Quotos renews it before spending a request on it, removing the whole
-/// "expired between the read and the request" class of 401s.
 const EXPIRY_MARGIN_MS: i64 = 60_000;
-
-/// Ceiling on how long Quotos will wait for the Claude Code CLI while it
-/// renews a credential. Generous, since the CLI does real work, but
-/// bounded, so a wedged child process can never wedge a read.
 const CLI_REFRESH_TIMEOUT: Duration = Duration::from_secs(20);
-
-/// Ceiling on the login-shell probe used to find the CLI, defined below. A
-/// user's rc files are arbitrary code, and this keeps a slow one from
-/// stalling a read.
 const CLI_LOOKUP_TIMEOUT: Duration = Duration::from_secs(6);
-
-/// Only ever used when the sign-in really is what is wrong. See
-/// `classify_unrenewable`.
 const SIGN_IN_EXPIRED: &str = "the stored sign-in is no longer accepted";
-
-/// `security(1)`'s exit status for `errSecItemNotFound`, measured.
 const KEYCHAIN_ITEM_NOT_FOUND_EXIT: i32 = 44;
 
 fn home_dir() -> Option<PathBuf> {
@@ -45,9 +25,6 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-/// `QUOTOS_DEBUG_READS=1` traces the credential and read decisions to
-/// stderr, silent by default. Never prints a token, only whether one was
-/// found and how long it has left.
 fn trace_enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("QUOTOS_DEBUG_READS").is_some())
@@ -61,9 +38,6 @@ macro_rules! read_trace {
     };
 }
 
-/// Scans the home directory for `~/.claude` and any `~/.claude-<name>`
-/// sibling. A directory only qualifies when it resolves to a usable
-/// Keychain credential, so a stray folder can't show up as an invented account.
 pub fn discover_accounts() -> Vec<AccountDescriptor> {
     let Some(home) = home_dir() else {
         return vec![];
@@ -71,9 +45,6 @@ pub fn discover_accounts() -> Vec<AccountDescriptor> {
     discover_accounts_in(&home, credential_exists_in_keychain)
 }
 
-/// The pure, testable core of discovery, split out from
-/// [`discover_accounts`] so the qualification logic is unit-testable
-/// without touching the real Keychain.
 fn discover_accounts_in(
     home: &Path,
     has_credential: impl Fn(&Path) -> bool,
@@ -91,9 +62,6 @@ fn discover_accounts_in(
 
     if let Ok(entries) = std::fs::read_dir(home) {
         let mut candidates: Vec<_> = entries.flatten().collect();
-        // Deterministic ordering: directory iteration order is not
-        // guaranteed by the OS, and the account list should not reshuffle
-        // between runs for no reason.
         candidates.sort_by_key(|e| e.file_name());
         for entry in candidates {
             let name = entry.file_name();
@@ -117,8 +85,6 @@ fn discover_accounts_in(
     found
 }
 
-/// Existence-only Keychain lookup: no secret material is read, just whether
-/// an item is present for the service name a config dir would derive.
 fn credential_exists_in_keychain(config_dir: &Path) -> bool {
     let service = keychain_service_for_config_dir(config_dir);
     let Ok(user) = std::env::var("USER") else {
@@ -131,16 +97,10 @@ fn credential_exists_in_keychain(config_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Whether this config dir is Claude Code's default one, the one it uses
-/// when `CLAUDE_CONFIG_DIR` is unset. Load-bearing twice over, in the
-/// Keychain service name and in [`claude_config_dir_env`], so it lives here.
 fn is_default_config_dir(home: &Path, config_dir: &Path) -> bool {
     home.join(".claude") == config_dir
 }
 
-/// Keychain service name for a config directory. The default `~/.claude`
-/// uses the bare service name; any other uses
-/// `Claude Code-credentials-<sha256[:8]>` of the NFC-normalized path.
 fn keychain_service_for_config_dir(config_dir: &Path) -> String {
     match home_dir() {
         Some(home) => keychain_service_in(&home, config_dir),
@@ -161,8 +121,6 @@ fn keychain_service_hashed(config_dir: &Path) -> String {
     format!("Claude Code-credentials-{}", &digest[..8])
 }
 
-/// What `CLAUDE_CONFIG_DIR` must be set to for this account. `None` means
-/// it must not be set at all. See "CLAUDE_CONFIG_DIR" in docs/claude-provider.md.
 fn claude_config_dir_env(home: &Path, config_dir: &Path) -> Option<PathBuf> {
     if is_default_config_dir(home, config_dir) {
         None
@@ -171,7 +129,6 @@ fn claude_config_dir_env(home: &Path, config_dir: &Path) -> Option<PathBuf> {
     }
 }
 
-// A local helper avoids pulling in a whole hex crate for 32 bytes.
 trait DigestHex {
     fn digest_str(input: &str) -> String;
 }
@@ -183,36 +140,25 @@ impl DigestHex for sha2::Sha256 {
     }
 }
 
-/// What Quotos knows about a stored credential. The two expiry stamps
-/// are what make an honest diagnosis possible: without them a 401 can't
-/// tell an ended sign-in from a token that simply aged out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StoredCredential {
     access_token: String,
-    /// Epoch ms, as stored. `None` when the provider didn't record one.
     expires_at_ms: Option<i64>,
     refresh_expires_at_ms: Option<i64>,
     has_refresh_token: bool,
 }
 
 impl StoredCredential {
-    /// Past its own stated expiry, with `margin_ms` of look-ahead added. A
-    /// credential that records no expiry is never assumed expired.
     fn access_expired(&self, now_ms: i64, margin_ms: i64) -> bool {
         self.expires_at_ms
             .is_some_and(|at| at <= now_ms + margin_ms)
     }
 
-    /// Whether the refresh half could still renew this credential without
-    /// a new sign-in. A missing refresh expiry is treated as usable, since
-    /// guessing "expired" here would claim a working account needs signing in.
     fn refresh_usable(&self, now_ms: i64) -> bool {
         self.has_refresh_token && self.refresh_expires_at_ms.is_none_or(|at| at > now_ms)
     }
 }
 
-/// Parse the Keychain blob. Split out from the Keychain call so the shape
-/// handling is unit-testable without any credential on the machine.
 fn parse_credential(raw: &str) -> Option<StoredCredential> {
     let parsed: serde_json::Value = serde_json::from_str(raw).ok()?;
     let oauth = parsed.get("claudeAiOauth")?;
@@ -231,15 +177,10 @@ fn parse_credential(raw: &str) -> Option<StoredCredential> {
     })
 }
 
-/// Accepts the epoch-milliseconds numbers Claude Code actually stores, and
-/// tolerates seconds or an RFC 3339 string rather than silently reading a
-/// wrong instant if that ever changes.
 fn epoch_ms(value: Option<&serde_json::Value>) -> Option<i64> {
     match value? {
         serde_json::Value::Number(n) => {
             let raw = n.as_f64()?;
-            // Anything smaller than this is seconds, not milliseconds:
-            // 1e12 ms is 2001, 1e12 s is the year 33658.
             Some(if raw.abs() >= 1e12 {
                 raw as i64
             } else {
@@ -253,8 +194,6 @@ fn epoch_ms(value: Option<&serde_json::Value>) -> Option<i64> {
     }
 }
 
-/// Never logs the blob or the token. See "Reading the account" in
-/// claude-provider.md for why this call never raises a Keychain prompt.
 fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
     let service = keychain_service_for_config_dir(config_dir);
     let user = std::env::var("USER").map_err(|_| FetchError::Other {
@@ -280,9 +219,6 @@ fn read_credential(config_dir: &Path) -> Result<StoredCredential, FetchError> {
     })
 }
 
-/// Only "there is no such item" means the account is not signed in.
-/// Anything else, a denied ACL or a locked keychain, is a local problem,
-/// and saying "sign in" for those would misreport it.
 fn classify_keychain_failure(status: &std::process::ExitStatus) -> FetchError {
     match status.code() {
         Some(KEYCHAIN_ITEM_NOT_FOUND_EXIT) => FetchError::NotConnected {
@@ -300,8 +236,6 @@ fn classify_keychain_failure(status: &std::process::ExitStatus) -> FetchError {
     }
 }
 
-/// Where the `claude` CLI actually is. See "Finding the claude CLI" in
-/// docs/claude-provider.md for why a menu bar app can't rely on `$PATH`.
 fn claude_cli_path() -> Option<PathBuf> {
     static CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
@@ -313,8 +247,6 @@ fn claude_cli_path() -> Option<PathBuf> {
         return Some(cached.clone());
     }
 
-    // Only successes are cached. A miss must stay re-checkable, so
-    // installing Claude Code while Quotos runs does not need a relaunch.
     let found = locate_claude_cli();
     match &found {
         Some(path) => read_trace!("claude CLI resolved to {}", path.display()),
@@ -343,9 +275,6 @@ fn locate_claude_cli() -> Option<PathBuf> {
         .find(|p| is_executable_file(p))
 }
 
-/// Claude Code's documented install locations, rebuilt from the running
-/// system's `$HOME` rather than hardcoded for one Mac. Only consulted when
-/// both `$PATH` and the user's own login shell come up empty.
 fn well_known_cli_locations(home: &Path) -> Vec<PathBuf> {
     vec![
         home.join(".local/bin/claude"),
@@ -365,9 +294,6 @@ fn search_env_path(name: &str) -> Option<PathBuf> {
         .find(|candidate| is_executable_file(candidate))
 }
 
-/// Asks the user's own shell where `claude` is, sourcing the same rc
-/// files that put the CLI on `PATH` in a terminal. See
-/// docs/claude-provider.md for why both `-lc` and `-ilc` are tried.
 fn ask_login_shell(name: &str) -> Option<PathBuf> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
     for flags in ["-lc", "-ilc"] {
@@ -376,8 +302,6 @@ fn ask_login_shell(name: &str) -> Option<PathBuf> {
         let Some(output) = run_bounded(cmd, CLI_LOOKUP_TIMEOUT, true) else {
             continue;
         };
-        // rc files may print banners. The resolved path is whichever line
-        // actually names an executable.
         let found = String::from_utf8_lossy(&output.stdout)
             .lines()
             .rev()
@@ -397,9 +321,6 @@ fn is_executable_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Run a child with a hard deadline, killing it if it overruns. Quotos runs
-/// the Claude Code CLI on the read path, so "it hung" must degrade into "no
-/// refresh happened" rather than into a stuck read.
 fn run_bounded(mut cmd: Command, timeout: Duration, capture: bool) -> Option<Output> {
     cmd.stdin(Stdio::null());
     cmd.stderr(Stdio::null());
@@ -428,9 +349,6 @@ fn run_bounded(mut cmd: Command, timeout: Duration, capture: bool) -> Option<Out
     child.wait_with_output().ok()
 }
 
-/// A zero-cost-to-quota way to have Claude Code renew a stale access
-/// token. Returns whether the CLI ran, not whether anything was renewed;
-/// see docs/claude-provider.md for why only a re-read can prove that.
 fn run_cli_credential_refresh(config_dir: &Path) -> bool {
     let Some(invocation) = cli_invocation(config_dir) else {
         return false;
@@ -446,16 +364,11 @@ fn run_cli_credential_refresh(config_dir: &Path) -> bool {
             cmd.env_remove("CLAUDE_CONFIG_DIR");
         }
     }
-    // The CLI shells out to other tools. A Finder-launched app hands it no
-    // PATH at all, so this gives it at least its own directory plus the
-    // system defaults.
     cmd.env("PATH", &invocation.path_env);
 
     run_bounded(cmd, CLI_REFRESH_TIMEOUT, false).is_some()
 }
 
-/// A `PATH` for child processes that works even when this process
-/// inherited none, such as after a Finder or Dock launch.
 fn child_path_including(extra: Option<&Path>) -> std::ffi::OsString {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(dir) = extra {
@@ -473,19 +386,12 @@ fn child_path_including(extra: Option<&Path>) -> std::ffi::OsString {
     std::env::join_paths(dirs).unwrap_or_else(|_| std::ffi::OsString::from("/usr/bin:/bin"))
 }
 
-/// Everything a caller needs to spawn the Claude Code CLI for one account.
-/// Shared with `signin.rs`, which spawns through a pty instead but needs
-/// the same binary resolution, `CLAUDE_CONFIG_DIR`, and `PATH`.
 pub struct CliInvocation {
     pub program: PathBuf,
-    /// `Some(dir)` sets `CLAUDE_CONFIG_DIR` to it. `None` means it must not
-    /// be set at all, which is the default account. See
-    /// [`claude_config_dir_env`].
     pub config_dir_env: Option<PathBuf>,
     pub path_env: std::ffi::OsString,
 }
 
-/// `None` when the Claude Code CLI can't be found on this machine at all.
 pub fn cli_invocation(config_dir: &Path) -> Option<CliInvocation> {
     let program = claude_cli_path()?;
     let home = home_dir()?;
@@ -497,8 +403,6 @@ pub fn cli_invocation(config_dir: &Path) -> Option<CliInvocation> {
     })
 }
 
-/// Has the CLI renew the credential, then re-reads it. Returns `Some`
-/// only when the credential genuinely changed; see docs/claude-provider.md.
 fn renew_credential(config_dir: &Path, previous: &StoredCredential) -> Option<StoredCredential> {
     if !run_cli_credential_refresh(config_dir) {
         return None;
@@ -507,8 +411,6 @@ fn renew_credential(config_dir: &Path, previous: &StoredCredential) -> Option<St
     (renewed.access_token != previous.access_token).then_some(renewed)
 }
 
-/// Same, off the async runtime's worker threads. The CLI call is real work
-/// with a real, bounded wall-clock cost.
 async fn renew_credential_async(
     config_dir: &Path,
     previous: &StoredCredential,
@@ -521,27 +423,17 @@ async fn renew_credential_async(
         .flatten()
 }
 
-/// What a 401 means once the credential could not be renewed here. Three
-/// genuinely different situations produce three different truths, and
-/// only the first two are a sign-in problem.
 fn classify_unrenewable(credential: &StoredCredential, now_ms: i64) -> FetchError {
     if !credential.access_expired(now_ms, 0) {
-        // Current by its own metadata and still refused. The sign-in
-        // behind it is finished, whether revoked or signed out elsewhere.
         return FetchError::Unauthorized {
             message: format!("{SIGN_IN_EXPIRED} (the stored token has not expired)"),
         };
     }
     if !credential.refresh_usable(now_ms) {
-        // Expired, and nothing left that could renew it without a new
-        // sign-in. This is the real "sign-in expired".
         return FetchError::Unauthorized {
             message: format!("{SIGN_IN_EXPIRED} (its renewal window has closed)"),
         };
     }
-    // Expired, but perfectly renewable. Quotos just could not do it here.
-    // Saying "sign in again" would be a lie, since the account is signed
-    // in.
     FetchError::CredentialStale {
         message: "This account's access token has expired and Quotos couldn't renew it here. Use Claude Code for this account once and Quotos will pick it up."
             .to_string(),
@@ -552,8 +444,6 @@ struct HttpResult {
     status: u16,
     body: serde_json::Value,
     retry_after_secs: Option<u64>,
-    /// Stamped the moment the response arrived, before the body was read.
-    /// See [`UsageRead::fetched_at`] for why the placement is load-bearing.
     fetched_at: String,
 }
 
@@ -583,7 +473,6 @@ async fn get_json(
         .and_then(|s| s.parse::<u64>().ok());
     let body = match resp.json::<serde_json::Value>().await {
         Ok(body) => body,
-        // A failed read, not an empty one; see docs/claude-provider.md.
         Err(e) if status == 200 => {
             return Err(FetchError::Network {
                 message: format!("The provider's answer couldn't be read: {e}"),
@@ -599,9 +488,6 @@ async fn get_json(
     })
 }
 
-/// Non-2xx statuses that are not 401 or 429. Kept separate so a 403 can
-/// never be quietly folded into "needs sign-in". A refusal is not a
-/// missing authentication.
 fn map_unexpected_status(status: u16) -> FetchError {
     match status {
         403 => FetchError::Other {
@@ -619,16 +505,11 @@ fn rate_limited(retry_after_secs: Option<u64>) -> FetchError {
     }
 }
 
-/// A completed usage read: the payload plus the moment its HTTP response
-/// arrived, `fetched_at`. See "The statusline feed" in claude-provider.md
-/// for why that moment, not snapshot-assembly time, is load-bearing.
 pub struct UsageRead {
     pub body: serde_json::Value,
     pub fetched_at: String,
 }
 
-/// Fetches `/api/oauth/usage` for a config dir. See docs/claude-provider.md
-/// for the three rules this read follows.
 pub async fn fetch_usage(
     client: &reqwest::Client,
     config_dir: &Path,
@@ -684,9 +565,6 @@ pub async fn fetch_usage(
     }
 
     if renewed_this_read {
-        // The credential was just renewed, and the provider still refuses
-        // it. That is a genuine expired sign-in, and retrying would only
-        // spend another request to be told the same thing.
         return Err(FetchError::Unauthorized {
             message: format!("{SIGN_IN_EXPIRED} (refused immediately after a successful renewal)"),
         });
@@ -722,9 +600,6 @@ pub async fn fetch_usage(
     }
 }
 
-/// Fetches `/api/oauth/profile` for account labeling. Best effort:
-/// callers should tolerate `None`. Deliberately outside the request
-/// budget; see docs/claude-provider.md for why that overshoot is bounded.
 pub async fn fetch_profile(
     client: &reqwest::Client,
     config_dir: &Path,
@@ -748,8 +623,6 @@ mod tests {
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    /// A throwaway home directory under the OS temp dir, cleaned up on drop.
-    /// Avoids pulling in a `tempfile` dependency for one test module.
     struct TempHome {
         path: PathBuf,
     }
@@ -783,8 +656,8 @@ mod tests {
         let home = TempHome::new();
         let claude = home.mkdir(".claude");
         let team = home.mkdir(".claude-team");
-        home.mkdir(".claude-shared"); // no credential, must be excluded
-        home.mkdir(".not-claude-at-all"); // wrong naming pattern entirely
+        home.mkdir(".claude-shared");
+        home.mkdir(".not-claude-at-all");
 
         let credentialed: HashSet<PathBuf> = [claude.clone(), team.clone()].into_iter().collect();
         let found = discover_accounts_in(&home.path, |dir| credentialed.contains(dir));
@@ -831,7 +704,6 @@ mod tests {
         assert!(found.is_empty());
     }
 
-    /// See `claude_config_dir_env`'s doc comment for why this split matters.
     #[test]
     fn the_default_config_dir_must_not_set_claude_config_dir() {
         let home = PathBuf::from("/Users/someone");
@@ -873,7 +745,6 @@ mod tests {
         }
     }
 
-    /// Claude Code renews an aged-out access token on its own next use.
     #[test]
     fn an_aged_out_token_with_a_valid_refresh_token_is_never_an_expired_sign_in() {
         let now = 1_000_000_000_000;
@@ -929,7 +800,6 @@ mod tests {
         assert!(!nearly.access_expired(now, 0));
     }
 
-    /// The shape Claude Code actually stores: epoch **milliseconds**.
     #[test]
     fn parses_the_stored_credential_shape() {
         let raw = r#"{"claudeAiOauth":{"accessToken":"a","refreshToken":"r",
@@ -1002,9 +872,6 @@ mod tests {
         assert!(locations.iter().all(|p| p.file_name().unwrap() == "claude"));
     }
 
-    /// See `UsageRead`'s doc comment for why this timing is load-bearing.
-    /// The server here delays its body by 400ms, so the stamp must land
-    /// well inside that window rather than after it.
     #[test]
     fn fetched_at_marks_response_arrival_not_body_completion() {
         use std::io::{Read as _, Write as _};
@@ -1078,9 +945,6 @@ mod tests {
         result
     }
 
-    /// `Ok(Null)` would read as a healthy "no limits reported yet" and
-    /// wipe every window; a failed read instead lets the frontend's
-    /// prior-good-data logic say "behind" honestly.
     #[test]
     fn a_200_with_an_unreadable_body_is_a_failed_read_not_an_empty_one() {
         let result = get_json_against("200 OK", b"<html>gateway error</html>");
@@ -1096,9 +960,6 @@ mod tests {
         }
     }
 
-    /// The deliberate asymmetry of the test above: an HTML-bodied 401 must
-    /// still reach the 401 handling rather than become a network error
-    /// that hides the real verdict.
     #[test]
     fn a_non_200_with_an_unreadable_body_still_classifies_by_status() {
         let result = get_json_against("401 Unauthorized", b"<html>denied</html>")

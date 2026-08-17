@@ -1,7 +1,3 @@
-//! Drives Claude Code's own sign-in for one account. See "Sign-in
-//! recovery" in docs/claude-provider.md for what Quotos does and does not
-//! touch, and why the pty, not a plain pipe.
-
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -33,9 +29,6 @@ impl SignInRegistry {
         }
     }
 
-    /// The row's action should already be disabled while a sign-in is in
-    /// progress, but the check against `sessions` below is the actual
-    /// guard against starting a second one.
     pub fn start(
         &self,
         app: AppHandle,
@@ -59,8 +52,6 @@ impl SignInRegistry {
             })
             .map_err(|e| e.to_string())?;
 
-        // See "Finding the claude CLI" and "CLAUDE_CONFIG_DIR" in
-        // docs/claude-provider.md.
         let invocation = crate::providers::claude::cli_invocation(Path::new(&config_dir)).ok_or_else(|| {
             "Quotos couldn't find the Claude Code command on this Mac. Open Claude Code once, then try again."
                 .to_string()
@@ -75,9 +66,6 @@ impl SignInRegistry {
         cmd.env("PATH", &invocation.path_env);
 
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-        // This copy of the slave must close so the pty can signal EOF once
-        // the child itself exits. Otherwise the reader thread below never
-        // sees end-of-stream.
         drop(pair.slave);
 
         let killer = child.clone_killer();
@@ -131,8 +119,6 @@ impl SignInRegistry {
     }
 }
 
-/// Drains the pty continuously so the child never blocks writing to a full
-/// buffer.
 fn spawn_output_drain(mut reader: Box<dyn Read + Send>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -145,9 +131,6 @@ fn spawn_output_drain(mut reader: Box<dyn Read + Send>) {
     });
 }
 
-/// Owns `child` and `master` for the session; dropping `master` before
-/// `child` exits can tear down the pty. `killer` is `cancel`'s own
-/// independent handle, so cancel never contends with this thread's wait.
 fn spawn_wait_and_notify(
     app: AppHandle,
     account_id: String,

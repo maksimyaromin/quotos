@@ -1,31 +1,17 @@
-//! Launch at login, through `SMAppService`, macOS 13 and newer. Reads the
-//! OS fresh on every call rather than storing state. `SMAppService` only
-//! registers `.app` bundles, so a bare `cargo` or dev binary never can.
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoginItemStatus {
     Enabled,
-    /// Registered, but macOS withholds it until the user approves it in
-    /// System Settings.
     RequiresApproval,
     Disabled,
-    /// The OS cannot resolve this app as a registrable login item. This
-    /// happens for an unbundled dev binary.
     NotFound,
 }
 
 impl LoginItemStatus {
-    /// `RequiresApproval` counts as registered: the item is already
-    /// visible in System Settings, merely awaiting consent, and toggling
-    /// it again would unregister rather than register.
     pub fn is_registered(self) -> bool {
         matches!(self, Self::Enabled | Self::RequiresApproval)
     }
 }
 
-/// `SMAppServiceStatus`'s raw values, per `ServiceManagement/SMAppService.h`.
-/// `0` is `notRegistered`; an unknown future value also degrades to
-/// [`LoginItemStatus::Disabled`], so toggling it attempts a plain register.
 fn status_from_raw(raw: isize) -> LoginItemStatus {
     match raw {
         1 => LoginItemStatus::Enabled,
@@ -42,9 +28,6 @@ mod platform {
     use objc2::runtime::{AnyClass, AnyObject};
     use objc2_foundation::NSError;
 
-    // No other dependency links ServiceManagement, so nothing else forces
-    // dyld to load it; without this, `AnyClass::get(c"SMAppService")` finds
-    // no class to look up.
     #[link(name = "ServiceManagement", kind = "framework")]
     unsafe extern "C" {}
 
@@ -84,9 +67,6 @@ pub fn status() -> LoginItemStatus {
     }
 }
 
-/// On success, read [`status`] back for what to display rather than
-/// assuming the request took effect: registration can still require the
-/// user's approval in System Settings.
 pub fn set_registered(register: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -120,9 +100,6 @@ mod tests {
         assert!(!LoginItemStatus::NotFound.is_registered());
     }
 
-    /// Proves the selectors resolve at runtime, without calling
-    /// `set_registered`: mutating the login items of whatever machine
-    /// runs the tests is not a test's business.
     #[cfg(target_os = "macos")]
     #[test]
     fn the_real_status_call_answers_without_crashing() {

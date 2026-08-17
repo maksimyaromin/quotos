@@ -1,23 +1,12 @@
-//! One running Quotos per machine, enforced with an OS file lock, since
-//! the shared per-account request budget has no cross-instance
-//! coordination. See docs/architecture.md.
-
 use std::fs::{self, File, TryLockError};
 use std::io;
 use std::path::Path;
 
-/// The file's presence on disk means nothing; only the live OS lock on it
-/// does, so this file is never cleaned up.
 const LOCK_FILE_NAME: &str = "instance.lock";
 
 pub(crate) enum Claim {
-    /// The lock lives exactly as long as this handle stays open, so the
-    /// caller must keep it for the whole process lifetime.
     Held(File),
     TakenByOther,
-    /// For example an unwritable directory or a filesystem without flock.
-    /// Refusing to launch over an optional protection would cost more than
-    /// a double-spent budget, so the caller should run anyway.
     Unavailable(io::Error),
 }
 
@@ -76,9 +65,6 @@ mod tests {
         assert!(matches!(claim(&dir.path), Claim::Held(_)));
     }
 
-    /// `flock` locks belong to the open file description, so a second open
-    /// and lock conflicts even from the same process, which is what lets
-    /// this test model two instances.
     #[test]
     fn a_second_claim_is_refused_while_the_first_lives_and_frees_with_it() {
         let dir = TempDir::new();

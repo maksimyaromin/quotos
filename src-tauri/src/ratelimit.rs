@@ -4,9 +4,6 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-/// An entry exactly one window old counts as expired, not one instant
-/// later: otherwise five reservations spaced evenly across the window
-/// never admit a sixth once the window is full.
 fn is_expired(age: Duration, window: Duration) -> bool {
     age >= window
 }
@@ -15,8 +12,6 @@ fn is_expired(age: Duration, window: Duration) -> bool {
 pub struct RateLimitStatus {
     pub used: usize,
     pub max: usize,
-    /// `Some(secs)` names how long until the oldest reservation ages out;
-    /// `None` when the account is under budget.
     pub retry_after_secs: Option<u64>,
 }
 
@@ -35,8 +30,6 @@ impl RateLimiter {
         }
     }
 
-    /// The `Err` payload is the number of seconds until retry is worth
-    /// trying again.
     pub fn try_acquire(&self, key: &str) -> Result<(), u64> {
         let mut windows = self.windows.lock().expect("ratelimit mutex poisoned");
         let now = Instant::now();
@@ -58,8 +51,6 @@ impl RateLimiter {
         Ok(())
     }
 
-    /// Prunes expired entries first, the same way `try_acquire` does, but
-    /// never reserves a slot.
     pub fn snapshot(&self) -> HashMap<String, RateLimitStatus> {
         let mut windows = self.windows.lock().expect("ratelimit mutex poisoned");
         let now = Instant::now();

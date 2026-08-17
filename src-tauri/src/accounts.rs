@@ -1,7 +1,3 @@
-//! Nothing here knows a window or a status item exists. That layer stays in
-//! `shell.rs`, which keeps "what we know about accounts" and "how the
-//! panel shows it" separately readable.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,17 +11,11 @@ use crate::providers::{self, AccountDescriptor, FetchError, RawSnapshot};
 use crate::ratelimit::{RateLimitStatus, RateLimiter};
 use crate::statusline;
 
-/// `async` purely for its threading effect; it never awaits anything in
-/// its body. Forks a `security(1)` process per candidate config dir; see
-/// "Tauri commands and the main thread" in docs/platform-constraints.md.
 #[tauri::command(async)]
 pub(crate) fn list_accounts() -> Vec<AccountDescriptor> {
     providers::claude::discover_accounts()
 }
 
-/// Binds the shared per-account limiter to one account, so a provider can
-/// reserve a slot per real request without knowing how the budget is
-/// stored. See `providers::RequestBudget`.
 struct AccountBudget<'a> {
     limiter: &'a RateLimiter,
     account_id: &'a str,
@@ -37,9 +27,6 @@ impl providers::RequestBudget for AccountBudget<'_> {
     }
 }
 
-/// The one real place a network attempt happens, called by both a manual
-/// refresh and the scheduler loop. See "From a read to a rendered row"
-/// in docs/architecture.md.
 async fn perform_fetch(
     state: &AppState,
     account_id: &str,
@@ -52,7 +39,6 @@ async fn perform_fetch(
         });
     }
 
-    // See claude-provider.md for the 5-per-300s budget this reserves against.
     let budget = AccountBudget {
         limiter: &state.rate_limiter,
         account_id,
@@ -62,8 +48,6 @@ async fn perform_fetch(
     let usage = providers::claude::fetch_usage(&state.http, &path, &budget).await?;
     let profile = cached_profile(state, account_id, &path).await;
 
-    // Read after the usage fetch, deliberately: a feed line written mid-fetch
-    // is newer than usage.fetched_at and can win freshest-wins reconciliation.
     let statusline = statusline::read_feed(&state.statusline_root, &path);
 
     Ok(RawSnapshot {
@@ -77,9 +61,6 @@ async fn perform_fetch(
     })
 }
 
-/// A profile changes rarely enough that one read per account per process
-/// lifetime is enough; every later fetch reuses it instead of spending a
-/// second Keychain read and HTTP call on data that has not changed.
 async fn cached_profile(
     state: &AppState,
     account_id: &str,
@@ -122,8 +103,6 @@ pub(crate) async fn fetch_snapshot(
     config_dir: String,
 ) -> Result<RawSnapshot, FetchError> {
     let result = perform_fetch(&state, &account_id, &provider, &config_dir).await;
-    // Every attempt, manual or scheduled, resets this account's one-minute
-    // clock. See scheduler.rs.
     state
         .scheduler
         .mark_attempted(&account_id, extract_retry_after(&result));
@@ -135,9 +114,6 @@ pub(crate) fn load_tracked(state: tauri::State<'_, AppState>) -> Vec<TrackedAcco
     state.tracked_store.list()
 }
 
-/// Runs off the main thread, since `Store::save`'s `fsync` would stall
-/// the webview's own rendering otherwise. See `list_accounts` and
-/// docs/platform-constraints.md.
 #[tauri::command(async)]
 pub(crate) fn save_tracked(
     state: tauri::State<'_, AppState>,
@@ -148,9 +124,6 @@ pub(crate) fn save_tracked(
     })
 }
 
-/// Reports what is currently configured for this account's statusline,
-/// so a row never claims "not installed" for one already pointed
-/// `statusLine` at some other way. Runs off the main thread; see `list_accounts`.
 #[tauri::command(async)]
 pub(crate) fn statusline_status(
     state: tauri::State<'_, AppState>,
@@ -159,8 +132,6 @@ pub(crate) fn statusline_status(
     statusline::status(&state.statusline_root, &PathBuf::from(config_dir))
 }
 
-/// The explicit in-app opt-in write. Only a user's own click in the panel
-/// calls this. See the write-mechanism contract in `statusline.rs`.
 #[tauri::command(async)]
 pub(crate) fn statusline_install(
     state: tauri::State<'_, AppState>,
@@ -170,9 +141,6 @@ pub(crate) fn statusline_install(
     statusline::install(&state.statusline_root, &PathBuf::from(config_dir), force)
 }
 
-/// Removes the integration. Restores exactly the previous `statusLine`
-/// state, or clears the key if there was none, per the write-mechanism
-/// contract in `statusline.rs`.
 #[tauri::command(async)]
 pub(crate) fn statusline_remove(
     state: tauri::State<'_, AppState>,
@@ -181,9 +149,6 @@ pub(crate) fn statusline_remove(
     statusline::remove(&state.statusline_root, &PathBuf::from(config_dir))
 }
 
-/// What the scheduler's automatic reads report back to the frontend. The
-/// same shape a manual refresh's `fetch_snapshot` result already carries,
-/// pushed as an event instead of returned from an `invoke` call.
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ScheduledRefreshEvent {
@@ -196,13 +161,8 @@ enum ScheduledRefreshEvent {
     },
 }
 
-/// One pass over every tracked account: fetches whichever are currently
-/// due and emits a `quota-refresh` event per attempt. Shared by
-/// `spawn_scheduler`'s periodic loop and by `kick_scheduler`.
 async fn run_due_pass(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    // See Scheduler::begin_pass for why skipping here, rather than
-    // waiting, is the correct behavior when a pass is already running.
     let Some(_pass) = state.scheduler.begin_pass() else {
         return;
     };
@@ -232,9 +192,6 @@ async fn run_due_pass(app: &tauri::AppHandle) {
     }
 }
 
-/// The single native scheduler, ticking every 5 seconds. See "Refresh
-/// scheduling" in docs/architecture.md for why its first tick is delayed
-/// rather than immediate.
 pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval_at(
@@ -248,17 +205,11 @@ pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
     });
 }
 
-/// Called once the frontend has subscribed to `quota-refresh`, so launch
-/// stays near-instant rather than waiting on the delayed first tick. Not
-/// a second scheduler: see docs/architecture.md.
 #[tauri::command]
 pub(crate) async fn kick_scheduler(app: tauri::AppHandle) {
     run_due_pass(&app).await;
 }
 
-/// Read-only introspection of the shared rate budget, for the frontend's
-/// developer-only state dump gated on `import.meta.env.DEV`. Harmless
-/// either way, since it touches no credentials.
 #[tauri::command]
 pub(crate) fn debug_rate_limit_snapshot(
     state: tauri::State<'_, AppState>,
@@ -266,8 +217,6 @@ pub(crate) fn debug_rate_limit_snapshot(
     state.rate_limiter.snapshot()
 }
 
-/// Starts Claude Code's own sign-in for a broken row's account. See
-/// `signin.rs`'s module doc for exactly what this does and does not do.
 #[tauri::command]
 pub(crate) fn start_sign_in(
     app: tauri::AppHandle,
@@ -278,9 +227,6 @@ pub(crate) fn start_sign_in(
     state.sign_in.start(app, account_id, config_dir)
 }
 
-/// Relays a code pasted into the panel's own field to the waiting `claude
-/// setup-token` process, exactly as if it had been typed into a real
-/// terminal.
 #[tauri::command]
 pub(crate) fn submit_sign_in_code(
     state: tauri::State<'_, AppState>,
@@ -290,15 +236,11 @@ pub(crate) fn submit_sign_in_code(
     state.sign_in.submit_code(&account_id, &code)
 }
 
-/// Called either as a panel action or as cleanup when the row is removed
-/// mid-flow.
 #[tauri::command]
 pub(crate) fn cancel_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
     state.sign_in.cancel(&account_id);
 }
 
-/// Called after the frontend has handled `sign-in-finished`, so a retry
-/// starts clean.
 #[tauri::command]
 pub(crate) fn forget_sign_in(state: tauri::State<'_, AppState>, account_id: String) {
     state.sign_in.forget(&account_id);

@@ -11,14 +11,9 @@ pub struct TrackedAccount {
     pub id: String,
     pub provider: String,
     pub config_dir: String,
-    /// `None` falls back to the provider-derived label.
     pub label: Option<String>,
-    /// Pinning is per limit window, matching `LimitWindowEntity.id`, not
-    /// per subscription, so an account can pin one window and leave others.
     #[serde(rename = "pinnedWindowIds", default)]
     pub pinned_window_ids: Vec<String>,
-    /// A legacy field, migrated on load and shed on the next save. See
-    /// "Persistence" in docs/architecture.md.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
 }
@@ -35,8 +30,6 @@ pub struct Store {
 }
 
 impl Store {
-    /// A file that fails to parse is moved aside to `tracked.json.corrupt`
-    /// first, best effort. See "Persistence" in docs/architecture.md.
     pub fn load(path: PathBuf) -> Self {
         let tracked = match fs::read_to_string(&path) {
             Err(_) => Vec::new(),
@@ -61,9 +54,6 @@ impl Store {
             .clone()
     }
 
-    /// Once this returns `Ok`, disk and memory have updated together under
-    /// one lock. See "Persistence" in docs/architecture.md for why two
-    /// overlapping saves need that lock held across the whole write.
     pub fn save(&self, tracked: Vec<TrackedAccount>) -> Result<(), String> {
         let shape = PersistedShape {
             version: 1,
@@ -195,9 +185,6 @@ mod tests {
         assert!(path.exists());
     }
 
-    /// The frontend detects a save failure only by `save_tracked` actually
-    /// rejecting; a write that silently kept the old in-memory list as
-    /// current would make that failure undetectable.
     #[test]
     fn a_failed_write_returns_err_and_leaves_memory_untouched() {
         let dir = TempDir::new();

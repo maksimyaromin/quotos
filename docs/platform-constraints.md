@@ -109,6 +109,27 @@ reads `true` for an accessory app regardless of which path ran, so telling
 them apart needs `NSWorkspace.frontmostApplication` read from a separate
 process.
 
+`panel_window.rs` sets two more style bits after the class swap.
+`NSPanel` defaults to hiding when its application deactivates, which
+would fight detached mode's whole point of staying visible while another
+application is frontmost, so `setHidesOnDeactivate: false` turns that
+default off. `becomesKeyOnlyIfNeeded` would suppress
+`windowDidResignKey` until something inside the panel demanded key
+focus, and click-away-to-close depends on that event firing, so it is
+also set to `false`. Showing the panel itself calls
+`orderFrontRegardless()` to front the window without activating the
+app, then `makeKeyWindow()` to give it focus, which only a
+non-activating panel accepts while its application is inactive;
+`WebviewWindow::set_focus()` is not used for this because it activates
+the app, undoing the whole point of the class swap.
+
+`ClassBuilder::add_method` takes each callback cast as `extern "C" fn(_,
+_) -> _` rather than with its lifetime spelled out: spelling the
+lifetime keeps the compiler from inferring a higher-ranked function
+pointer type, and the type it infers instead is one `MethodImplementation`
+rejects. `tao`'s own class declarations use the same cast for the same
+reason.
+
 ## Drawing text into an offscreen bitmap
 
 Compositing real text into a `CGBitmapContext` on macOS has several
@@ -188,6 +209,15 @@ startup, long before anything else forks; this was always a test-binary
 concurrency artifact, never a production defect. Any new test that
 spawns a real child process is a reintroduction of this hazard and
 should take its environment reading as a parameter the same way.
+
+## `SMAppService` needs an explicit framework link
+
+No other dependency in this crate links `ServiceManagement`, so without
+`launch_at_login.rs`'s `#[link(name = "ServiceManagement", kind =
+"framework")]`, nothing forces dyld to load that framework and
+`AnyClass::get(c"SMAppService")` finds no class to look up. The link
+directive has to stay even though no symbol from it is called directly by
+name.
 
 ## Pinning `objc2` feature flags
 

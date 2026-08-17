@@ -62,6 +62,25 @@ constant 100%. It starts right where the gap ends, sweeps forward by
 `used_fraction` of the maximum possible sweep, `TAU` minus the gap's
 own width, and lands exactly on the gap's other edge at 100%.
 
+## Laying out pinned figures
+
+Every segment but the trailing one reserves a fixed `CELL_WIDTH_PX`
+rather than its own measured width: an earlier segment's digit count
+changing width must never move anything to its right, since
+`geometry.rs` derives the beak's position from the glyph, which sits at
+a fixed offset from the image's own left edge, and only the image's
+total width, driven by the trailing segment, is allowed to change. Only
+the trailing cell sizes itself to its own measured text, centered inside
+whichever reserve applies.
+
+A boundary between two different subscriptions' figure groups draws a
+gutter, a 1-CSS-px hairline, then another gutter, 5+1+5 CSS-px doubled
+for this buffer's 2x convention, so the visible gap across the hairline
+also includes each side's own cell-centering margin on top of that
+11px-doubled gutter. `render` never draws a hairline before the very
+first segment overall, regardless of what the frontend sets on it, since
+there is no prior group for the first segment to part from.
+
 ## Compositing
 
 The buffer can carry two translucent layers, the "panel open" highlight

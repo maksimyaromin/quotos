@@ -1,7 +1,3 @@
-//! Exactly one automatic read per account per minute, anchored to the
-//! last attempt rather than a free-running JS timer. See "Refresh
-//! scheduling and the shared request budget" in docs/architecture.md.
-
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,8 +5,6 @@ use std::time::{Duration, Instant};
 
 pub const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
-/// A rate-limited `retry_after` under one minute is floored here: retrying
-/// earlier would spend another slot on a guaranteed second failure.
 fn next_wait(retry_after: Option<Duration>) -> Duration {
     retry_after
         .unwrap_or(AUTO_REFRESH_INTERVAL)
@@ -22,8 +16,6 @@ pub struct Scheduler {
     pass_running: AtomicBool,
 }
 
-/// The gate frees when this drops, including on an early return or a
-/// panic in the pass.
 pub struct PassGuard<'a> {
     scheduler: &'a Scheduler,
 }
@@ -42,8 +34,6 @@ impl Scheduler {
         }
     }
 
-    /// Lets only one of the scheduler's two independent entrants run a
-    /// due-pass at a time; the loser skips outright. See docs/architecture.md.
     pub fn begin_pass(&self) -> Option<PassGuard<'_>> {
         self.pass_running
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -51,8 +41,6 @@ impl Scheduler {
             .then_some(PassGuard { scheduler: self })
     }
 
-    /// An account never seen before is due immediately, which covers both
-    /// a fresh install and a newly-tracked account.
     pub fn is_due(&self, account_id: &str) -> bool {
         let next_due = self.next_due.lock().expect("scheduler mutex poisoned");
         match next_due.get(account_id) {
@@ -61,16 +49,12 @@ impl Scheduler {
         }
     }
 
-    /// Anchors the next automatic read 60 seconds out from now, so a
-    /// manual refresh resets the minute for free. See docs/architecture.md.
     pub fn mark_attempted(&self, account_id: &str, retry_after: Option<Duration>) {
         let wait = next_wait(retry_after);
         let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");
         next_due.insert(account_id.to_string(), Instant::now() + wait);
     }
 
-    /// Stopping and later re-adding the same account starts its schedule
-    /// fresh instead of inheriting a stale wait from before it was removed.
     pub fn retain(&self, live_ids: &HashSet<String>) {
         let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");
         next_due.retain(|id, _| live_ids.contains(id));

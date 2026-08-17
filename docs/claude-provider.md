@@ -27,6 +27,14 @@ actually changed, per "Sign-in recovery" below; and reserve one budget
 slot per real request, never per read attempt, per "Refresh scheduling
 and the shared request budget" in architecture.md.
 
+`security(1)`'s exit status for "no such Keychain item",
+`errSecItemNotFound`, is not documented anywhere Apple publishes; `44` is
+a measured value, not a citable constant, and is the only exit code
+`classify_keychain_failure` treats as "not signed in" rather than a
+local problem such as a denied ACL or a locked keychain. Confirm it
+against a real `security find-generic-password` run before ever
+changing it.
+
 A 200 whose body cannot be read, whether from a mid-body reset, a
 timeout, or a proxy's HTML error page, is a failed read, full stop:
 `get_json` returns `FetchError::Network` rather than swallowing it as
@@ -95,6 +103,20 @@ request or gets reported as an expired sign-in. An expiring token is
 renewed before a request is spent on it, so an ordinary access-token
 expiry never reaches the user as a 401 at all.
 
+`SignInRegistry::start` drops its own copy of `pair.slave` right after
+spawning the child: the pty only signals end-of-stream once every slave
+handle is closed, so holding onto this copy would leave the output-drain
+thread's read loop blocked forever after the child actually exits. That
+drain thread exists because an unread pty master's buffer fills and
+blocks the child's own writes; `claude setup-token`'s output is never
+inspected, but it still has to be pulled continuously. `master` must
+outlive `child` for the same reason in reverse: dropping it while the
+child is still running can tear down the pty out from under it, so the
+wait-and-notify thread takes ownership of both and holds `master` until
+`child.wait()` returns. `cancel` uses its own `killer` handle, cloned
+before that thread was spawned, so cancelling a session never contends
+with the thread that is blocked waiting on it.
+
 `run_cli_credential_refresh` renews a stale access token at zero cost
 against the shared request budget: any CLI invocation refreshes and
 writes back the stored credential, and `claude mcp list` does no
@@ -134,6 +156,14 @@ command points at the copied helper described above; and the feed is
 always a second source; the frontend's reconciliation, not the Rust
 side, decides which reading wins. `statusline.rs` never invents a window
 the API did not already report.
+
+`run_ingest_from_stdin`, the helper invocation itself, always exits 0
+and writes nothing on any failure to read or parse its stdin payload:
+Claude Code's own documentation states that a nonzero exit or malformed
+output from a `statusLine` command just blanks that row of the
+statusline, never surfaces as an error, so failing loudly here would
+gain nothing and risks looking like a Claude Code bug instead of a
+Quotos one.
 
 This is a scoped exception to the provider-adapter seam in
 [architecture.md](architecture.md): the feed's own vocabulary,

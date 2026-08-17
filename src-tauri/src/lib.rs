@@ -33,54 +33,20 @@ struct AppState {
     http: reqwest::Client,
     rate_limiter: RateLimiter,
     profile_cache: Mutex<HashMap<String, serde_json::Value>>,
-    /// While the panel is detached into a real, freestanding window, focus
-    /// loss must never hide it.
     detached: Mutex<bool>,
     tracked_store: Store,
-    /// Quotos's own app-support directory; see `statusline.rs`, which
-    /// stores the installed helper, per-account feed readings, and install
-    /// backups underneath it.
     statusline_root: PathBuf,
     scheduler: Scheduler,
-    /// In-progress `claude setup-token` sessions, keyed by account id; see
-    /// `signin.rs`.
     sign_in: signin::SignInRegistry,
-    /// The status item's own rect, updated on every status item event, so
-    /// `set_detached`'s snap-back can re-dock with no event of its own.
-    /// `None` until the first such event arrives.
     last_status_item_rect: Mutex<Option<(f64, f64)>>,
-    /// The pixel width of the status item image last handed to `set_icon`.
-    /// `compute_docked_layout` uses it to separate the item's own AppKit
-    /// margin from the image itself.
     last_icon_width_px: Mutex<u32>,
-    /// Whether the panel is currently visible, the only input to the
-    /// "panel open" highlight not already known at repaint time from
-    /// segments alone. Flipped by `set_status_item_highlighted`.
     status_item_highlighted: Mutex<bool>,
-    /// The segments `set_status_item_state` last received, cached so toggling
-    /// `status_item_highlighted` can repaint with the same digits without
-    /// the frontend resending them.
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
-    /// The glyph's own arc fill last set by `set_status_item_state`, 0 to 100,
-    /// cached for the same reason as `last_status_item_segments`.
     last_status_item_worst_used_percent: Mutex<u8>,
-    /// The status item's hover and VoiceOver text last set by
-    /// `set_status_item_state`, cached the same way.
     last_status_item_tooltip: Mutex<String>,
-    /// The layout the window is supposed to be at right now, while docked
-    /// and visible. `None` whenever hidden or detached, since dragging
-    /// must never fight this. Read by the debounced `WindowEvent::Moved` correction.
     docked_target: Mutex<Option<DockedLayout>>,
-    /// How many `WindowEvent::Moved` events have fired so far, bumped on
-    /// every one and read back by a debounced correction task to tell
-    /// whether it is still the last one scheduled.
     move_generation: Mutex<u64>,
-    /// The most recent position `WindowEvent::Moved` reported, so the
-    /// debounced correction compares against the latest observed position
-    /// after its delay, not a value captured at scheduling time.
     last_known_position: Mutex<(f64, f64)>,
-    /// Anchor for `drag_window_step`'s manual, frame-based detached-window
-    /// drag. `None` whenever no manual drag is in progress.
     manual_drag_anchor: Mutex<Option<DragAnchor>>,
 }
 
@@ -113,14 +79,9 @@ pub fn run() {
 
             log_status_item_font_choice();
 
-            // Built here rather than through the builder's own manage(),
-            // since the tracked-list store needs app.path(), not available
-            // until setup.
             let app_support_dir = app.path().app_config_dir()?;
             claim_single_instance_or_exit(&app_support_dir);
             let tracked_path = app_support_dir.join("tracked.json");
-            // Computed here so AppState.last_icon_width_px starts at the
-            // exact width the builder below actually sets.
             let (initial_rgba, initial_w, initial_h) = status_item_render::plain_glyph_rgba(0);
             app.manage(initial_app_state(app_support_dir, tracked_path, initial_w));
             accounts::spawn_scheduler(app.handle().clone());
@@ -138,8 +99,6 @@ pub fn run() {
                 &menu,
                 launch_item,
             )?;
-            // Pins the item to a fixed length right away, so there is no
-            // window before the first repaint where it is still variable-length.
             shell::sync_status_item_length(&status_item, initial_w);
             app.manage(status_item);
 
@@ -162,13 +121,9 @@ fn log_status_item_font_choice() {
     );
 }
 
-/// Before anything else touches shared state. See single_instance.rs for
-/// why a second instance must bow out rather than run alongside this one.
 fn claim_single_instance_or_exit(app_support_dir: &Path) {
     match single_instance::claim(app_support_dir) {
         single_instance::Claim::Held(guard) => {
-            // The lock lives as long as this handle stays open, so it is
-            // deliberately never closed.
             std::mem::forget(guard);
         }
         single_instance::Claim::TakenByOther => {
@@ -211,8 +166,6 @@ fn initial_app_state(
     }
 }
 
-/// Before anything else touches the window: the class swap is what lets
-/// every later show avoid activating the application. See panel_window.rs.
 fn configure_main_window(window: &WebviewWindow) {
     let _ = window.hide();
     panel_window::make_nonactivating_panel(window);
@@ -222,119 +175,105 @@ fn configure_main_window(window: &WebviewWindow) {
 fn install_window_event_handlers(window: &WebviewWindow, app: AppHandle) {
     let blur_window = window.clone();
     let blur_app = app;
-    window.on_window_event(move |event| {
-        match event {
-            tauri::WindowEvent::Focused(focused) => {
-                if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
-                    eprintln!(
-                        "quotos-pos: Focused({focused}) visible={:?}",
-                        blur_window.is_visible()
-                    );
-                }
-                if *focused {
-                    return;
-                }
-                // Diagnostic escape hatch, off by default, so the panel
-                // can stay open long enough to be inspected. Never set in
-                // a shipped run.
-                if std::env::var_os("QUOTOS_DEBUG_KEEP_OPEN").is_some() {
-                    return;
-                }
-                let detached = blur_app
-                    .state::<AppState>()
-                    .detached
-                    .lock()
-                    .map(|d| *d)
-                    .unwrap_or(false);
-                if !detached {
-                    let _ = blur_window.hide();
-                    let _ = blur_window.emit("panel-visibility", false);
-                    shell::set_status_item_highlighted(&blur_app, false);
-                    shell::clear_docked_target(&blur_app);
-                }
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::Focused(focused) => {
+            if std::env::var_os("QUOTOS_DEBUG_POS").is_some() {
+                eprintln!(
+                    "quotos-pos: Focused({focused}) visible={:?}",
+                    blur_window.is_visible()
+                );
             }
-            tauri::WindowEvent::Resized(size) => {
-                // See "Third-party window managers can still resize this
-                // window" in docs/platform-constraints.md.
-                let scale = blur_window.scale_factor().unwrap_or(1.0);
-                let (w, h) = (size.width as f64 / scale, size.height as f64 / scale);
-                if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5
-                    || (h - PANEL_WINDOW_HEIGHT_LOGICAL).abs() > 0.5
-                {
-                    let _ = blur_window.set_size(tauri::LogicalSize::new(
-                        PANEL_WINDOW_WIDTH_LOGICAL,
-                        PANEL_WINDOW_HEIGHT_LOGICAL,
-                    ));
-                }
+            if *focused {
+                return;
             }
-            // The self-correcting half of AppState.docked_target. See
-            // "Self-correcting the docked position" in docs/platform-constraints.md.
-            tauri::WindowEvent::Moved(pos) => {
-                let state = blur_app.state::<AppState>();
-                let scale = blur_window.scale_factor().unwrap_or(1.0);
-                let observed = (pos.x as f64 / scale, pos.y as f64 / scale);
-                *state
-                    .last_known_position
+            if std::env::var_os("QUOTOS_DEBUG_KEEP_OPEN").is_some() {
+                return;
+            }
+            let detached = blur_app
+                .state::<AppState>()
+                .detached
+                .lock()
+                .map(|d| *d)
+                .unwrap_or(false);
+            if !detached {
+                let _ = blur_window.hide();
+                let _ = blur_window.emit("panel-visibility", false);
+                shell::set_status_item_highlighted(&blur_app, false);
+                shell::clear_docked_target(&blur_app);
+            }
+        }
+        tauri::WindowEvent::Resized(size) => {
+            let scale = blur_window.scale_factor().unwrap_or(1.0);
+            let (w, h) = (size.width as f64 / scale, size.height as f64 / scale);
+            if (w - PANEL_WINDOW_WIDTH_LOGICAL).abs() > 0.5
+                || (h - PANEL_WINDOW_HEIGHT_LOGICAL).abs() > 0.5
+            {
+                let _ = blur_window.set_size(tauri::LogicalSize::new(
+                    PANEL_WINDOW_WIDTH_LOGICAL,
+                    PANEL_WINDOW_HEIGHT_LOGICAL,
+                ));
+            }
+        }
+        tauri::WindowEvent::Moved(pos) => {
+            let state = blur_app.state::<AppState>();
+            let scale = blur_window.scale_factor().unwrap_or(1.0);
+            let observed = (pos.x as f64 / scale, pos.y as f64 / scale);
+            *state
+                .last_known_position
+                .lock()
+                .expect("last_known_position mutex poisoned") = observed;
+            let this_generation = {
+                let mut generation = state
+                    .move_generation
                     .lock()
-                    .expect("last_known_position mutex poisoned") = observed;
-                let this_generation = {
-                    let mut generation = state
+                    .expect("move_generation mutex poisoned");
+                *generation += 1;
+                *generation
+            };
+            let has_target = state
+                .docked_target
+                .lock()
+                .expect("docked_target mutex poisoned")
+                .is_some();
+            if has_target {
+                let app2 = blur_app.clone();
+                let window2 = blur_window.clone();
+                tauri::async_runtime::spawn(async move {
+                    const MOVE_SETTLE_MS: u64 = 180;
+                    tokio::time::sleep(std::time::Duration::from_millis(MOVE_SETTLE_MS)).await;
+                    let state2 = app2.state::<AppState>();
+                    let is_still_latest = *state2
                         .move_generation
                         .lock()
-                        .expect("move_generation mutex poisoned");
-                    *generation += 1;
-                    *generation
-                };
-                let has_target = state
-                    .docked_target
-                    .lock()
-                    .expect("docked_target mutex poisoned")
-                    .is_some();
-                if has_target {
-                    let app2 = blur_app.clone();
-                    let window2 = blur_window.clone();
-                    tauri::async_runtime::spawn(async move {
-                        const MOVE_SETTLE_MS: u64 = 180;
-                        tokio::time::sleep(std::time::Duration::from_millis(MOVE_SETTLE_MS)).await;
-                        let state2 = app2.state::<AppState>();
-                        let is_still_latest = *state2
-                            .move_generation
-                            .lock()
-                            .expect("move_generation mutex poisoned")
-                            == this_generation;
-                        if !is_still_latest {
-                            return;
-                        }
-                        let Some(target) = *state2
-                            .docked_target
-                            .lock()
-                            .expect("docked_target mutex poisoned")
-                        else {
-                            return;
-                        };
-                        let current = *state2
-                            .last_known_position
-                            .lock()
-                            .expect("last_known_position mutex poisoned");
-                        // A tolerance, not exact equality; see
-                        // docs/platform-constraints.md for why.
-                        const SETTLE_TOLERANCE_POINTS: f64 = 2.0;
-                        if (current.0 - target.x).abs() > SETTLE_TOLERANCE_POINTS
-                            || (current.1 - target.y).abs() > SETTLE_TOLERANCE_POINTS
-                        {
-                            shell::apply_docked_position(&app2, &window2, target);
-                        }
-                    });
-                }
+                        .expect("move_generation mutex poisoned")
+                        == this_generation;
+                    if !is_still_latest {
+                        return;
+                    }
+                    let Some(target) = *state2
+                        .docked_target
+                        .lock()
+                        .expect("docked_target mutex poisoned")
+                    else {
+                        return;
+                    };
+                    let current = *state2
+                        .last_known_position
+                        .lock()
+                        .expect("last_known_position mutex poisoned");
+                    const SETTLE_TOLERANCE_POINTS: f64 = 2.0;
+                    if (current.0 - target.x).abs() > SETTLE_TOLERANCE_POINTS
+                        || (current.1 - target.y).abs() > SETTLE_TOLERANCE_POINTS
+                    {
+                        shell::apply_docked_position(&app2, &window2, target);
+                    }
+                });
             }
-            _ => {}
         }
+        _ => {}
     });
 }
 
-/// The status item's right-click menu. Returns the launch-at-login item
-/// alongside the menu, since `on_menu_event` needs it to update the
-/// checkmark after every toggle.
 fn build_status_item_menu(
     app: &AppHandle,
 ) -> tauri::Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>)> {
@@ -358,8 +297,6 @@ fn build_status_item_menu(
     Ok((menu, launch_item))
 }
 
-/// Built from the same procedural glyph `set_status_item_state` uses,
-/// so no stale or blurry fixed-size icon can show before the first call.
 fn build_status_item(
     app: &AppHandle,
     icon: (Vec<u8>, u32, u32),
@@ -372,14 +309,10 @@ fn build_status_item(
         .icon_as_template(true)
         .menu(menu)
         .show_menu_on_left_click(false)
-        // Just the pre-any-data baseline; see shell::repaint_status_item
-        // for why this gets replaced on every repaint.
         .tooltip("Quotos")
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "launch-at-login" => {
-                // The checkmark is set from what the OS reports afterward,
-                // so a refused registration reads as still off, not a lie.
                 let target = !launch_at_login::status().is_registered();
                 if let Err(message) = launch_at_login::set_registered(target) {
                     eprintln!("quotos: launch at login: {message}");
@@ -389,8 +322,6 @@ fn build_status_item(
             _ => {}
         })
         .on_tray_icon_event(|status_item, event| {
-            // Carried through raw; the conversion to a real coordinate
-            // space happens once, in compute_docked_layout. See docs/architecture.md.
             let rect_position = match &event {
                 TrayIconEvent::Click { rect, .. }
                 | TrayIconEvent::DoubleClick { rect, .. }
@@ -433,9 +364,6 @@ fn build_status_item(
         .build(app)
 }
 
-/// Diagnostic only, off by default: opens the panel from the status
-/// item's own rect a few seconds after launch, with no click at all. The
-/// rect is available without a click; only the event needs one.
 fn spawn_debug_auto_open_if_enabled(app: AppHandle) {
     if std::env::var_os("QUOTOS_DEBUG_AUTO_OPEN").is_none() {
         return;
