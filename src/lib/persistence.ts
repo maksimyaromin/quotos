@@ -42,6 +42,8 @@ async function migrateFromLocalStorageIfEmpty(native: TrackedAccount[]): Promise
   try {
     await saveTracked(legacy);
   } catch {}
+  // The legacy key is left in place, not cleared, so rolling back to a
+  // pre-native-store build can still recover this list.
   return legacy;
 }
 

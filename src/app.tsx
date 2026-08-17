@@ -54,6 +54,9 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // The native build starts at null rather than this same fallback: a
+  // stale beak position drawn confidently is worse than one that visibly
+  // fails to draw.
   const [beakLeft, setBeakLeft] = useState<number | null>(isTauri ? null : BEAK_LEFT_MOCK_FALLBACK);
 
   useEffect(() => {

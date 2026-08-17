@@ -178,6 +178,9 @@ export function normalizeUsage(raw: unknown): NormalizedUsage {
   }
   const usage = raw as Record<string, unknown>;
   const windows = buildWindows(usage);
+  // The account-wide weekly window is preferred over the single
+  // most-consumed one, so a heavily used per-model window can't outrank
+  // the real account total.
   const headline = pickAccountWideWeekly(usage) ?? pickMostConsumed(windows);
   return {
     windows,

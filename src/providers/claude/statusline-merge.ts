@@ -12,6 +12,8 @@ function patchWindow(
 ): Record<string, unknown> {
   const patched = { ...window, [percentKey]: feedWindow.used_percentage };
   const resets = isoFromEpochSeconds(feedWindow.resets_at);
+  // Only overwritten when present, so a feed entry missing a reset time
+  // keeps the API's own reset time instead of blanking it.
   if (resets !== null) patched.resets_at = resets;
   return patched;
 }

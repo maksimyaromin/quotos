@@ -181,6 +181,8 @@ export function useSubscriptions() {
       const err = outcome.error;
       if (err && err.kind === "rate_limited") {
         const until = new Date(Date.now() + err.retry_after_secs * 1000).toISOString();
+        // A rate limit caught mid-attempt can't write the in-flight state
+        // back verbatim, or the row would read "reading" forever.
         const settledPrior =
           prior.state === "connecting" || prior.state === "reading"
             ? prior.hadGoodRead

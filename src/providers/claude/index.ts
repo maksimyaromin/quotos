@@ -68,6 +68,8 @@ function mapFetchError(err: FetchError, hadGoodRead: boolean): OutcomeResult {
     case "network":
       return { state: "broken", reason: err.message, needsSignIn: false };
     case "rate_limited":
+      // Intercepted in use-subscriptions.ts before it reaches a provider
+      // mapper; this branch exists only as a defensive fallback.
       return {
         state: "broken",
         reason: "Unexpected rate-limit outcome reached the provider mapper.",

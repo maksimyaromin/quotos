@@ -3,6 +3,7 @@ export type SubscriptionState = "idle" | "connecting" | "working" | "reading" | 
 export interface LimitWindowEntity {
   id: string;
   name: string;
+  // Percent consumed, not remaining, across every used field in this file.
   used: number | null;
   resetsAt: string | null;
   scope: string | null;
@@ -29,6 +30,8 @@ export interface Subscription {
   pinnedWindowIds: string[];
   headlineWindowId: string | null;
   configDir: string;
+  // Kept apart from state and reason so a self-imposed wait never
+  // overwrites a real diagnosis.
   rateLimitedUntil: string | null;
   signInInProgress: boolean;
   pendingRemoval: boolean;
@@ -84,6 +87,8 @@ export function isStatuslineError(value: unknown): value is StatuslineError {
   );
 }
 
+// Mirrors src-tauri/src/providers/mod.rs's FetchError by hand; nothing
+// enforces that a new Rust variant is added here too.
 export type FetchError =
   | { kind: "not_connected"; message: string }
   | { kind: "unauthorized"; message: string }

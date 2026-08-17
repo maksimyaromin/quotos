@@ -6,6 +6,8 @@ import styles from "./panel.module.css";
 const PANEL_WIDTH = 332;
 export const PANEL_RADIUS = 12;
 
+// Synced by hand across files: BEAK_BASE_HALF doubled must equal geometry.rs's
+// BEAK_BASE_WIDTH, and NOTCH_RESERVE must equal app.css's panel padding-top.
 export const BEAK_BASE_HALF = 10;
 export const BEAK_HEIGHT = 10;
 const BEAK_TIP_ROUND = 3;
