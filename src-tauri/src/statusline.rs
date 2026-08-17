@@ -362,6 +362,8 @@ fn extract_rate_limits(v: &serde_json::Value) -> Option<StatuslineRateLimitsDto>
 }
 
 pub fn run_ingest_from_stdin(config_dir_tag: &str, feed_dir_arg: &str) -> i32 {
+    // Always exits 0: Claude Code's own docs say a nonzero exit or malformed
+    // statusLine output just blanks that row, never surfaces as an error.
     let mut buf = String::new();
     if std::io::stdin()
         .take(MAX_STDIN_BYTES)

@@ -15,6 +15,9 @@ const EXPIRY_MARGIN_MS: i64 = 60_000;
 const CLI_REFRESH_TIMEOUT: Duration = Duration::from_secs(20);
 const CLI_LOOKUP_TIMEOUT: Duration = Duration::from_secs(6);
 const SIGN_IN_EXPIRED: &str = "the stored sign-in is no longer accepted";
+// Measured against a real `security find-generic-password` run, not
+// documented by Apple anywhere; confirm it against a real run before
+// ever changing it.
 const KEYCHAIN_ITEM_NOT_FOUND_EXIT: i32 = 44;
 
 fn home_dir() -> Option<PathBuf> {
@@ -473,6 +476,8 @@ async fn get_json(
         .and_then(|s| s.parse::<u64>().ok());
     let body = match resp.json::<serde_json::Value>().await {
         Ok(body) => body,
+        // An unreadable 200 body would be indistinguishable from a genuine
+        // empty answer if swallowed as Null, so it fails the read instead.
         Err(e) if status == 200 => {
             return Err(FetchError::Network {
                 message: format!("The provider's answer couldn't be read: {e}"),

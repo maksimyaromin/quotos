@@ -125,6 +125,8 @@ fn log_status_item_font_choice() {
 fn claim_single_instance_or_exit(app_support_dir: &Path) {
     match single_instance::claim(app_support_dir) {
         single_instance::Claim::Held(guard) => {
+            // Leaked on purpose: the lock must outlive this function, and
+            // dropping the guard would release it immediately.
             std::mem::forget(guard);
         }
         single_instance::Claim::TakenByOther => {

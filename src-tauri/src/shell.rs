@@ -578,6 +578,8 @@ pub(crate) fn show_panel(
     }
     order_panel_front(window);
     if let Some(layout) = layout {
+        // Insurance against ordering the window front moving it from where
+        // the call above just placed it.
         apply_docked_position(app, window, layout);
     }
     log_docked_placement(app, window, item_x, item_y, layout);

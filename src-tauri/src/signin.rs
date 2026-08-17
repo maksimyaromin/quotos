@@ -66,6 +66,9 @@ impl SignInRegistry {
         cmd.env("PATH", &invocation.path_env);
 
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        // The pty signals end-of-stream only once every slave handle is
+        // closed, so keeping this one alive would hang the drain thread's
+        // read loop forever.
         drop(pair.slave);
 
         let killer = child.clone_killer();
@@ -147,6 +150,8 @@ fn spawn_wait_and_notify(
                 success,
             },
         );
+        // Held until now: dropping the pty master while the child still
+        // runs can tear the pty down out from under it.
         drop(master);
     });
 }

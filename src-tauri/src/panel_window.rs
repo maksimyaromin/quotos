@@ -7,6 +7,7 @@ use objc2::{msg_send, sel};
 const PANEL_CLASS_NAME: &std::ffi::CStr = c"QuotosNonActivatingPanel";
 
 #[cfg(target_os = "macos")]
+// AppKit's own style mask bit; objc2-app-kit does not expose it as a binding.
 const NS_WINDOW_STYLE_MASK_NONACTIVATING_PANEL: usize = 1 << 7;
 
 #[cfg(target_os = "macos")]
@@ -77,6 +78,9 @@ pub fn make_nonactivating_panel(window: &tauri::WebviewWindow) -> bool {
             return false;
         }
         unsafe { objc2::ffi::object_setClass(ptr as *mut AnyObject, class) };
+        // Verified before the style mask below is set: setting it on an
+        // unswapped NSWindow raises an Objective-C exception, which aborts
+        // the process across the FFI boundary.
         if !std::ptr::eq(object.class(), class) {
             return false;
         }

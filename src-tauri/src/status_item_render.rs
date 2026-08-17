@@ -384,6 +384,9 @@ mod text {
         }
 
         let mut pixels = vec![0u8; (width * buf_h * 4) as usize];
+        // Both the fill color and this bitmap context use sRGB explicitly:
+        // pairing a generic RGB color with a Device RGB context shifts even
+        // opaque pixels off the requested color, not just antialiasing fuzz.
         let Some(colorspace) = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB })) else {
             return 0;
         };
@@ -406,8 +409,14 @@ mod text {
 
         let ascent = unsafe { font.ascent() };
         let descent = unsafe { font.descent() };
+        // No CTM flip: flipping to a top-left origin here would mirror the
+        // glyphs. The context stays in its native bottom-left/y-up
+        // convention, and this baseline is derived for that.
         let baseline_native = ((buf_h as f64) + descent - ascent) / 2.0;
         CGContext::set_text_position(Some(&ctx), 0.0, baseline_native);
+        // CTLineDraw over per-glyph CTFontDrawGlyphs: the per-glyph path
+        // produced specific corrupted outlines on this font, OS, and
+        // binding combination, such as a 7 missing its top bar.
         unsafe { line.draw(&ctx) };
 
         for y in 0..buf_h {
