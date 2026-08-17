@@ -338,6 +338,8 @@ that as the cost of a working drag rather than fighting it.
 
 ## The beak
 
+<img src="images/panel-beak.png" alt="The highlighted status item above the panel, with the panel's beak, a small triangular notch at its top-left corner, pointing up toward the item">
+
 The panel's beak is one shape with the panel itself, not a second
 layer, drawn from a single outline path so no two translucent layers
 overlap and double their alpha at the seam. Its size and position live
