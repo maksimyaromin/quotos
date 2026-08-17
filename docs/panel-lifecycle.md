@@ -76,6 +76,17 @@ also re-docks the window under the status item from the last rect seen
 by any status item event, since that path has no fresh click to read a
 rect from; it is triggered by the panel's own header button.
 
+## The beak offset in the browser mock harness
+
+`app.tsx` takes the beak's horizontal offset from the native
+`panel-beak-offset` event, pushed on every dock and re-dock since it
+depends on the status item's real position; see `compute_docked_layout`
+in `shell.rs`. The browser mock harness has no real status item to push
+that event from, so it seeds a fallback constant instead. The native
+build starts at `null`, not that same fallback: a hardcoded value there
+would draw the beak confidently in the wrong place if the event were
+ever missed, where `null` fails visibly instead.
+
 ## Placing the window synchronously
 
 `tao`'s own `set_outer_position` ends in an async dispatch of

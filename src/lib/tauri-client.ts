@@ -2,7 +2,6 @@ import type { ScheduledRefreshEvent, StatusItemSegment } from "@/types/entities"
 import * as live from "./live-client";
 import * as mock from "./mock-client";
 
-/** Tauri injects `__TAURI_INTERNALS__` at runtime; a plain browser never has it. */
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 const client = isTauri ? live : mock;
@@ -13,9 +12,6 @@ export const hidePanel = client.hidePanel;
 export const onPanelVisibility = client.onPanelVisibility;
 export const setDetached = client.setDetached;
 
-// The browser harness has no native window or status item, so these six
-// override mock-client.ts's missing exports with an inline no-op instead of
-// adding unused stubs there.
 export const dragWindowStep: () => Promise<void> = isTauri ? live.dragWindowStep : async () => {};
 export const endWindowDrag: () => Promise<void> = isTauri ? live.endWindowDrag : async () => {};
 export const renderStatusItem: (

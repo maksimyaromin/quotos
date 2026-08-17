@@ -18,8 +18,6 @@ test("time module constructs every Intl.DateTimeFormat with an explicit locale, 
     return new RealDateTimeFormat(locale as string | string[] | undefined, options);
   } as unknown as typeof Intl.DateTimeFormat);
 
-  // vi.resetModules clears the module cache, so this re-import reruns the
-  // module's top-level Intl.DateTimeFormat construction under the spy.
   vi.resetModules();
   await import("./time");
 
@@ -30,7 +28,7 @@ test("time module constructs every Intl.DateTimeFormat with an explicit locale, 
 });
 
 describe("formatExactReset", () => {
-  const now = new Date(2026, 7, 12, 12, 0, 0); // This is a Wednesday.
+  const now = new Date(2026, 7, 12, 12, 0, 0);
 
   test("names today when the reset is later the same day", () => {
     const iso = new Date(2026, 7, 12, 16, 5, 0).toISOString();
@@ -43,14 +41,14 @@ describe("formatExactReset", () => {
   });
 
   test("names the weekday and joins it to the time with 'at' for a reset within the week", () => {
-    const iso = new Date(2026, 7, 16, 9, 0, 0).toISOString(); // This date is a Sunday, four days after now.
+    const iso = new Date(2026, 7, 16, 9, 0, 0).toISOString();
     const label = formatExactReset(iso, now);
     expect(label).toMatch(/^Resets (Sun|Sunday) at/);
     expect(label).not.toMatch(/today|tomorrow/);
   });
 
   test("names the calendar date for a reset more than a week out", () => {
-    const iso = new Date(2026, 7, 24, 9, 0, 0).toISOString(); // This date is twelve days after now.
+    const iso = new Date(2026, 7, 24, 9, 0, 0).toISOString();
     expect(formatExactReset(iso, now)).toMatch(/^Resets Aug 24 at/);
   });
 

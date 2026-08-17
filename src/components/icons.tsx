@@ -1,7 +1,3 @@
-// Small line icons matching the design system's stroke conventions:
-// currentColor, 1.5 to 2.2px stroke. Kept local rather than pulled from a
-// CDN, so the app has no network dependency for its own chrome.
-
 export function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
   return (
     <svg
@@ -38,7 +34,6 @@ export function PlusIcon() {
   );
 }
 
-/** Dev-only affordance that dumps the app's resolved state as JSON. */
 export function DebugIcon() {
   return (
     <svg
@@ -56,8 +51,6 @@ export function DebugIcon() {
   );
 }
 
-/** Folds a detached window back under the status item: an upward arrow
- * reading as "send this back up to the menu bar". */
 export function SnapBackIcon() {
   return (
     <svg
@@ -75,8 +68,6 @@ export function SnapBackIcon() {
   );
 }
 
-/** The Subscriptions screen's header back arrow. The only way out, since
- * there is no Done button. */
 export function BackIcon() {
   return (
     <svg

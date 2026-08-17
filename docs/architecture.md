@@ -173,6 +173,15 @@ app: a handful of accounts is simpler to read, review, and hand-edit as a
 file than as a database, and a file serves every query pattern this data
 needs.
 
+`lib/persistence.ts`'s `migrateFromLocalStorageIfEmpty` is a separate,
+one-time migration from a pre-native-store build that only ever kept
+`localStorage`'s `quotos.tracked.v1` key: it runs once, only while the
+native store reads back genuinely empty, and never again once the
+native store holds any data at all, including a state the user reached
+by removing every tracked account. It leaves that legacy key untouched
+after migrating rather than clearing it, so a build predating the
+native store can still recover its list by rolling back to it.
+
 Pinning is per limit window, not per subscription:
 `Subscription.pinnedWindowIds` is a persisted set of window ids, since
 every window a provider's normalizer builds carries a stable id from

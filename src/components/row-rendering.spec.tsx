@@ -33,8 +33,6 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
   };
 }
 
-/** Renders a row exactly as app.tsx does, so what is asserted is what the
- * panel actually paints. */
 function renderRow(s: Subscription) {
   const presentation = presentRow(s, NOW);
   return render(
@@ -55,7 +53,6 @@ function renderRow(s: Subscription) {
   );
 }
 
-/** Counts clock times such as "4:59 PM" anywhere in the rendered row. */
 function clockTimesIn(container: HTMLElement): string[] {
   return container.textContent?.match(/\b\d{1,2}:\d{2}\s?(?:AM|PM)?/g) ?? [];
 }

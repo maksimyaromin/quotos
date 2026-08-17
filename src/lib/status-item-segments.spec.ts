@@ -143,8 +143,6 @@ describe("buildStatusItemSegments", () => {
 describe("buildStatusItemTooltip", () => {
   test("is just the product name when nothing contributes a figure", () => {
     expect(buildStatusItemTooltip([])).toBe("Quotos");
-    // The segment builder and the tooltip builder must agree on what
-    // counts as a contributing figure.
     const subs = [
       subscription({
         id: "a",

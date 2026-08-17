@@ -20,13 +20,6 @@ import styles from "./app.module.css";
 
 const NOW_TICK_MS = 30_000;
 
-// The native side computes and pushes the real beak offset on every dock
-// and re-dock, since it depends on the status item's actual position, see
-// `compute_docked_layout` in src-tauri/src/shell.rs. This fallback exists
-// only for the browser mock harness, which has no real status item to
-// measure. The native build starts at `null` instead: a hardcoded fallback
-// there would draw the beak confidently in the wrong place if the
-// `panel-beak-offset` event were ever missed.
 const BEAK_LEFT_MOCK_FALLBACK = 24;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -76,8 +69,6 @@ export default function App() {
     };
   }, []);
 
-  // The rename and sign-in fields stopPropagation, so Escape there never
-  // reaches this listener.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -91,10 +82,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openMenuId]);
 
-  // WebKit suspends timers in a hidden webview, so the NOW_TICK interval
-  // below does not run while the panel is closed; see scheduler.rs's
-  // module doc for the measured evidence. Re-reading `now` on show avoids
-  // painting stale relative times after a long-closed panel reopens.
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -116,10 +103,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Registered on the window's capture phase, consuming the dismissing
-  // click there before React's delegated handlers see it, so it can never
-  // also expand a row or press whatever sits under the pointer, such as
-  // spawning a sign-in session. Only ever closes, never reopens.
   useEffect(() => {
     if (!openMenuId) return;
     const onClickCapture = (event: MouseEvent) => {
@@ -151,10 +134,6 @@ export default function App() {
     }
   };
 
-  // There is no detach button; dragging the header is the only way to
-  // detach. Relocating the window's frame at all while a mouse-down
-  // gesture is live over it reactivates the app for as long as the mouse
-  // stays down, see `drag_window_step` in `src-tauri/src/shell.rs`.
   const handleHeaderPointerDown = (event: React.MouseEvent) => {
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("button, input")) return;
@@ -210,10 +189,6 @@ export default function App() {
   };
   const goList = () => setScreen("list");
 
-  // A dev-only way to print the app's resolved state as JSON: discovered
-  // and tracked subscriptions, parsed windows, last-read times, and the
-  // rate budget, without needing screenshots. Gated on Vite's DEV flag so
-  // it never appears in a production build's UI.
   const handleDebugDump = async () => {
     const rateLimit = await debugRateLimitSnapshot();
     const dump = {
@@ -225,15 +200,10 @@ export default function App() {
     console.log("[quotos debug state]", dump);
     try {
       await navigator.clipboard.writeText(json);
-    } catch {
-      // Clipboard permission can be finicky in a dev webview. The console
-      // log above is the fallback, not this.
-    }
+    } catch {}
   };
 
   const nowDate = new Date(now);
-  // A subscription whose answer is sign in is not waiting on the rate
-  // budget, matching lib/row-presentation.ts's own exclusion.
   const blockedSubs = trackedSubscriptions.filter(
     (s) => !s.needsSignIn && isBlocked(s.rateLimitedUntil, now),
   );
@@ -247,9 +217,6 @@ export default function App() {
           : min,
       ).rateLimitedUntil
     : null;
-  // The wait is a tooltip, never a disabled control: the Rust limiter
-  // refuses a press without spending anything, so this stays the only way
-  // to re-test a diagnosis once the budget frees up.
   const refreshLabel = refreshing
     ? "Reading…"
     : allBlocked
@@ -314,8 +281,6 @@ export default function App() {
       }
     >
       {screen === "manage" ? (
-        // See use-subscriptions's trackedSubscriptions doc for what
-        // "tracked" excludes here.
         <SubscriptionsScreen
           tracked={trackedSubscriptions}
           onAdd={addSubscription}

@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 afterEach(cleanup);
 
-// jsdom has no ResizeObserver; Panel's height animation observes its content
-// with one. The tests here never assert on height, so an inert stub is enough.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -68,14 +66,10 @@ vi.mock("./lib/persistence", () => ({
   saveTracked: () => Promise.resolve(),
 }));
 
-// vi.mock calls above are hoisted by Vitest, so this static import safely
-// resolves against the mocked modules.
 import App from "./app";
 
 async function renderAppWithRow() {
   render(<App />);
-  // The tracked account has loaded and read once when its row menu trigger
-  // exists.
   return await screen.findByLabelText("More");
 }
 
@@ -125,9 +119,6 @@ describe("Escape dismissal layering", () => {
   });
 });
 
-// A real browser fires mousedown before click, so every dismissal here
-// fires both. The dismissing click must be fully consumed, or it would
-// also expand the row or press whatever control sits under the pointer.
 describe("pointer dismissal consumes the dismissing click", () => {
   function dismissByClicking(target: Element) {
     fireEvent.mouseDown(target);
@@ -178,9 +169,6 @@ describe("panel reopen refreshes the presentation clock", () => {
     visibilityCallback = null;
   });
 
-  // Models the panel being closed long enough for stale-relative-time
-  // painting to matter: the wall clock moves without ever letting the
-  // NOW_TICK interval itself fire.
   test("re-reads `now` on visible=true so relative times are not hours stale", async () => {
     await renderAppWithRow();
     expect(screen.getByText("Last read just now")).toBeTruthy();

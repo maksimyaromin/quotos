@@ -5,12 +5,6 @@ function isoFromEpochSeconds(sec: number | null | undefined): string | null {
   return new Date(sec * 1000).toISOString();
 }
 
-/** The feed's ingest side only requires `used_percentage`, see
- * statusline.rs's `extract_window`, so a fresher reading with
- * `resets_at: null` is routine. The window's reset time has not changed
- * just because the feed omitted it. This refreshes the percentage and
- * keeps the API's own `resets_at` unless the feed actually supplies a
- * newer one. */
 function patchWindow(
   window: Record<string, unknown>,
   percentKey: "percent" | "utilization",
@@ -22,19 +16,6 @@ function patchWindow(
   return patched;
 }
 
-/** Reconciles the Claude Code statusline's zero-cost feed with the API
- * read it is arriving alongside: the freshest reading wins. This patches
- * the raw `/api/oauth/usage` shape before it reaches `normalizeUsage`,
- * rather than merging the already-normalized window list, so every
- * downstream rule, headline selection, severity, window naming, stays
- * exactly as tested.
- *
- * Never double-counts a window: it only refreshes a window the API
- * response already asserts exists, `five_hour`/`session` and
- * `seven_day`/`weekly_all` patched in place, never synthesizing one the
- * API reported as absent. And it is a no-op whenever the feed is not
- * strictly newer than this API read, `feedTime <= apiTime`, which an
- * empty, stale, or never-installed feed always is. */
 export function reconcileWithStatusline(
   usageRaw: unknown,
   apiFetchedAtIso: string,

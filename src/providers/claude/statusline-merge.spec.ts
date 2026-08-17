@@ -3,8 +3,8 @@ import type { StatuslineFeedWire } from "@/types/entities";
 import { reconcileWithStatusline } from "./statusline-merge";
 
 const API_FETCHED_AT = "2026-08-15T12:00:00.000Z";
-const FRESHER = "2026-08-15T12:00:30.000Z"; // 30s after the API read
-const OLDER = "2026-08-15T11:59:00.000Z"; // before the API read
+const FRESHER = "2026-08-15T12:00:30.000Z";
+const OLDER = "2026-08-15T11:59:00.000Z";
 
 function feedWith(
   rateLimits: StatuslineFeedWire["rate_limits"],
@@ -104,7 +104,7 @@ describe("reconcileWithStatusline", () => {
       const session = result.limits.find((l) => l.kind === "session")!;
       const weekly = result.limits.find((l) => l.kind === "weekly_all")!;
       expect(session.percent).toBe(45);
-      expect(weekly.percent).toBe(24); // untouched
+      expect(weekly.percent).toBe(24);
     });
 
     test("does not mutate the original usage object", () => {

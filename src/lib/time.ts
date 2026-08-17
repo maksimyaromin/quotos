@@ -1,4 +1,3 @@
-/** "2 min ago" for an ISO timestamp in the past. */
 export function formatRelativePast(iso: string | null, now: Date = new Date()): string | null {
   if (!iso) return null;
   const then = new Date(iso).getTime();
@@ -14,9 +13,6 @@ export function formatRelativePast(iso: string | null, now: Date = new Date()): 
   return `${days}d ago`;
 }
 
-// Intl.DateTimeFormat falls back to the system locale when none is given.
-// Every formatter in this module is built with an explicit locale instead,
-// so the app's output stays in English regardless of the machine it runs on.
 const LOCALE = "en-US";
 
 const TIME_FMT = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
@@ -31,8 +27,6 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
-/** Bare clock time, for example "4:05 PM". Used for compact labels such
- * as a disabled refresh control's "available at …" tooltip. */
 export function formatClockTime(iso: string | null): string | null {
   if (!iso) return null;
   const then = new Date(iso);
@@ -40,11 +34,6 @@ export function formatClockTime(iso: string | null): string | null {
   return TIME_FMT.format(then);
 }
 
-/** The exact moment a window resets, not a relative offset the caller has to
- * do arithmetic on. Formats as "Today at 4:05 PM", "Tomorrow at 10:00 AM",
- * "Wed at 10:00 AM" or "Aug 17 at 10:00 AM" depending on how far out the
- * reset is, close enough to need the day named and far enough to need the
- * date. */
 export function formatExactReset(iso: string | null, now: Date = new Date()): string | null {
   if (!iso) return null;
   const then = new Date(iso);

@@ -1,7 +1,3 @@
-/* Host page for the popover window: fully transparent, just enough padding
-   for the Panel's own shadow and beak to render without clipping. The
-   window itself carries no chrome. Panel supplies the whole visual shell. */
-
 html,
 body {
   margin: 0;
@@ -12,19 +8,6 @@ body {
   user-select: none;
 }
 
-/* `padding-top` is the beak's own headroom inside the transparent window,
-   and it is load-bearing in two directions. It must be at least
-   Panel.jsx's NOTCH_RESERVE, or the beak is clipped by the window edge,
-   and it is subtracted by src-tauri/src/geometry.rs's
-   `docked_layout_in_points` when it works out where to put the window so
-   the beak's tip lands just below the menu bar. Every point of slack here
-   is a point of visible gap between the menu bar and the panel, so it
-   tracks NOTCH_RESERVE exactly rather than carrying spare room.
-   `--shadow-popover`'s top bleed is zero: `0 6px 16px -4px` reaches
-   `16/2 - 4 - 6 = -2px` above the box, which is not at all, since it is a
-   downward shadow, so nothing else needs room up here. The left and right
-   margin is a different matter and stays at 14px per side, see the
-   blur-margin note in tokens/elevation.css. */
 body {
   display: flex;
   justify-content: center;
@@ -50,8 +33,6 @@ body {
   color: var(--text-tertiary);
 }
 
-/* Panel body: no visible scrollbar, no reserved gutter. The content owns
-   the full panel width whether or not it is currently scrolling. */
 .quotos-scroll {
   scrollbar-width: none;
 }
@@ -61,7 +42,6 @@ body {
   height: 0;
 }
 
-/* RefreshIcon's spin, app.tsx's only consumer of this keyframe. */
 @keyframes quotos-spin {
   to {
     transform: rotate(360deg);

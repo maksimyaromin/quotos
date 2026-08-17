@@ -6,7 +6,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-// vi.mock is hoisted, so this static import safely resolves against it.
 import { loadTracked, saveTracked, type TrackedAccount } from "./persistence";
 
 const LEGACY_KEY = "quotos.tracked.v1";
@@ -56,7 +55,7 @@ describe("persistence on the native path, migrating from localStorage", () => {
   test("migrates a legacy localStorage list into the native store on first run", async () => {
     window.localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 1, tracked: [SAMPLE] }));
     invoke.mockImplementation((cmd: string) => {
-      if (cmd === "load_tracked") return Promise.resolve([]); // The native store starts empty.
+      if (cmd === "load_tracked") return Promise.resolve([]);
       if (cmd === "save_tracked") return Promise.resolve();
       throw new Error(`unexpected command ${cmd}`);
     });

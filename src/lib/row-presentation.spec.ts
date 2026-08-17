@@ -81,8 +81,6 @@ describe("presentRow, the badge tells the truth", () => {
   });
 
   test("a broken row that does not need signing in gets no sign-in badge", () => {
-    // Offline at launch, an HTTP 403, and a credential Quotos could not
-    // renew are all `broken`, but none of them is a sign-in problem.
     const offline = presentRow(
       sub({ state: "broken", needsSignIn: false, used: null, lastReadAt: null }),
       NOW,

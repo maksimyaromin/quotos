@@ -1,21 +1,15 @@
 import type { StatusItemSegment, Subscription } from "@/types/entities";
 
-/** Must match `LimitWindow.jsx`'s `numberColor` thresholds. */
 function pickBaseFigureColor(used: number): StatusItemSegment["color"] {
   if (used >= 90) return "red";
   if (used >= 75) return "amber";
   return "neutral";
 }
 
-/** A stale subscription only taints the bar if it currently contributes a
- * pinned figure. */
 function pickFigureColor(used: number, anyContributingStale: boolean): StatusItemSegment["color"] {
   return anyContributingStale ? "amber" : pickBaseFigureColor(used);
 }
 
-/** One segment per pinned window, in panel order matching the expanded
- * row. A pin whose window no longer exists, or has no numeric value yet,
- * contributes nothing. */
 export function buildStatusItemSegments(subscriptions: Subscription[]): StatusItemSegment[] {
   const entries: { sub: Subscription; used: number }[] = [];
   for (const sub of subscriptions) {
@@ -40,10 +34,6 @@ export function buildStatusItemSegments(subscriptions: Subscription[]): StatusIt
   return segments;
 }
 
-/** Names every contributing figure for VoiceOver, since the status item's
- * digits alone carry no accessible text. "Quotos" alone when nothing
- * contributes. Applied verbatim by the native side, which never composes
- * tooltip text itself. */
 export function buildStatusItemTooltip(subscriptions: Subscription[]): string {
   const lines: string[] = [];
   for (const sub of subscriptions) {
@@ -57,8 +47,6 @@ export function buildStatusItemTooltip(subscriptions: Subscription[]): string {
   return lines.length === 0 ? "Quotos" : ["Quotos", ...lines].join("\n");
 }
 
-/** Narrower than `severity`: only active windows count, and pinning does
- * not matter. Returns 0, an empty ring, when nothing qualifies. */
 export function computeWorstActiveLimitPercent(subscriptions: Subscription[]): number {
   let worst = 0;
   for (const sub of subscriptions) {

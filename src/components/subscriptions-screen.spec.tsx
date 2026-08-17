@@ -15,15 +15,11 @@ const onPanelVisibility = vi.fn((callback: (visible: boolean) => void) => {
 vi.mock("../lib/tauri-client", () => ({
   listAccounts: () => listAccounts(),
   onPanelVisibility: (callback: (visible: boolean) => void) => onPanelVisibility(callback),
-  // StatuslineControl imports these by name, so the mocked module must
-  // still export them even though it renders only for tracked rows, none
-  // of which appear in these tests.
   statuslineStatus: () => Promise.resolve({ kind: "not_installed" }),
   statuslineInstall: () => Promise.resolve(),
   statuslineRemove: () => Promise.resolve(),
 }));
 
-// vi.mock is hoisted, so this static import safely resolves against it.
 import { SubscriptionsScreen } from "./subscriptions-screen";
 
 const ACCOUNT_A: AccountDescriptor = {
@@ -73,10 +69,7 @@ describe("SubscriptionsScreen discovery refresh", () => {
     await screen.findByText("/Users/x/.claude");
     expect(screen.queryByText("/Users/x/.claude-work")).toBeNull();
 
-    // The panel hides because the terminal where the sign-in happens takes
-    // focus.
     act(() => visibilityCallback!(false));
-    // The new account is discoverable by the time the panel reopens.
     await act(async () => visibilityCallback!(true));
 
     expect(await screen.findByText("/Users/x/.claude-work")).toBeTruthy();

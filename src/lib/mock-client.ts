@@ -1,14 +1,3 @@
-/** Browser-only demo data, used when the app is opened in a plain browser,
- * for example npm run dev plus Chrome, rather than inside the Tauri shell,
- * where `invoke()` has nothing to talk to. This exists so every UI state
- * can be driven and screenshotted without packaging the app. It never runs
- * inside the real Tauri build.
- *
- * `listAccounts()` here stands in for discovery: it only ever returns
- * accounts that have a credential, never a phantom folder. It is
- * deliberately decoupled from what is tracked and shown, since the tracked
- * list, persisted in localStorage via lib/persistence.ts, starts empty and
- * is the only thing the panel renders. */
 import type {
   AccountDescriptor,
   FetchError,
@@ -19,10 +8,6 @@ import type {
 
 const DELAY_MS = 500;
 const callCounts = new Map<string, number>();
-// Browser-only simulation of claude setup-token, since the real process
-// and the browser it opens cannot be driven from here, see signin.rs. Lets
-// the paste-code UI itself be reviewed end to end even though the real CLI
-// flow can only be verified on a packaged build.
 const signInSessions = new Set<string>();
 const recoveredAccounts = new Set<string>();
 let signInListeners: Array<(event: SignInFinishedEvent) => void> = [];
@@ -69,9 +54,6 @@ function buildProfilePayload(name: string, orgType: string) {
   return { organization: { name, organization_type: orgType, subscription_status: "active" } };
 }
 
-/** The fields every snapshot carries regardless of scenario. `fetchedAt`
- * defaults to now; only the statusline-reconciliation scenario backdates
- * it, to leave room for a fresher feed reading. */
 function snapshotEnvelope(account: AccountDescriptor, fetchedAt = new Date().toISOString()) {
   return {
     account_id: account.id,
@@ -81,9 +63,6 @@ function snapshotEnvelope(account: AccountDescriptor, fetchedAt = new Date().toI
   };
 }
 
-// What discovery finds on this fake machine. Every entry here would have
-// resolved a real Keychain credential. A folder-only phantom with no
-// credential never reaches this list at all.
 const MOCK_ACCOUNTS: AccountDescriptor[] = [
   { id: "claude:claude", provider: "claude", config_dir: "~/.claude" },
   { id: "claude:claude-team", provider: "claude", config_dir: "~/.claude-team" },
@@ -143,9 +122,6 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         message: "No Claude Code credentials in the Keychain for this account.",
       });
     case "claude:demo-broken":
-      // Once the mock sign-in flow has finished, see submitSignInCode
-      // below, the account reads healthy again. This lets the paste-code
-      // UI be reviewed end to end in a browser.
       if (recoveredAccounts.has(account.id)) {
         return delay({
           ...snapshotEnvelope(account),
@@ -153,9 +129,6 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
           profile: buildProfilePayload("Recovered demo", "claude_pro"),
         });
       }
-      // The first read surfaces an expired login. Every read after that
-      // comes back rate_limited, simulating a dry retry budget, and the
-      // health state must still read broken, not decay into waiting.
       if (n === 1) {
         return fail({
           kind: "unauthorized",
@@ -164,11 +137,6 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       }
       return fail({ kind: "rate_limited", retry_after_secs: 214 });
     case "claude:demo-stale-credential":
-      // Signed in and renewable, but the access token aged out and Quotos
-      // could not renew it on this machine. Reads as a red row with its
-      // own reason and a "Try again" action, specifically not the "Needs
-      // sign-in" badge. The second read succeeds, standing in for the user
-      // using Claude Code once.
       if (n === 1) {
         return fail({
           kind: "credential_stale",
@@ -182,9 +150,6 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         profile: buildProfilePayload("Renewed demo", "claude_max"),
       });
     case "claude:demo-waiting":
-      // Never successfully read even once, and rate-limited from the very
-      // first attempt. This is the case where there is no health data
-      // yet, only a budget wait.
       return fail({ kind: "rate_limited", retry_after_secs: 214 });
     case "claude:demo-behind":
       if (n === 1) {
@@ -196,28 +161,18 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
       }
       return fail({ kind: "network", message: "the connection timed out" });
     case "claude:demo-nolimits":
-      // A clean read that simply has nothing to report yet: working, with
-      // no windows at all, not a failure. Exercises the "No limits
-      // reported yet." message with a teal, not amber or red, dot.
       return delay({
         ...snapshotEnvelope(account),
         usage: { limits: [] },
         profile: buildProfilePayload("No limits demo", "claude_pro"),
       });
     case "claude:demo-severity":
-      // Exercises headline and severity disagreeing: the weekly headline is
-      // a healthy 20%, but the session is nearly out at 85%.
       return delay({
         ...snapshotEnvelope(account),
         usage: buildUsagePayload(85, 20, 8),
         profile: buildProfilePayload("Severity demo", "claude_pro"),
       });
     case "claude:demo-statusline":
-      // The API read reports a session at 12%, but a statusline reading
-      // written after this fetch reports 45%, standing in for a few more
-      // messages sent since the last once-a-minute poll. Exercises
-      // reconcileWithStatusline end to end: the row should show the
-      // fresher 45%, not the API's stale 12%.
       return delay({
         ...snapshotEnvelope(account, new Date(Date.now() - 30_000).toISOString()),
         usage: buildUsagePayload(12, 24, 8),
@@ -231,9 +186,6 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
         },
       });
     case "claude:demo-longnames":
-      // A provider-supplied window name long enough to force the ellipsis
-      // truncation in LimitWindow.jsx. Names are rendered verbatim, never
-      // translated or shortened by this app.
       return delay({
         ...snapshotEnvelope(account),
         usage: {
@@ -271,18 +223,14 @@ export async function fetchSnapshot(account: AccountDescriptor): Promise<RawSnap
   }
 }
 
-export async function hidePanel(): Promise<void> {
-  // no-op in the browser
-}
+export async function hidePanel(): Promise<void> {}
 
 export function onPanelVisibility(callback: (visible: boolean) => void): Promise<() => void> {
   callback(true);
   return Promise.resolve(() => {});
 }
 
-export async function setDetached(_detached: boolean): Promise<void> {
-  // no-op in the browser: there is no real window chrome to change
-}
+export async function setDetached(_detached: boolean): Promise<void> {}
 
 export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
   return Object.fromEntries(
@@ -311,9 +259,7 @@ export async function cancelSignIn(accountId: string): Promise<void> {
   signInSessions.delete(accountId);
 }
 
-export async function forgetSignIn(_accountId: string): Promise<void> {
-  // no-op in the browser: nothing native to clean up
-}
+export async function forgetSignIn(_accountId: string): Promise<void> {}
 
 export function onSignInFinished(
   callback: (event: SignInFinishedEvent) => void,
@@ -324,9 +270,6 @@ export function onSignInFinished(
   });
 }
 
-// Keyed by config dir. The team account starts with a foreign statusLine
-// already configured, so the conflict path is reachable in a plain browser
-// too.
 const statuslineState = new Map<string, StatuslineIntegrationStatus>([
   ["~/.claude-team", { kind: "conflict", existing_command: "~/.claude-team/my-own-statusline.sh" }],
 ]);

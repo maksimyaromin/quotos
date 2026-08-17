@@ -1,8 +1,3 @@
-/** Turns `/api/oauth/profile` into label fields. Label comes from
- * `organization.name` and `organization_type`, never from `account.email`
- * or `account.full_name`, since those are identical across a person's
- * accounts and would make two subscriptions indistinguishable. */
-
 function humanizeOrgType(type: string): string {
   return type
     .replace(/^claude_/, "")
