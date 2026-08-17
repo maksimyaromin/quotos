@@ -10,6 +10,11 @@ const HAIRLINE_WIDTH_PX: u32 = 2;
 const GROUP_GUTTER_POST_PX: u32 = 10;
 const HAIRLINE_HEIGHT_PX: u32 = 22;
 
+const _: () = assert!(
+    GLYPH_GAP_PX > FIGURE_GAP_PX,
+    "the glyph must read as a separate shape from the figures via a wider gap than sits between two figures"
+);
+
 #[cfg(target_os = "macos")]
 const TEXT_FONT_SIZE_PT: f64 = 12.0 * 2.0;
 
@@ -354,11 +359,22 @@ mod text {
                 used_fallback: false,
             };
         }
+        load_fallback_font(size_pt)
+    }
+
+    fn load_fallback_font(size_pt: f64) -> LoadedFont {
         let font = NSFont::monospacedDigitSystemFontOfSize_weight(size_pt, medium_weight());
         LoadedFont {
             handle: FontHandle::Fallback(font),
             used_fallback: true,
         }
+    }
+
+    /// Skips `try_load_monolisa` even where it would succeed; see
+    /// "Text rendering" in docs/status-item-rendering.md.
+    #[cfg(test)]
+    pub fn load_font_forcing_fallback(size_pt: f64) -> LoadedFont {
+        load_fallback_font(size_pt)
     }
 
     fn make_line(font: &CTFont, text: &str, rgba: (u8, u8, u8, u8)) -> Option<CFRetained<CTLine>> {
@@ -791,46 +807,25 @@ mod tests {
         }
     }
 
-    /// The x-ranges where some row's ink crosses half coverage. A figure's
-    /// own letterforms can dip below this between two characters, so this
-    /// is finer-grained than "one run per figure"; see `merge_close_runs`.
-    fn ink_column_runs(
-        buf: &[u8],
-        w: u32,
-        h: u32,
-        x_range: std::ops::Range<u32>,
-    ) -> Vec<(u32, u32)> {
-        let has_ink = |x: u32| (0..h).any(|y| buf[(((y * w) + x) * 4 + 3) as usize] > 127);
-        let mut runs = Vec::new();
-        let mut start = None;
-        for x in x_range.clone() {
-            match (has_ink(x), start) {
-                (true, None) => start = Some(x),
-                (false, Some(s)) => {
-                    runs.push((s, x));
-                    start = None;
-                }
-                _ => {}
-            }
-        }
-        if let Some(s) = start {
-            runs.push((s, x_range.end));
-        }
-        runs
-    }
-
-    /// Collapses runs separated by less than `min_gap` into one, turning a
-    /// figure's own internal letter-to-letter runs back into one run per
-    /// figure while leaving the real, larger figure-to-figure gaps alone.
-    fn merge_close_runs(runs: Vec<(u32, u32)>, min_gap: u32) -> Vec<(u32, u32)> {
-        let mut merged: Vec<(u32, u32)> = Vec::new();
-        for (start, end) in runs {
-            match merged.last_mut() {
-                Some(last) if start - last.1 < min_gap => last.1 = end,
-                _ => merged.push((start, end)),
-            }
-        }
-        merged
+    /// Every segment's own absolute ink edges, computed the same way
+    /// `render` places them; see "Spacing the figures evenly" in
+    /// docs/status-item-rendering.md.
+    fn figure_ink_edges(font: &text::LoadedFont, segs: &[StatusItemSegment]) -> Vec<(f64, f64)> {
+        let ink_bounds: Vec<(f64, f64)> = segs
+            .iter()
+            .map(|s| text::ink_bounds(font, &s.text))
+            .collect();
+        let glyph_ink_right_edge =
+            SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
+        let (placements, _) = layout_figures(segs, &ink_bounds, glyph_ink_right_edge);
+        placements
+            .iter()
+            .zip(&ink_bounds)
+            .map(|(p, &(min_x, max_x))| {
+                let origin = p.origin.x0 as f64 + p.origin.local_offset;
+                (origin + min_x, origin + max_x)
+            })
+            .collect()
     }
 
     #[test]
@@ -1171,21 +1166,19 @@ mod tests {
 
     #[test]
     fn digit_widths_are_tabular() {
-        let font = text::load_font(text_font_size_pt());
-        assert_eq!(
-            text::measure(&font, "1"),
-            text::measure(&font, "8"),
-            "'1' and '8' must advance the same width (tabular figures)"
-        );
-
-        let one = render(&[seg("1", StatusItemColor::Red)], false, 0, false);
-        let eight = render(&[seg("8", StatusItemColor::Red)], false, 0, false);
-        assert!(
-            one.1.abs_diff(eight.1) <= 1,
-            "'1' and '8' share an advance width, so the rendered image should differ only by ink-bearing rounding, not: {} vs {}",
-            one.1,
-            eight.1
-        );
+        for font in [
+            text::load_font(text_font_size_pt()),
+            text::load_font_forcing_fallback(text_font_size_pt()),
+        ] {
+            let widths: Vec<u32> = "0123456789"
+                .chars()
+                .map(|c| text::measure(&font, &c.to_string()))
+                .collect();
+            assert!(
+                widths.iter().all(|&w| w == widths[0]),
+                "every digit must advance the same width (tabular figures), got {widths:?}"
+            );
+        }
     }
 
     #[test]
@@ -1260,51 +1253,43 @@ mod tests {
 
     #[test]
     fn every_figure_to_figure_ink_gap_is_equal_across_digit_count_mixes() {
-        for figures in [
-            ["2%", "74%", "100%"],
-            ["9%", "9%", "9%"],
-            ["100%", "1%", "50%"],
+        for font in [
+            text::load_font(text_font_size_pt()),
+            text::load_font_forcing_fallback(text_font_size_pt()),
         ] {
-            let segs = figures.map(|t| seg(t, StatusItemColor::Neutral));
-            let (buf, w, h) = render(&segs, false, 0, false);
-            // Skip the glyph's own box: its arc has a real angular gap, so
-            // scanning across it finds several runs, not the one this test
-            // wants. `merge_close_runs` folds a figure's own letter gaps back in.
-            let runs = merge_close_runs(
-                ink_column_runs(&buf, w, h, (SIDE_PAD_PX + GLYPH_PX)..w),
-                FIGURE_GAP_PX / 2,
-            );
-            assert_eq!(
-                runs.len(),
-                3,
-                "{figures:?}: expected one ink run per figure, got {runs:?}"
-            );
-            let figure_gaps: Vec<u32> = runs.windows(2).map(|w| w[1].0 - w[0].1).collect();
-            let (first, rest) = figure_gaps.split_first().unwrap();
-            for gap in rest {
-                assert!(
-                    first.abs_diff(*gap) <= 1,
-                    "{figures:?}: figure-to-figure ink gaps must match, got {figure_gaps:?}"
-                );
+            for figures in [
+                ["2%", "74%", "100%"],
+                ["9%", "9%", "9%"],
+                ["100%", "1%", "50%"],
+            ] {
+                let segs = figures.map(|t| seg(t, StatusItemColor::Neutral));
+                let edges = figure_ink_edges(&font, &segs);
+                let gaps: Vec<f64> = edges.windows(2).map(|w| w[1].0 - w[0].1).collect();
+                for gap in &gaps {
+                    assert!(
+                        (gap - FIGURE_GAP_PX as f64).abs() < 1e-6,
+                        "{figures:?}: every figure-to-figure ink gap must equal FIGURE_GAP_PX ({FIGURE_GAP_PX}px), got {gaps:?}"
+                    );
+                }
             }
         }
     }
 
     #[test]
     fn the_glyph_to_first_figure_gap_is_its_own_larger_constant() {
-        let (buf, w, h) = render(&[seg("42%", StatusItemColor::Neutral)], false, 0, false);
-        let glyph_ink_right_edge =
-            SIDE_PAD_PX + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX) as u32;
-        let runs = merge_close_runs(
-            ink_column_runs(&buf, w, h, (SIDE_PAD_PX + GLYPH_PX)..w),
-            FIGURE_GAP_PX / 2,
-        );
-        assert_eq!(runs.len(), 1, "expected one ink run for the lone figure");
-        let glyph_gap = runs[0].0 - glyph_ink_right_edge;
-        assert!(
-            glyph_gap > FIGURE_GAP_PX,
-            "the glyph must read as separate from the figures, not merely another figure-sized gap away: got {glyph_gap}px against a {FIGURE_GAP_PX}px figure gap"
-        );
+        for font in [
+            text::load_font(text_font_size_pt()),
+            text::load_font_forcing_fallback(text_font_size_pt()),
+        ] {
+            let segs = [seg("42%", StatusItemColor::Neutral)];
+            let glyph_ink_right_edge = SIDE_PAD_PX as f64
+                + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
+            let glyph_gap = figure_ink_edges(&font, &segs)[0].0 - glyph_ink_right_edge;
+            assert!(
+                (glyph_gap - GLYPH_GAP_PX as f64).abs() < 1e-6,
+                "the glyph-to-figure gap must equal GLYPH_GAP_PX ({GLYPH_GAP_PX}px), got {glyph_gap}"
+            );
+        }
     }
 
     #[test]
