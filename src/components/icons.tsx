@@ -9,12 +9,12 @@ export function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={spinning ? { animation: "quotos-spin 900ms linear infinite" } : undefined}
+      style={spinning ? { animation: 'quotos-spin 900ms linear infinite' } : undefined}
     >
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
       <path d="M21 3v6h-6" />
     </svg>
-  );
+  )
 }
 
 export function PlusIcon() {
@@ -31,7 +31,7 @@ export function PlusIcon() {
     >
       <path d="M12 5v14M5 12h14" />
     </svg>
-  );
+  )
 }
 
 export function DebugIcon() {
@@ -48,7 +48,7 @@ export function DebugIcon() {
     >
       <path d="M8 3H7a2 2 0 0 0-2 2v3a2 2 0 0 1-2 2 2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2 2 2 0 0 0-2 2v3a2 2 0 0 1-2 2h-1" />
     </svg>
-  );
+  )
 }
 
 export function SnapBackIcon() {
@@ -65,7 +65,7 @@ export function SnapBackIcon() {
     >
       <path d="M12 19V5M5 12l7-7 7 7" />
     </svg>
-  );
+  )
 }
 
 export function BackIcon() {
@@ -82,5 +82,5 @@ export function BackIcon() {
     >
       <path d="M15 18l-6-6 6-6" />
     </svg>
-  );
+  )
 }

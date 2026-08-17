@@ -1,5 +1,5 @@
-import { Button } from "@/design-system";
-import styles from "./undo-row.module.css";
+import { Button } from '@/design-system'
+import styles from './undo-row.module.css'
 
 export function UndoRow({ label, onUndo }: { label: string; onUndo: () => void }) {
   return (
@@ -9,5 +9,5 @@ export function UndoRow({ label, onUndo }: { label: string; onUndo: () => void }
         Undo
       </Button>
     </div>
-  );
+  )
 }

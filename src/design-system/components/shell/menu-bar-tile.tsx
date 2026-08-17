@@ -1,6 +1,6 @@
-import type * as React from "react";
-import type { SubscriptionState } from "../indicators/status-dot";
-import styles from "./menu-bar-tile.module.css";
+import type * as React from 'react'
+import type { SubscriptionState } from '../indicators/status-dot'
+import styles from './menu-bar-tile.module.css'
 
 export function QuotaGlyph({ size = 15 }: { size?: number }) {
   return (
@@ -13,7 +13,7 @@ export function QuotaGlyph({ size = 15 }: { size?: number }) {
         strokeLinecap="round"
       />
     </svg>
-  );
+  )
 }
 
 function AttentionMark() {
@@ -31,26 +31,26 @@ function AttentionMark() {
       <path d="M10.3 3.6 1.8 18a1.9 1.9 0 0 0 1.7 2.9h17a1.9 1.9 0 0 0 1.7-2.9L13.7 3.6a1.9 1.9 0 0 0-3.4 0Z" />
       <path d="M12 9v4M12 17h.01" />
     </svg>
-  );
+  )
 }
 
 export interface PinnedFigure {
-  used?: number | null;
-  state?: SubscriptionState;
+  used?: number | null
+  state?: SubscriptionState
 }
 
 export interface MenuBarTileProps {
-  pins?: PinnedFigure[];
-  onClick?: () => void;
-  showStrip?: boolean;
-  style?: React.CSSProperties;
+  pins?: PinnedFigure[]
+  onClick?: () => void
+  showStrip?: boolean
+  style?: React.CSSProperties
 }
 
-function tintLevel(pin: PinnedFigure): "amber" | "red" | null {
-  if (pin.state === "broken" || pin.state === "behind") return "amber";
-  if (typeof pin.used === "number" && pin.used >= 90) return "red";
-  if (typeof pin.used === "number" && pin.used >= 75) return "amber";
-  return null;
+function tintLevel(pin: PinnedFigure): 'amber' | 'red' | null {
+  if (pin.state === 'broken' || pin.state === 'behind') return 'amber'
+  if (typeof pin.used === 'number' && pin.used >= 90) return 'red'
+  if (typeof pin.used === 'number' && pin.used >= 75) return 'amber'
+  return null
 }
 
 export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: MenuBarTileProps) {
@@ -60,12 +60,12 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: Men
       {pins.map((pin, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: PinnedFigure has no stable id, and each pin's span carries no internal state, so index-keyed reuse is safe.
         <span key={i} className={styles.pin} data-attention={tintLevel(pin) ?? undefined}>
-          {pin.state === "broken" ? (
+          {pin.state === 'broken' ? (
             <AttentionMark />
           ) : (
             <>
-              {typeof pin.used === "number" ? `${pin.used}%` : "—"}
-              {pin.state === "behind" ? (
+              {typeof pin.used === 'number' ? `${pin.used}%` : '—'}
+              {pin.state === 'behind' ? (
                 <span className={styles.behindMark}>
                   <AttentionMark />
                 </span>
@@ -75,9 +75,9 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: Men
         </span>
       ))}
     </button>
-  );
+  )
 
-  if (!showStrip) return <span style={style}>{tile}</span>;
+  if (!showStrip) return <span style={style}>{tile}</span>
 
   return (
     <div className={styles.stripWrapper} style={style}>
@@ -92,5 +92,5 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: Men
       </span>
       <span className={styles.neighborClock}>Mon 9:41</span>
     </div>
-  );
+  )
 }

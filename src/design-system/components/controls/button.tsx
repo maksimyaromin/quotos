@@ -1,20 +1,20 @@
-import type * as React from "react";
-import { joinClassNames } from "../../join-class-names";
-import styles from "./button.module.css";
+import type * as React from 'react'
+import { joinClassNames } from '../../join-class-names'
+import styles from './button.module.css'
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
-  size?: "sm" | "base" | "lg";
-  disabled?: boolean;
-  fullWidth?: boolean;
-  icon?: React.ReactNode;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  children?: React.ReactNode;
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  size?: 'sm' | 'base' | 'lg'
+  disabled?: boolean
+  fullWidth?: boolean
+  icon?: React.ReactNode
+  onClick?: React.MouseEventHandler<HTMLButtonElement>
+  children?: React.ReactNode
 }
 
 export function Button({
-  variant = "secondary",
-  size = "base",
+  variant = 'secondary',
+  size = 'base',
   disabled = false,
   fullWidth = false,
   icon = null,
@@ -36,5 +36,5 @@ export function Button({
       {icon ? <span className={styles.icon}>{icon}</span> : null}
       {children}
     </button>
-  );
+  )
 }

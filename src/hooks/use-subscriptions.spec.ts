@@ -1,17 +1,17 @@
-import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-const fetchSnapshot = vi.fn();
-const renderStatusItem = vi.fn();
-const onQuotaRefresh = vi.fn();
-const kickScheduler = vi.fn();
-const startSignIn = vi.fn();
-const submitSignInCode = vi.fn();
-const cancelSignIn = vi.fn();
-const forgetSignIn = vi.fn();
-const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.resolve(() => {}));
+const fetchSnapshot = vi.fn()
+const renderStatusItem = vi.fn()
+const onQuotaRefresh = vi.fn()
+const kickScheduler = vi.fn()
+const startSignIn = vi.fn()
+const submitSignInCode = vi.fn()
+const cancelSignIn = vi.fn()
+const forgetSignIn = vi.fn()
+const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.resolve(() => {}))
 
-vi.mock("@/lib/tauri-client", () => ({
+vi.mock('@/lib/tauri-client', () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
   renderStatusItem: (...args: unknown[]) => renderStatusItem(...args),
   onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
@@ -21,1048 +21,1044 @@ vi.mock("@/lib/tauri-client", () => ({
   cancelSignIn: (...args: unknown[]) => cancelSignIn(...args),
   forgetSignIn: (...args: unknown[]) => forgetSignIn(...args),
   onSignInFinished: (callback: (event: unknown) => void) => onSignInFinished(callback),
-}));
+}))
 
 const TRACKED = [
-  { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: false },
-];
+  { id: 'claude:claude', provider: 'claude', config_dir: '~/.claude', label: null, pinned: false },
+]
 
-const loadTracked = vi.fn(() => Promise.resolve(TRACKED));
-const saveTracked = vi.fn();
+const loadTracked = vi.fn(() => Promise.resolve(TRACKED))
+const saveTracked = vi.fn()
 
-vi.mock("@/lib/persistence", () => ({
+vi.mock('@/lib/persistence', () => ({
   loadTracked: () => loadTracked(),
   saveTracked: (...args: unknown[]) => saveTracked(...args),
-}));
+}))
 
-import { deriveAccountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from "./use-subscriptions";
+import { deriveAccountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from './use-subscriptions'
 
 async function flush() {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-  });
+    await vi.advanceTimersByTimeAsync(0)
+  })
 }
 
-describe("useSubscriptions refresh policy in the browser mock harness path", () => {
+describe('useSubscriptions refresh policy in the browser mock harness path', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
     fetchSnapshot.mockResolvedValue({
-      account_id: "claude:claude",
-      provider: "claude",
-      config_dir: "~/.claude",
+      account_id: 'claude:claude',
+      provider: 'claude',
+      config_dir: '~/.claude',
       fetched_at: new Date().toISOString(),
       usage: {
-        limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }],
+        limits: [{ kind: 'session', percent: 10, is_active: true, resets_at: null, scope: null }],
       },
       profile: null,
-    });
-  });
+    })
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-  });
+    vi.useRealTimers()
+  })
 
-  test("does not fetch again merely because time passes, since no JS timer exists anymore", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+  test('does not fetch again merely because time passes, since no JS timer exists anymore', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
 
     for (let i = 0; i < 5; i++) {
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-      });
+        await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+      })
     }
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-    expect(result.current.subscriptions[0].state).toBe("working");
-  });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
+    expect(result.current.subscriptions[0].state).toBe('working')
+  })
 
-  test("an explicit manual refresh spends budget on demand", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      await result.current.refreshAll();
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-  });
-
-  test("concurrent refreshAll calls collapse into a single in-flight fetch", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+  test('an explicit manual refresh spends budget on demand', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      await Promise.all([
-        result.current.refreshAll(),
-        result.current.refreshAll(),
-        result.current.refreshAll(),
-      ]);
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-  });
+      await result.current.refreshAll()
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
 
-  test("concurrent refreshAccountById calls for the same id collapse into one fetch", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+  test('concurrent refreshAll calls collapse into a single in-flight fetch', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       await Promise.all([
-        result.current.refreshAccountById("claude:claude"),
-        result.current.refreshAccountById("claude:claude"),
-      ]);
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-  });
-});
+        result.current.refreshAll(),
+        result.current.refreshAll(),
+        result.current.refreshAll(),
+      ])
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
 
-describe("useSubscriptions shared per-account in-flight guard", () => {
+  test('concurrent refreshAccountById calls for the same id collapse into one fetch', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await Promise.all([
+        result.current.refreshAccountById('claude:claude'),
+        result.current.refreshAccountById('claude:claude'),
+      ])
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('useSubscriptions shared per-account in-flight guard', () => {
   const SNAPSHOT = {
-    account_id: "claude:claude",
-    provider: "claude",
-    config_dir: "~/.claude",
+    account_id: 'claude:claude',
+    provider: 'claude',
+    config_dir: '~/.claude',
     fetched_at: new Date().toISOString(),
     usage: {
-      limits: [{ kind: "session", percent: 10, is_active: true, resets_at: null, scope: null }],
+      limits: [{ kind: 'session', percent: 10, is_active: true, resets_at: null, scope: null }],
     },
     profile: null,
-  };
+  }
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    loadTracked.mockResolvedValue(TRACKED);
-    fetchSnapshot.mockResolvedValue(SNAPSHOT);
-  });
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    loadTracked.mockResolvedValue(TRACKED)
+    fetchSnapshot.mockResolvedValue(SNAPSHOT)
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-    loadTracked.mockResolvedValue(TRACKED);
-  });
+    vi.useRealTimers()
+    loadTracked.mockResolvedValue(TRACKED)
+  })
 
   test("refreshAll joins an account's in-flight read instead of double-fetching it", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
 
-    let release!: (value: unknown) => void;
-    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+    let release!: (value: unknown) => void
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
 
     await act(async () => {
-      const readNow = result.current.refreshAccountById("claude:claude");
-      const readAll = result.current.refreshAll();
-      expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-      release(SNAPSHOT);
-      await Promise.all([readNow, readAll]);
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-  });
+      const readNow = result.current.refreshAccountById('claude:claude')
+      const readAll = result.current.refreshAll()
+      expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+      release(SNAPSHOT)
+      await Promise.all([readNow, readAll])
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
 
   test("a row's read during a slow refreshAll joins the in-flight read", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
 
-    let release!: (value: unknown) => void;
-    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+    let release!: (value: unknown) => void
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
 
     await act(async () => {
-      const readAll = result.current.refreshAll();
-      const readNow = result.current.refreshAccountById("claude:claude");
-      expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-      release(SNAPSHOT);
-      await Promise.all([readNow, readAll]);
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-  });
+      const readAll = result.current.refreshAll()
+      const readNow = result.current.refreshAccountById('claude:claude')
+      expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+      release(SNAPSHOT)
+      await Promise.all([readNow, readAll])
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
 
-  test("joining one in-flight account never skips the other accounts", async () => {
+  test('joining one in-flight account never skips the other accounts', async () => {
     loadTracked.mockResolvedValue([
       {
-        id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
+        id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
         label: null,
         pinned: false,
       },
       {
-        id: "claude:claude-team",
-        provider: "claude",
-        config_dir: "~/.claude-team",
+        id: 'claude:claude-team',
+        provider: 'claude',
+        config_dir: '~/.claude-team',
         label: null,
         pinned: false,
       },
-    ]);
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+    ])
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
 
-    let release!: (value: unknown) => void;
-    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+    let release!: (value: unknown) => void
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
 
     await act(async () => {
-      const readNow = result.current.refreshAccountById("claude:claude");
-      const readAll = result.current.refreshAll();
-      release(SNAPSHOT);
-      await Promise.all([readNow, readAll]);
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(4);
+      const readNow = result.current.refreshAccountById('claude:claude')
+      const readAll = result.current.refreshAll()
+      release(SNAPSHOT)
+      await Promise.all([readNow, readAll])
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(4)
     expect(fetchSnapshot.mock.calls[3]?.[0]).toEqual(
-      expect.objectContaining({ id: "claude:claude-team" }),
-    );
-  });
+      expect.objectContaining({ id: 'claude:claude-team' }),
+    )
+  })
 
-  test("the add-subscription read joins the guard instead of starting a second request", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    fetchSnapshot.mockClear();
+  test('the add-subscription read joins the guard instead of starting a second request', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    fetchSnapshot.mockClear()
 
-    let release!: (value: unknown) => void;
-    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+    let release!: (value: unknown) => void
+    fetchSnapshot.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
 
     await act(async () => {
       result.current.addSubscription({
-        id: "claude:other",
-        provider: "claude",
-        config_dir: "~/.claude-other",
-      });
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+        id: 'claude:other',
+        provider: 'claude',
+        config_dir: '~/.claude-other',
+      })
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      const readNow = result.current.refreshAccountById("claude:other");
-      expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-      release({ ...SNAPSHOT, account_id: "claude:other", config_dir: "~/.claude-other" });
-      await readNow;
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-  });
-});
+      const readNow = result.current.refreshAccountById('claude:other')
+      expect(fetchSnapshot).toHaveBeenCalledTimes(1)
+      release({ ...SNAPSHOT, account_id: 'claude:other', config_dir: '~/.claude-other' })
+      await readNow
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
+  })
+})
 
-describe("useSubscriptions refresh policy on the native path", () => {
-  let quotaRefreshCallback: ((event: unknown) => void) | undefined;
+describe('useSubscriptions refresh policy on the native path', () => {
+  let quotaRefreshCallback: ((event: unknown) => void) | undefined
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    kickScheduler.mockReset();
-    onQuotaRefresh.mockReset();
-    quotaRefreshCallback = undefined;
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    kickScheduler.mockReset()
+    onQuotaRefresh.mockReset()
+    quotaRefreshCallback = undefined
     onQuotaRefresh.mockImplementation((cb: (event: unknown) => void) => {
-      quotaRefreshCallback = cb;
-      return Promise.resolve(() => {});
-    });
-    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-  });
+      quotaRefreshCallback = cb
+      return Promise.resolve(() => {})
+    })
+    ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
-  });
+    vi.useRealTimers()
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
+  })
 
-  test("subscribes to quota-refresh and kicks the scheduler once at mount, without fetching directly", async () => {
-    renderHook(() => useSubscriptions());
-    await flush();
-    expect(onQuotaRefresh).toHaveBeenCalledTimes(1);
-    expect(kickScheduler).toHaveBeenCalledTimes(1);
-    expect(fetchSnapshot).not.toHaveBeenCalled();
-  });
+  test('subscribes to quota-refresh and kicks the scheduler once at mount, without fetching directly', async () => {
+    renderHook(() => useSubscriptions())
+    await flush()
+    expect(onQuotaRefresh).toHaveBeenCalledTimes(1)
+    expect(kickScheduler).toHaveBeenCalledTimes(1)
+    expect(fetchSnapshot).not.toHaveBeenCalled()
+  })
 
   test("applies a pushed 'ok' event exactly like a direct refresh result", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(quotaRefreshCallback).toBeTypeOf("function");
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(quotaRefreshCallback).toBeTypeOf('function')
 
     await act(async () => {
       quotaRefreshCallback?.({
-        kind: "ok",
+        kind: 'ok',
         snapshot: {
-          account_id: "claude:claude",
-          provider: "claude",
-          config_dir: "~/.claude",
+          account_id: 'claude:claude',
+          provider: 'claude',
+          config_dir: '~/.claude',
           fetched_at: new Date().toISOString(),
           usage: {
             limits: [
-              { kind: "weekly_all", percent: 42, is_active: true, resets_at: null, scope: null },
+              { kind: 'weekly_all', percent: 42, is_active: true, resets_at: null, scope: null },
             ],
           },
           profile: null,
         },
-      });
-    });
+      })
+    })
 
-    expect(result.current.subscriptions[0].state).toBe("working");
-    expect(result.current.subscriptions[0].used).toBe(42);
-    expect(fetchSnapshot).not.toHaveBeenCalled();
-  });
+    expect(result.current.subscriptions[0].state).toBe('working')
+    expect(result.current.subscriptions[0].used).toBe(42)
+    expect(fetchSnapshot).not.toHaveBeenCalled()
+  })
 
-  test("a pushed rate_limited event never overwrites prior health state on the native path", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('a pushed rate_limited event never overwrites prior health state on the native path', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
     await act(async () => {
       quotaRefreshCallback?.({
-        kind: "err",
-        account_id: "claude:claude",
+        kind: 'err',
+        account_id: 'claude:claude',
         error: {
-          kind: "unauthorized",
-          message: "still unauthorized after refreshing the credential",
+          kind: 'unauthorized',
+          message: 'still unauthorized after refreshing the credential',
         },
-      });
-    });
-    expect(result.current.subscriptions[0].state).toBe("broken");
+      })
+    })
+    expect(result.current.subscriptions[0].state).toBe('broken')
 
     await act(async () => {
       quotaRefreshCallback?.({
-        kind: "err",
-        account_id: "claude:claude",
-        error: { kind: "rate_limited", retry_after_secs: 214 },
-      });
-    });
-    expect(result.current.subscriptions[0].state).toBe("broken");
-    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i);
-    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
-  });
-});
+        kind: 'err',
+        account_id: 'claude:claude',
+        error: { kind: 'rate_limited', retry_after_secs: 214 },
+      })
+    })
+    expect(result.current.subscriptions[0].state).toBe('broken')
+    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i)
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull()
+  })
+})
 
-describe("useSubscriptions health vs. rate-limit precedence on the manual refresh path", () => {
+describe('useSubscriptions health vs. rate-limit precedence on the manual refresh path', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    renderStatusItem.mockReset();
-    fetchSnapshot.mockReset();
-  });
+    vi.useFakeTimers()
+    renderStatusItem.mockReset()
+    fetchSnapshot.mockReset()
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-  });
+    vi.useRealTimers()
+  })
 
   test("a rate-limited retry restores the prior Broken state instead of leaving it 'connecting'", async () => {
     fetchSnapshot
       .mockRejectedValueOnce({
-        kind: "unauthorized",
-        message: "still unauthorized after refreshing the credential",
+        kind: 'unauthorized',
+        message: 'still unauthorized after refreshing the credential',
       })
-      .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 214 });
+      .mockRejectedValueOnce({ kind: 'rate_limited', retry_after_secs: 214 })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(result.current.subscriptions[0].state).toBe("broken");
-    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i);
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.subscriptions[0].state).toBe('broken')
+    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i)
 
     await act(async () => {
-      await result.current.refreshAccountById("claude:claude");
-    });
+      await result.current.refreshAccountById('claude:claude')
+    })
 
-    expect(result.current.subscriptions[0].state).toBe("broken");
-    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i);
-    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
-  });
+    expect(result.current.subscriptions[0].state).toBe('broken')
+    expect(result.current.subscriptions[0].reason).toMatch(/sign-in expired/i)
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull()
+  })
 
   test("a first-ever read that is rate-limited settles to idle, never a permanent 'Reading…'", async () => {
-    fetchSnapshot.mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 214 });
+    fetchSnapshot.mockRejectedValueOnce({ kind: 'rate_limited', retry_after_secs: 214 })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    const sub = result.current.subscriptions[0];
-    expect(sub.state).toBe("idle");
-    expect(sub.rateLimitedUntil).not.toBeNull();
-    expect(sub.needsSignIn).toBe(false);
-  });
-});
+    const sub = result.current.subscriptions[0]
+    expect(sub.state).toBe('idle')
+    expect(sub.rateLimitedUntil).not.toBeNull()
+    expect(sub.needsSignIn).toBe(false)
+  })
+})
 
-describe("useSubscriptions revival while a rate-limit wait is pending", () => {
+describe('useSubscriptions revival while a rate-limit wait is pending', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    renderStatusItem.mockReset();
-    fetchSnapshot.mockReset();
-  });
+    vi.useFakeTimers()
+    renderStatusItem.mockReset()
+    fetchSnapshot.mockReset()
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-  });
+    vi.useRealTimers()
+  })
 
   const goodRead = {
-    account_id: "claude:claude",
-    provider: "claude",
-    config_dir: "~/.claude",
+    account_id: 'claude:claude',
+    provider: 'claude',
+    config_dir: '~/.claude',
     fetched_at: new Date().toISOString(),
     usage: {
-      limits: [{ kind: "weekly_all", percent: 7, is_active: true, resets_at: null, scope: null }],
+      limits: [{ kind: 'weekly_all', percent: 7, is_active: true, resets_at: null, scope: null }],
     },
     profile: null,
-  };
+  }
 
   test("'Read now' still attempts a read while a wait is pending, and revives the row when it succeeds", async () => {
     fetchSnapshot
       .mockRejectedValueOnce({
-        kind: "unauthorized",
-        message: "the stored sign-in is no longer accepted",
+        kind: 'unauthorized',
+        message: 'the stored sign-in is no longer accepted',
       })
-      .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
-      .mockResolvedValueOnce(goodRead);
+      .mockRejectedValueOnce({ kind: 'rate_limited', retry_after_secs: 3540 })
+      .mockResolvedValueOnce(goodRead)
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(result.current.subscriptions[0].state).toBe("broken");
-
-    await act(async () => {
-      await result.current.refreshAccountById("claude:claude");
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.subscriptions[0].state).toBe('broken')
 
     await act(async () => {
-      await result.current.refreshAccountById("claude:claude");
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(3);
-    expect(result.current.subscriptions[0].state).toBe("working");
-    expect(result.current.subscriptions[0].used).toBe(7);
-    expect(result.current.subscriptions[0].needsSignIn).toBe(false);
-    expect(result.current.subscriptions[0].rateLimitedUntil).toBeNull();
-  });
+      await result.current.refreshAccountById('claude:claude')
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull()
+
+    await act(async () => {
+      await result.current.refreshAccountById('claude:claude')
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(3)
+    expect(result.current.subscriptions[0].state).toBe('working')
+    expect(result.current.subscriptions[0].used).toBe(7)
+    expect(result.current.subscriptions[0].needsSignIn).toBe(false)
+    expect(result.current.subscriptions[0].rateLimitedUntil).toBeNull()
+  })
 
   test("the panel's refresh-all also still attempts while a wait is pending", async () => {
     fetchSnapshot
-      .mockRejectedValueOnce({ kind: "rate_limited", retry_after_secs: 3540 })
-      .mockResolvedValueOnce(goodRead);
+      .mockRejectedValueOnce({ kind: 'rate_limited', retry_after_secs: 3540 })
+      .mockResolvedValueOnce(goodRead)
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull();
-
-    await act(async () => {
-      await result.current.refreshAll();
-    });
-    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
-    expect(result.current.subscriptions[0].state).toBe("working");
-  });
-
-  test("adding a subscription reads it once immediately, as the Subscriptions view promises", async () => {
-    fetchSnapshot.mockResolvedValue(goodRead);
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    fetchSnapshot.mockClear();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.subscriptions[0].rateLimitedUntil).not.toBeNull()
 
     await act(async () => {
-      result.current.removeSubscription("claude:claude");
-    });
+      await result.current.refreshAll()
+    })
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+    expect(result.current.subscriptions[0].state).toBe('working')
+  })
+
+  test('adding a subscription reads it once immediately, as the Subscriptions view promises', async () => {
+    fetchSnapshot.mockResolvedValue(goodRead)
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    fetchSnapshot.mockClear()
+
+    await act(async () => {
+      result.current.removeSubscription('claude:claude')
+    })
     await act(async () => {
       result.current.addSubscription({
-        id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
-      });
-    });
-    await flush();
+        id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
+      })
+    })
+    await flush()
 
-    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-    expect(result.current.subscriptions[0].state).toBe("working");
-    expect(result.current.subscriptions[0].lastReadAt).not.toBeNull();
-  });
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1)
+    expect(result.current.subscriptions[0].state).toBe('working')
+    expect(result.current.subscriptions[0].lastReadAt).not.toBeNull()
+  })
 
-  test("a sign-in warning is dropped the moment a read succeeds, with no relaunch and no remove-and-re-add", async () => {
+  test('a sign-in warning is dropped the moment a read succeeds, with no relaunch and no remove-and-re-add', async () => {
     fetchSnapshot
       .mockRejectedValueOnce({
-        kind: "unauthorized",
-        message: "the stored sign-in is no longer accepted",
+        kind: 'unauthorized',
+        message: 'the stored sign-in is no longer accepted',
       })
-      .mockResolvedValueOnce(goodRead);
+      .mockResolvedValueOnce(goodRead)
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(result.current.subscriptions[0].needsSignIn).toBe(true);
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.subscriptions[0].needsSignIn).toBe(true)
 
     await act(async () => {
-      await result.current.refreshAccountById("claude:claude");
-    });
-    expect(result.current.subscriptions[0].needsSignIn).toBe(false);
-    expect(result.current.subscriptions[0].state).toBe("working");
-  });
+      await result.current.refreshAccountById('claude:claude')
+    })
+    expect(result.current.subscriptions[0].needsSignIn).toBe(false)
+    expect(result.current.subscriptions[0].state).toBe('working')
+  })
 
   test("a credential Quotos couldn't renew is reported as such, never as a sign-in problem", async () => {
     fetchSnapshot.mockRejectedValueOnce({
-      kind: "credential_stale",
+      kind: 'credential_stale',
       message: "This account's access token has expired and Quotos couldn't renew it here.",
-    });
+    })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    expect(result.current.subscriptions[0].needsSignIn).toBe(false);
-    expect(result.current.subscriptions[0].reason).not.toMatch(/sign-in expired/i);
-  });
-});
+    expect(result.current.subscriptions[0].needsSignIn).toBe(false)
+    expect(result.current.subscriptions[0].reason).not.toMatch(/sign-in expired/i)
+  })
+})
 
-describe("useSubscriptions status item segments", () => {
+describe('useSubscriptions status item segments', () => {
   const TWO_PINNED = [
-    { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    { id: 'claude:claude', provider: 'claude', config_dir: '~/.claude', label: null, pinned: true },
     {
-      id: "claude:team",
-      provider: "claude",
-      config_dir: "~/.claude-team",
+      id: 'claude:team',
+      provider: 'claude',
+      config_dir: '~/.claude-team',
       label: null,
       pinned: true,
     },
-  ];
+  ]
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    loadTracked.mockResolvedValue(TWO_PINNED);
-  });
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    loadTracked.mockResolvedValue(TWO_PINNED)
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-    loadTracked.mockResolvedValue(TRACKED);
-  });
+    vi.useRealTimers()
+    loadTracked.mockResolvedValue(TRACKED)
+  })
 
   test("a broken pin with no number contributes no segment at all, never '!'", async () => {
     fetchSnapshot.mockImplementation(async (account: { id: string }) => {
-      if (account.id === "claude:claude") {
+      if (account.id === 'claude:claude') {
         throw {
-          kind: "unauthorized",
-          message: "still unauthorized after refreshing the credential",
-        };
+          kind: 'unauthorized',
+          message: 'still unauthorized after refreshing the credential',
+        }
       }
       return {
         account_id: account.id,
-        provider: "claude",
-        config_dir: "~/.claude-team",
+        provider: 'claude',
+        config_dir: '~/.claude-team',
         fetched_at: new Date().toISOString(),
         usage: {
           limits: [
-            { kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null },
+            { kind: 'weekly_all', percent: 40, is_active: true, resets_at: null, scope: null },
           ],
         },
         profile: null,
-      };
-    });
+      }
+    })
 
-    renderHook(() => useSubscriptions());
-    await flush();
+    renderHook(() => useSubscriptions())
+    await flush()
 
-    const calls = renderStatusItem.mock.calls;
-    const lastCall = calls[calls.length - 1]?.[0];
-    expect(lastCall).toEqual([{ text: "40%", color: "neutral", groupStart: false }]);
+    const calls = renderStatusItem.mock.calls
+    const lastCall = calls[calls.length - 1]?.[0]
+    expect(lastCall).toEqual([{ text: '40%', color: 'neutral', groupStart: false }])
     for (const call of renderStatusItem.mock.calls) {
       for (const segment of call[0]) {
-        expect(segment.text).not.toBe("!");
-        expect(segment.text).not.toContain("…");
+        expect(segment.text).not.toBe('!')
+        expect(segment.text).not.toContain('…')
       }
     }
-  });
+  })
 
-  test("one stale pinned account turns every pinned digit amber, not just its own", async () => {
+  test('one stale pinned account turns every pinned digit amber, not just its own', async () => {
     fetchSnapshot.mockImplementation(async (account: { id: string }) => {
       const base = {
         account_id: account.id,
-        provider: "claude",
-        config_dir: account.id === "claude:claude" ? "~/.claude" : "~/.claude-team",
+        provider: 'claude',
+        config_dir: account.id === 'claude:claude' ? '~/.claude' : '~/.claude-team',
         fetched_at: new Date().toISOString(),
         profile: null,
-      };
-      if (account.id === "claude:claude") {
+      }
+      if (account.id === 'claude:claude') {
         return {
           ...base,
           usage: {
             limits: [
-              { kind: "weekly_all", percent: 10, is_active: true, resets_at: null, scope: null },
+              { kind: 'weekly_all', percent: 10, is_active: true, resets_at: null, scope: null },
             ],
           },
-        };
+        }
       }
       return {
         ...base,
         usage: {
           limits: [
-            { kind: "weekly_all", percent: 20, is_active: true, resets_at: null, scope: null },
+            { kind: 'weekly_all', percent: 20, is_active: true, resets_at: null, scope: null },
           ],
         },
-      };
-    });
+      }
+    })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
     expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual(
       expect.arrayContaining([
-        { text: "10%", color: "neutral", groupStart: false },
-        { text: "20%", color: "neutral", groupStart: true },
+        { text: '10%', color: 'neutral', groupStart: false },
+        { text: '20%', color: 'neutral', groupStart: true },
       ]),
-    );
+    )
 
     fetchSnapshot.mockImplementationOnce(async () => {
-      throw { kind: "network", message: "the connection timed out" };
-    });
+      throw { kind: 'network', message: 'the connection timed out' }
+    })
     await act(async () => {
-      await result.current.refreshAccountById("claude:team");
-    });
+      await result.current.refreshAccountById('claude:team')
+    })
 
-    const statusItemCalls = renderStatusItem.mock.calls;
-    const segments = statusItemCalls[statusItemCalls.length - 1]?.[0];
+    const statusItemCalls = renderStatusItem.mock.calls
+    const segments = statusItemCalls[statusItemCalls.length - 1]?.[0]
     expect(segments).toEqual(
       expect.arrayContaining([
-        { text: "10%", color: "amber", groupStart: false },
-        { text: "20%", color: "amber", groupStart: true },
+        { text: '10%', color: 'amber', groupStart: false },
+        { text: '20%', color: 'amber', groupStart: true },
       ]),
-    );
+    )
 
-    const tooltip = statusItemCalls[statusItemCalls.length - 1]?.[2];
-    expect(tooltip).toMatch(/^Quotos\n/);
-    expect(tooltip).toContain("Weekly 10%");
-    expect(tooltip).toContain("Weekly 20% — not current");
-    expect(tooltip).not.toContain("Weekly 10% — not current");
-  });
-});
+    const tooltip = statusItemCalls[statusItemCalls.length - 1]?.[2]
+    expect(tooltip).toMatch(/^Quotos\n/)
+    expect(tooltip).toContain('Weekly 10%')
+    expect(tooltip).toContain('Weekly 20% — not current')
+    expect(tooltip).not.toContain('Weekly 10% — not current')
+  })
+})
 
-describe("useSubscriptions pin migration from a legacy pinned boolean", () => {
+describe('useSubscriptions pin migration from a legacy pinned boolean', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    saveTracked.mockReset();
-  });
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    saveTracked.mockReset()
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-    loadTracked.mockResolvedValue(TRACKED);
-  });
+    vi.useRealTimers()
+    loadTracked.mockResolvedValue(TRACKED)
+  })
 
-  test("migrates a legacy pinned:true record to pinning its headline window, once a read reveals it", async () => {
+  test('migrates a legacy pinned:true record to pinning its headline window, once a read reveals it', async () => {
     loadTracked.mockResolvedValue([
       {
-        id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
+        id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
         label: null,
         pinned: true,
       },
-    ]);
+    ])
     fetchSnapshot.mockResolvedValue({
-      account_id: "claude:claude",
-      provider: "claude",
-      config_dir: "~/.claude",
+      account_id: 'claude:claude',
+      provider: 'claude',
+      config_dir: '~/.claude',
       fetched_at: new Date().toISOString(),
       usage: {
         limits: [
-          { kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null },
+          { kind: 'weekly_all', percent: 33, is_active: true, resets_at: null, scope: null },
         ],
       },
       profile: null,
-    });
+    })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    expect(result.current.subscriptions[0].headlineWindowId).toBe("weekly_all");
-    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(["weekly_all"]);
+    expect(result.current.subscriptions[0].headlineWindowId).toBe('weekly_all')
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(['weekly_all'])
     expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([
-      { text: "33%", color: "neutral", groupStart: false },
-    ]);
-  });
+      { text: '33%', color: 'neutral', groupStart: false },
+    ])
+  })
 
-  test("a legacy pinned:false record migrates to nothing pinned, contributing no segment", async () => {
+  test('a legacy pinned:false record migrates to nothing pinned, contributing no segment', async () => {
     loadTracked.mockResolvedValue([
       {
-        id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
+        id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
         label: null,
         pinned: false,
       },
-    ]);
+    ])
     fetchSnapshot.mockResolvedValue({
-      account_id: "claude:claude",
-      provider: "claude",
-      config_dir: "~/.claude",
+      account_id: 'claude:claude',
+      provider: 'claude',
+      config_dir: '~/.claude',
       fetched_at: new Date().toISOString(),
       usage: {
         limits: [
-          { kind: "weekly_all", percent: 33, is_active: true, resets_at: null, scope: null },
+          { kind: 'weekly_all', percent: 33, is_active: true, resets_at: null, scope: null },
         ],
       },
       profile: null,
-    });
+    })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([]);
-    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([]);
-  });
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([])
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([])
+  })
 
-  test("a pending migration survives a failed first read and completes on the next successful one", async () => {
+  test('a pending migration survives a failed first read and completes on the next successful one', async () => {
     loadTracked.mockResolvedValue([
       {
-        id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
+        id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
         label: null,
         pinned: true,
       },
-    ]);
+    ])
     fetchSnapshot
-      .mockRejectedValueOnce({ kind: "network", message: "timed out" })
+      .mockRejectedValueOnce({ kind: 'network', message: 'timed out' })
       .mockResolvedValueOnce({
-        account_id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
+        account_id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
         fetched_at: new Date().toISOString(),
         usage: {
           limits: [
-            { kind: "weekly_all", percent: 8, is_active: true, resets_at: null, scope: null },
+            { kind: 'weekly_all', percent: 8, is_active: true, resets_at: null, scope: null },
           ],
         },
         profile: null,
-      });
+      })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([]);
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual([])
 
     await act(async () => {
-      await result.current.refreshAccountById("claude:claude");
-    });
-    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(["weekly_all"]);
-  });
-});
+      await result.current.refreshAccountById('claude:claude')
+    })
+    expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(['weekly_all'])
+  })
+})
 
-describe("useSubscriptions sign-in flow", () => {
+describe('useSubscriptions sign-in flow', () => {
   let signInFinishedCallback:
     | ((event: { account_id: string; success: boolean }) => void)
-    | undefined;
+    | undefined
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    startSignIn.mockReset();
-    submitSignInCode.mockReset();
-    cancelSignIn.mockReset();
-    forgetSignIn.mockReset();
-    signInFinishedCallback = undefined;
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    startSignIn.mockReset()
+    submitSignInCode.mockReset()
+    cancelSignIn.mockReset()
+    forgetSignIn.mockReset()
+    signInFinishedCallback = undefined
     onSignInFinished.mockImplementation(
       (cb: (event: { account_id: string; success: boolean }) => void) => {
-        signInFinishedCallback = cb;
-        return Promise.resolve(() => {});
+        signInFinishedCallback = cb
+        return Promise.resolve(() => {})
       },
-    );
-    startSignIn.mockResolvedValue(undefined);
+    )
+    startSignIn.mockResolvedValue(undefined)
     fetchSnapshot.mockRejectedValue({
-      kind: "unauthorized",
-      message: "still unauthorized after refreshing the credential",
-    });
-  });
+      kind: 'unauthorized',
+      message: 'still unauthorized after refreshing the credential',
+    })
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-  });
+    vi.useRealTimers()
+  })
 
-  test("startSignIn marks the row in-progress and calls the IPC with its config dir", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-
-    await act(async () => {
-      await result.current.startSignIn("claude:claude");
-    });
-
-    expect(startSignIn).toHaveBeenCalledWith("claude:claude", "~/.claude");
-    expect(result.current.subscriptions[0].signInInProgress).toBe(true);
-  });
-
-  test("a finished sign-in clears signInInProgress and triggers a re-read", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('startSignIn marks the row in-progress and calls the IPC with its config dir', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
     await act(async () => {
-      await result.current.startSignIn("claude:claude");
-    });
-    expect(result.current.subscriptions[0].signInInProgress).toBe(true);
+      await result.current.startSignIn('claude:claude')
+    })
+
+    expect(startSignIn).toHaveBeenCalledWith('claude:claude', '~/.claude')
+    expect(result.current.subscriptions[0].signInInProgress).toBe(true)
+  })
+
+  test('a finished sign-in clears signInInProgress and triggers a re-read', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+
+    await act(async () => {
+      await result.current.startSignIn('claude:claude')
+    })
+    expect(result.current.subscriptions[0].signInInProgress).toBe(true)
 
     fetchSnapshot.mockResolvedValueOnce({
-      account_id: "claude:claude",
-      provider: "claude",
-      config_dir: "~/.claude",
+      account_id: 'claude:claude',
+      provider: 'claude',
+      config_dir: '~/.claude',
       fetched_at: new Date().toISOString(),
       usage: {
-        limits: [{ kind: "weekly_all", percent: 5, is_active: true, resets_at: null, scope: null }],
+        limits: [{ kind: 'weekly_all', percent: 5, is_active: true, resets_at: null, scope: null }],
       },
       profile: null,
-    });
+    })
 
     await act(async () => {
-      signInFinishedCallback?.({ account_id: "claude:claude", success: true });
-      await vi.advanceTimersByTimeAsync(0);
-    });
+      signInFinishedCallback?.({ account_id: 'claude:claude', success: true })
+      await vi.advanceTimersByTimeAsync(0)
+    })
 
-    expect(result.current.subscriptions[0].signInInProgress).toBe(false);
-    expect(forgetSignIn).toHaveBeenCalledWith("claude:claude");
-    expect(result.current.subscriptions[0].state).toBe("working");
-    expect(result.current.subscriptions[0].used).toBe(5);
-  });
+    expect(result.current.subscriptions[0].signInInProgress).toBe(false)
+    expect(forgetSignIn).toHaveBeenCalledWith('claude:claude')
+    expect(result.current.subscriptions[0].state).toBe('working')
+    expect(result.current.subscriptions[0].used).toBe(5)
+  })
 
-  test("cancelSignIn calls the IPC and clears the in-progress flag", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('cancelSignIn calls the IPC and clears the in-progress flag', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
     await act(async () => {
-      await result.current.startSignIn("claude:claude");
-    });
+      await result.current.startSignIn('claude:claude')
+    })
 
     await act(async () => {
-      await result.current.cancelSignIn("claude:claude");
-    });
+      await result.current.cancelSignIn('claude:claude')
+    })
 
-    expect(cancelSignIn).toHaveBeenCalledWith("claude:claude");
-    expect(result.current.subscriptions[0].signInInProgress).toBe(false);
-  });
-});
+    expect(cancelSignIn).toHaveBeenCalledWith('claude:claude')
+    expect(result.current.subscriptions[0].signInInProgress).toBe(false)
+  })
+})
 
 describe("useSubscriptions stop-tracking is immediate everywhere but the panel's own slot", () => {
   const TWO = [
-    { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    { id: 'claude:claude', provider: 'claude', config_dir: '~/.claude', label: null, pinned: true },
     {
-      id: "claude:claude-team",
-      provider: "claude",
-      config_dir: "~/.claude-team",
+      id: 'claude:claude-team',
+      provider: 'claude',
+      config_dir: '~/.claude-team',
       label: null,
       pinned: true,
     },
-  ];
+  ]
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    saveTracked.mockReset();
-    cancelSignIn.mockReset();
-    loadTracked.mockResolvedValue(TWO);
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    saveTracked.mockReset()
+    cancelSignIn.mockReset()
+    loadTracked.mockResolvedValue(TWO)
     fetchSnapshot.mockImplementation(async (account: { id: string; config_dir: string }) => ({
       account_id: account.id,
-      provider: "claude",
+      provider: 'claude',
       config_dir: account.config_dir,
       fetched_at: new Date().toISOString(),
       usage: {
         limits: [
-          { kind: "weekly_all", percent: 40, is_active: true, resets_at: null, scope: null },
+          { kind: 'weekly_all', percent: 40, is_active: true, resets_at: null, scope: null },
         ],
       },
       profile: null,
-    }));
-  });
+    }))
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-    loadTracked.mockResolvedValue(TRACKED);
-  });
+    vi.useRealTimers()
+    loadTracked.mockResolvedValue(TRACKED)
+  })
 
-  test("drops the account from the tracked list the moment it is pressed, while the panel keeps its slot", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('drops the account from the tracked list the moment it is pressed, while the panel keeps its slot', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    act(() => result.current.stopTracking("claude:claude-team"));
+    act(() => result.current.stopTracking('claude:claude-team'))
 
-    expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual(["claude:claude"]);
+    expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual(['claude:claude'])
     expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude",
-      "claude:claude-team",
-    ]);
-    expect(result.current.subscriptions[1].pendingRemoval).toBe(true);
-  });
+      'claude:claude',
+      'claude:claude-team',
+    ])
+    expect(result.current.subscriptions[1].pendingRemoval).toBe(true)
+  })
 
-  test("persists the removal immediately, not when the undo window expires", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    saveTracked.mockClear();
+  test('persists the removal immediately, not when the undo window expires', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    saveTracked.mockClear()
 
-    act(() => result.current.stopTracking("claude:claude-team"));
-    await flush();
+    act(() => result.current.stopTracking('claude:claude-team'))
+    await flush()
 
-    const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0];
-    expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude"]);
-  });
+    const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0]
+    expect(saved.map((t: { id: string }) => t.id)).toEqual(['claude:claude'])
+  })
 
   test("drops a pinned account's status item digits immediately", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toHaveLength(
-      2,
-    );
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toHaveLength(2)
 
-    act(() => result.current.stopTracking("claude:claude-team"));
-    await flush();
+    act(() => result.current.stopTracking('claude:claude-team'))
+    await flush()
 
-    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toHaveLength(
-      1,
-    );
-  });
+    expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toHaveLength(1)
+  })
 
-  test("undo restores it in its original slot, with its data intact", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    const before = result.current.subscriptions[1];
+  test('undo restores it in its original slot, with its data intact', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    const before = result.current.subscriptions[1]
 
-    act(() => result.current.stopTracking("claude:claude-team"));
-    act(() => result.current.undoStopTracking("claude:claude-team"));
+    act(() => result.current.stopTracking('claude:claude-team'))
+    act(() => result.current.undoStopTracking('claude:claude-team'))
 
     expect(result.current.trackedSubscriptions.map((s) => s.id)).toEqual([
-      "claude:claude",
-      "claude:claude-team",
-    ]);
-    expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
-    expect(result.current.subscriptions[1].used).toBe(before.used);
-  });
+      'claude:claude',
+      'claude:claude-team',
+    ])
+    expect(result.current.subscriptions[1].pendingRemoval).toBe(false)
+    expect(result.current.subscriptions[1].used).toBe(before.used)
+  })
 
-  test("keeps the slot for exactly the undo window, then gives it up", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('keeps the slot for exactly the undo window, then gives it up', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    act(() => result.current.stopTracking("claude:claude-team"));
+    act(() => result.current.stopTracking('claude:claude-team'))
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS - 1);
-    });
-    expect(result.current.subscriptions).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS - 1)
+    })
+    expect(result.current.subscriptions).toHaveLength(2)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2);
-    });
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual(["claude:claude"]);
-  });
+      await vi.advanceTimersByTimeAsync(2)
+    })
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual(['claude:claude'])
+  })
 
-  test("an undone row is never removed by its own expired timer", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('an undone row is never removed by its own expired timer', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    act(() => result.current.stopTracking("claude:claude-team"));
-    act(() => result.current.undoStopTracking("claude:claude-team"));
+    act(() => result.current.stopTracking('claude:claude-team'))
+    act(() => result.current.undoStopTracking('claude:claude-team'))
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2);
-    });
+      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2)
+    })
 
     expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude",
-      "claude:claude-team",
-    ]);
-  });
+      'claude:claude',
+      'claude:claude-team',
+    ])
+  })
 
-  test("adding an account back during its undo window is the same as undoing it", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('adding an account back during its undo window is the same as undoing it', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    act(() => result.current.stopTracking("claude:claude-team"));
+    act(() => result.current.stopTracking('claude:claude-team'))
     act(() =>
       result.current.addSubscription({
-        id: "claude:claude-team",
-        provider: "claude",
-        config_dir: "~/.claude-team",
+        id: 'claude:claude-team',
+        provider: 'claude',
+        config_dir: '~/.claude-team',
       }),
-    );
+    )
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2);
-    });
+      await vi.advanceTimersByTimeAsync(STOP_TRACKING_UNDO_MS * 2)
+    })
 
     expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude",
-      "claude:claude-team",
-    ]);
-    expect(result.current.subscriptions[1].pendingRemoval).toBe(false);
-  });
+      'claude:claude',
+      'claude:claude-team',
+    ])
+    expect(result.current.subscriptions[1].pendingRemoval).toBe(false)
+  })
 
-  test("does not re-persist when only read state changed", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    saveTracked.mockClear();
+  test('does not re-persist when only read state changed', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    saveTracked.mockClear()
 
     await act(async () => {
-      await result.current.refreshAll();
-    });
+      await result.current.refreshAll()
+    })
 
-    expect(saveTracked).not.toHaveBeenCalled();
-  });
+    expect(saveTracked).not.toHaveBeenCalled()
+  })
 
-  test("retries a failed save on the next change instead of remembering it as saved", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  test('retries a failed save on the next change instead of remembering it as saved', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const { result } = renderHook(() => useSubscriptions());
-      await flush();
-      saveTracked.mockClear();
-      saveTracked.mockRejectedValueOnce(new Error("disk full"));
+      const { result } = renderHook(() => useSubscriptions())
+      await flush()
+      saveTracked.mockClear()
+      saveTracked.mockRejectedValueOnce(new Error('disk full'))
 
-      act(() => result.current.renameSubscription("claude:claude", "Renamed Personal"));
-      await flush();
-      expect(saveTracked).toHaveBeenCalledTimes(1);
-      expect(consoleError).toHaveBeenCalled();
+      act(() => result.current.renameSubscription('claude:claude', 'Renamed Personal'))
+      await flush()
+      expect(saveTracked).toHaveBeenCalledTimes(1)
+      expect(consoleError).toHaveBeenCalled()
 
       await act(async () => {
-        await result.current.refreshAll();
-      });
+        await result.current.refreshAll()
+      })
 
-      expect(saveTracked).toHaveBeenCalledTimes(2);
-      expect(saveTracked.mock.calls[1][0]).toEqual(saveTracked.mock.calls[0][0]);
+      expect(saveTracked).toHaveBeenCalledTimes(2)
+      expect(saveTracked.mock.calls[1][0]).toEqual(saveTracked.mock.calls[0][0])
     } finally {
-      consoleError.mockRestore();
+      consoleError.mockRestore()
     }
-  });
+  })
 
-  test("exposes a failed save as saveError, detectable without reading the console", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  test('exposes a failed save as saveError, detectable without reading the console', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const { result } = renderHook(() => useSubscriptions());
-      await flush();
-      expect(result.current.saveError).toBeNull();
-      saveTracked.mockClear();
-      saveTracked.mockRejectedValueOnce(new Error("disk full"));
+      const { result } = renderHook(() => useSubscriptions())
+      await flush()
+      expect(result.current.saveError).toBeNull()
+      saveTracked.mockClear()
+      saveTracked.mockRejectedValueOnce(new Error('disk full'))
 
-      act(() => result.current.renameSubscription("claude:claude", "Renamed Personal"));
-      await flush();
+      act(() => result.current.renameSubscription('claude:claude', 'Renamed Personal'))
+      await flush()
 
-      expect(result.current.saveError).toBeInstanceOf(Error);
-      expect(result.current.saveError?.message).toBe("disk full");
+      expect(result.current.saveError).toBeInstanceOf(Error)
+      expect(result.current.saveError?.message).toBe('disk full')
 
       await act(async () => {
-        await result.current.refreshAll();
-      });
+        await result.current.refreshAll()
+      })
 
-      expect(result.current.saveError).toBeNull();
+      expect(result.current.saveError).toBeNull()
     } finally {
-      consoleError.mockRestore();
+      consoleError.mockRestore()
     }
-  });
-});
+  })
+})
 
-describe("useSubscriptions reordering", () => {
+describe('useSubscriptions reordering', () => {
   const TWO = [
-    { id: "claude:claude", provider: "claude", config_dir: "~/.claude", label: null, pinned: true },
+    { id: 'claude:claude', provider: 'claude', config_dir: '~/.claude', label: null, pinned: true },
     {
-      id: "claude:claude-team",
-      provider: "claude",
-      config_dir: "~/.claude-team",
+      id: 'claude:claude-team',
+      provider: 'claude',
+      config_dir: '~/.claude-team',
       label: null,
       pinned: true,
     },
-  ];
+  ]
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    saveTracked.mockReset();
-    loadTracked.mockResolvedValue(TWO);
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    saveTracked.mockReset()
+    loadTracked.mockResolvedValue(TWO)
     fetchSnapshot.mockImplementation(async (account: { id: string; config_dir: string }) => ({
       account_id: account.id,
-      provider: "claude",
+      provider: 'claude',
       config_dir: account.config_dir,
       fetched_at: new Date().toISOString(),
       usage: {
         limits: [
           {
-            kind: "weekly_all",
-            percent: account.id === "claude:claude" ? 40 : 70,
+            kind: 'weekly_all',
+            percent: account.id === 'claude:claude' ? 40 : 70,
             is_active: true,
             resets_at: null,
             scope: null,
@@ -1070,147 +1066,147 @@ describe("useSubscriptions reordering", () => {
         ],
       },
       profile: null,
-    }));
-  });
+    }))
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-    loadTracked.mockResolvedValue(TRACKED);
-  });
+    vi.useRealTimers()
+    loadTracked.mockResolvedValue(TRACKED)
+  })
 
-  test("swaps the row with its neighbor and persists the new order", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    saveTracked.mockClear();
+  test('swaps the row with its neighbor and persists the new order', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    saveTracked.mockClear()
 
-    act(() => result.current.moveSubscription("claude:claude", "down"));
-    await flush();
-
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude-team",
-      "claude:claude",
-    ]);
-    const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0];
-    expect(saved.map((t: { id: string }) => t.id)).toEqual(["claude:claude-team", "claude:claude"]);
-  });
-
-  test("moving up then down lands back where it started", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-
-    act(() => result.current.moveSubscription("claude:claude-team", "up"));
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude-team",
-      "claude:claude",
-    ]);
-
-    act(() => result.current.moveSubscription("claude:claude-team", "down"));
-    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude",
-      "claude:claude-team",
-    ]);
-  });
-
-  test("is a no-op at the edges, with no reorder and no save", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    saveTracked.mockClear();
-
-    act(() => result.current.moveSubscription("claude:claude", "up"));
-    act(() => result.current.moveSubscription("claude:claude-team", "down"));
-    await flush();
+    act(() => result.current.moveSubscription('claude:claude', 'down'))
+    await flush()
 
     expect(result.current.subscriptions.map((s) => s.id)).toEqual([
-      "claude:claude",
-      "claude:claude-team",
-    ]);
-    expect(saveTracked).not.toHaveBeenCalled();
-  });
+      'claude:claude-team',
+      'claude:claude',
+    ])
+    const saved = saveTracked.mock.calls[saveTracked.mock.calls.length - 1]?.[0]
+    expect(saved.map((t: { id: string }) => t.id)).toEqual(['claude:claude-team', 'claude:claude'])
+  })
 
-  test("reorders the status item digits with it", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    const before = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0];
-    expect(before.map((s: { text: string }) => s.text)).toEqual(["40%", "70%"]);
+  test('moving up then down lands back where it started', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
 
-    act(() => result.current.moveSubscription("claude:claude", "down"));
-    await flush();
+    act(() => result.current.moveSubscription('claude:claude-team', 'up'))
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      'claude:claude-team',
+      'claude:claude',
+    ])
 
-    const after = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0];
-    expect(after.map((s: { text: string }) => s.text)).toEqual(["70%", "40%"]);
-  });
-});
+    act(() => result.current.moveSubscription('claude:claude-team', 'down'))
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      'claude:claude',
+      'claude:claude-team',
+    ])
+  })
 
-describe("useSubscriptions display names are consistent between the panel and the Subscriptions screen", () => {
+  test('is a no-op at the edges, with no reorder and no save', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    saveTracked.mockClear()
+
+    act(() => result.current.moveSubscription('claude:claude', 'up'))
+    act(() => result.current.moveSubscription('claude:claude-team', 'down'))
+    await flush()
+
+    expect(result.current.subscriptions.map((s) => s.id)).toEqual([
+      'claude:claude',
+      'claude:claude-team',
+    ])
+    expect(saveTracked).not.toHaveBeenCalled()
+  })
+
+  test('reorders the status item digits with it', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    const before = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]
+    expect(before.map((s: { text: string }) => s.text)).toEqual(['40%', '70%'])
+
+    act(() => result.current.moveSubscription('claude:claude', 'down'))
+    await flush()
+
+    const after = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]
+    expect(after.map((s: { text: string }) => s.text)).toEqual(['70%', '40%'])
+  })
+})
+
+describe('useSubscriptions display names are consistent between the panel and the Subscriptions screen', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    fetchSnapshot.mockReset();
-    renderStatusItem.mockReset();
-    loadTracked.mockResolvedValue(TRACKED);
-  });
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    loadTracked.mockResolvedValue(TRACKED)
+  })
 
   afterEach(() => {
-    vi.useRealTimers();
-  });
+    vi.useRealTimers()
+  })
 
-  test("titles the id-derived fallback the way every other name in the panel is titled", () => {
+  test('titles the id-derived fallback the way every other name in the panel is titled', () => {
     expect(
-      deriveAccountLabel({ id: "claude:claude", provider: "claude", config_dir: "~/.claude" }),
-    ).toBe("Claude");
-    expect(
-      deriveAccountLabel({
-        id: "claude:claude-team",
-        provider: "claude",
-        config_dir: "~/.claude-team",
-      }),
-    ).toBe("Claude Team");
+      deriveAccountLabel({ id: 'claude:claude', provider: 'claude', config_dir: '~/.claude' }),
+    ).toBe('Claude')
     expect(
       deriveAccountLabel({
-        id: "claude:work_eu",
-        provider: "claude",
-        config_dir: "~/.claude-work_eu",
+        id: 'claude:claude-team',
+        provider: 'claude',
+        config_dir: '~/.claude-team',
       }),
-    ).toBe("Work Eu");
-  });
+    ).toBe('Claude Team')
+    expect(
+      deriveAccountLabel({
+        id: 'claude:work_eu',
+        provider: 'claude',
+        config_dir: '~/.claude-work_eu',
+      }),
+    ).toBe('Work Eu')
+  })
 
   test("keeps the provider's own name for an account after it stops being tracked", async () => {
     fetchSnapshot.mockResolvedValue({
-      account_id: "claude:claude",
-      provider: "claude",
-      config_dir: "~/.claude",
+      account_id: 'claude:claude',
+      provider: 'claude',
+      config_dir: '~/.claude',
       fetched_at: new Date().toISOString(),
       usage: {
         limits: [
-          { kind: "weekly_all", percent: 12, is_active: true, resets_at: null, scope: null },
+          { kind: 'weekly_all', percent: 12, is_active: true, resets_at: null, scope: null },
         ],
       },
-      profile: { organization: { name: "Claude Max", organization_type: "claude_max" } },
-    });
+      profile: { organization: { name: 'Claude Max', organization_type: 'claude_max' } },
+    })
 
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
-    expect(result.current.subscriptions[0].label).toBe("Claude Max");
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.subscriptions[0].label).toBe('Claude Max')
 
-    act(() => result.current.removeSubscription("claude:claude"));
+    act(() => result.current.removeSubscription('claude:claude'))
 
     expect(
       result.current.displayLabelFor({
-        id: "claude:claude",
-        provider: "claude",
-        config_dir: "~/.claude",
+        id: 'claude:claude',
+        provider: 'claude',
+        config_dir: '~/.claude',
       }),
-    ).toBe("Claude Max");
-  });
+    ).toBe('Claude Max')
+  })
 
-  test("falls back to the id-derived title for an account never read", async () => {
-    const { result } = renderHook(() => useSubscriptions());
-    await flush();
+  test('falls back to the id-derived title for an account never read', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
     expect(
       result.current.displayLabelFor({
-        id: "claude:claude-team",
-        provider: "claude",
-        config_dir: "~/.claude-team",
+        id: 'claude:claude-team',
+        provider: 'claude',
+        config_dir: '~/.claude-team',
       }),
-    ).toBe("Claude Team");
-  });
-});
+    ).toBe('Claude Team')
+  })
+})

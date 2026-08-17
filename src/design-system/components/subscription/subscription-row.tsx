@@ -1,10 +1,10 @@
-import * as React from "react";
-import { Badge } from "../indicators/badge";
-import { CapacityBar } from "../indicators/capacity-bar";
-import type { SubscriptionState } from "../indicators/status-dot";
-import { StatusDot } from "../indicators/status-dot";
-import { LimitWindow, type LimitWindowProps } from "./limit-window";
-import styles from "./subscription-row.module.css";
+import * as React from 'react'
+import { Badge } from '../indicators/badge'
+import { CapacityBar } from '../indicators/capacity-bar'
+import type { SubscriptionState } from '../indicators/status-dot'
+import { StatusDot } from '../indicators/status-dot'
+import { LimitWindow, type LimitWindowProps } from './limit-window'
+import styles from './subscription-row.module.css'
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -18,11 +18,11 @@ function Chevron({ open }: { open: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={styles.chevron}
-      data-open={open ? "true" : undefined}
+      data-open={open ? 'true' : undefined}
     >
       <path d="M6 9l6 6 6-6" />
     </svg>
-  );
+  )
 }
 
 function PinGlyph({ size = 12 }: { size?: number }) {
@@ -39,7 +39,7 @@ function PinGlyph({ size = 12 }: { size?: number }) {
     >
       <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
     </svg>
-  );
+  )
 }
 
 function MenuDotsGlyph() {
@@ -49,18 +49,18 @@ function MenuDotsGlyph() {
       <circle cx="12" cy="12" r="1.6" />
       <circle cx="19" cy="12" r="1.6" />
     </svg>
-  );
+  )
 }
 
-const MENU_GAP = 4;
-const MENU_VIEWPORT_MARGIN = 8;
-const MENU_MIN_WIDTH = 168;
+const MENU_GAP = 4
+const MENU_VIEWPORT_MARGIN = 8
+const MENU_MIN_WIDTH = 168
 
 function nextMenuIndex(key: string, current: number, length: number): number {
-  if (key === "Home") return 0;
-  if (key === "End") return length - 1;
-  if (key === "ArrowDown") return current < 0 ? 0 : (current + 1) % length;
-  return current < 0 ? length - 1 : (current - 1 + length) % length;
+  if (key === 'Home') return 0
+  if (key === 'End') return length - 1
+  if (key === 'ArrowDown') return current < 0 ? 0 : (current + 1) % length
+  return current < 0 ? length - 1 : (current - 1 + length) % length
 }
 
 function MenuItem({
@@ -69,10 +69,10 @@ function MenuItem({
   onClick,
   children,
 }: {
-  danger?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  children?: React.ReactNode;
+  danger?: boolean
+  disabled?: boolean
+  onClick?: () => void
+  children?: React.ReactNode
 }) {
   return (
     <button
@@ -80,63 +80,63 @@ function MenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      data-danger={danger ? "true" : undefined}
+      data-danger={danger ? 'true' : undefined}
       className={styles.menuItem}
     >
       {children}
     </button>
-  );
+  )
 }
 
 export interface SubscriptionRowProps {
-  label: string;
-  provider?: string;
-  account?: string;
-  state?: SubscriptionState;
-  used?: number | null;
-  severity?: "healthy" | "warn" | "critical";
-  resetLabel?: string | null;
-  lastRead?: string | null;
-  windows?: LimitWindowProps[];
-  reason?: string | null;
-  badge?: "Not current" | "Needs sign-in" | null;
-  pinnedCount?: number;
-  headlinePinned?: boolean;
-  expanded?: boolean;
-  menuOpen?: boolean;
-  actionLabel?: string | null;
-  actionDisabled?: boolean;
-  footerNote?: string | null;
-  onAction?: () => void;
-  onTogglePin?: () => void;
-  onToggleWindowPin?: (id: string) => void;
-  onToggleExpand?: () => void;
-  onToggleMenu?: () => void;
-  onRename?: (nextLabel: string | null) => void;
-  onReadNow?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  onStopTracking?: () => void;
-  signInInProgress?: boolean;
-  onSubmitSignInCode?: (code: string) => void;
-  onCancelSignIn?: () => void;
-  style?: React.CSSProperties;
+  label: string
+  provider?: string
+  account?: string
+  state?: SubscriptionState
+  used?: number | null
+  severity?: 'healthy' | 'warn' | 'critical'
+  resetLabel?: string | null
+  lastRead?: string | null
+  windows?: LimitWindowProps[]
+  reason?: string | null
+  badge?: 'Not current' | 'Needs sign-in' | null
+  pinnedCount?: number
+  headlinePinned?: boolean
+  expanded?: boolean
+  menuOpen?: boolean
+  actionLabel?: string | null
+  actionDisabled?: boolean
+  footerNote?: string | null
+  onAction?: () => void
+  onTogglePin?: () => void
+  onToggleWindowPin?: (id: string) => void
+  onToggleExpand?: () => void
+  onToggleMenu?: () => void
+  onRename?: (nextLabel: string | null) => void
+  onReadNow?: () => void
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+  onStopTracking?: () => void
+  signInInProgress?: boolean
+  onSubmitSignInCode?: (code: string) => void
+  onCancelSignIn?: () => void
+  style?: React.CSSProperties
 }
 
 interface MenuPosition {
-  top: number;
-  left: number;
+  top: number
+  left: number
 }
 
 export function SubscriptionRow({
   label,
   provider,
   account,
-  state = "working",
+  state = 'working',
   used = null,
-  severity = "healthy",
+  severity = 'healthy',
   resetLabel = null,
   lastRead = null,
   windows = [],
@@ -166,116 +166,116 @@ export function SubscriptionRow({
   onCancelSignIn,
   style,
 }: SubscriptionRowProps) {
-  const [renaming, setRenaming] = React.useState(false);
-  const [draft, setDraft] = React.useState(label);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const [codeDraft, setCodeDraft] = React.useState("");
-  const codeInputRef = React.useRef<HTMLInputElement>(null);
-  const menuButtonRef = React.useRef<HTMLButtonElement>(null);
-  const menuRef = React.useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = React.useState<MenuPosition | null>(null);
+  const [renaming, setRenaming] = React.useState(false)
+  const [draft, setDraft] = React.useState(label)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [codeDraft, setCodeDraft] = React.useState('')
+  const codeInputRef = React.useRef<HTMLInputElement>(null)
+  const menuButtonRef = React.useRef<HTMLButtonElement>(null)
+  const menuRef = React.useRef<HTMLDivElement>(null)
+  const [menuPos, setMenuPos] = React.useState<MenuPosition | null>(null)
 
   React.useLayoutEffect(() => {
     if (!menuOpen) {
-      setMenuPos(null);
-      return undefined;
+      setMenuPos(null)
+      return undefined
     }
     const place = () => {
-      const trigger = menuButtonRef.current;
-      const menu = menuRef.current;
-      if (!trigger || !menu) return;
-      const anchor = trigger.getBoundingClientRect();
-      const width = menu.offsetWidth || MENU_MIN_WIDTH;
-      const height = menu.offsetHeight;
-      const below = anchor.bottom + MENU_GAP;
+      const trigger = menuButtonRef.current
+      const menu = menuRef.current
+      if (!trigger || !menu) return
+      const anchor = trigger.getBoundingClientRect()
+      const width = menu.offsetWidth || MENU_MIN_WIDTH
+      const height = menu.offsetHeight
+      const below = anchor.bottom + MENU_GAP
       const top =
         below + height <= window.innerHeight - MENU_VIEWPORT_MARGIN
           ? below
-          : Math.max(MENU_VIEWPORT_MARGIN, anchor.top - MENU_GAP - height);
+          : Math.max(MENU_VIEWPORT_MARGIN, anchor.top - MENU_GAP - height)
       const left = Math.min(
         Math.max(MENU_VIEWPORT_MARGIN, anchor.right - width),
         Math.max(MENU_VIEWPORT_MARGIN, window.innerWidth - width - MENU_VIEWPORT_MARGIN),
-      );
-      setMenuPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
+      )
+      setMenuPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }))
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
     return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [menuOpen]);
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [menuOpen])
 
-  const wasMenuOpen = React.useRef(false);
+  const wasMenuOpen = React.useRef(false)
   React.useEffect(() => {
     if (wasMenuOpen.current && !menuOpen && document.activeElement === document.body) {
-      menuButtonRef.current?.focus();
+      menuButtonRef.current?.focus()
     }
-    wasMenuOpen.current = menuOpen;
-  }, [menuOpen]);
+    wasMenuOpen.current = menuOpen
+  }, [menuOpen])
 
   React.useEffect(() => {
     if (signInInProgress) {
-      setCodeDraft("");
-      requestAnimationFrame(() => codeInputRef.current?.focus());
+      setCodeDraft('')
+      requestAnimationFrame(() => codeInputRef.current?.focus())
     }
-  }, [signInInProgress]);
+  }, [signInInProgress])
 
   const submitCode = () => {
-    const trimmed = codeDraft.trim();
-    if (trimmed.length === 0) return;
-    onSubmitSignInCode?.(trimmed);
-    setCodeDraft("");
-  };
+    const trimmed = codeDraft.trim()
+    if (trimmed.length === 0) return
+    onSubmitSignInCode?.(trimmed)
+    setCodeDraft('')
+  }
 
   React.useEffect(() => {
     if (renaming) {
-      setDraft(label);
-      requestAnimationFrame(() => inputRef.current?.select());
+      setDraft(label)
+      requestAnimationFrame(() => inputRef.current?.select())
     }
-  }, [renaming, label]);
+  }, [renaming, label])
 
   const commitRename = () => {
-    setRenaming(false);
-    const trimmed = draft.trim();
-    if (trimmed === label) return;
-    onRename?.(trimmed.length > 0 ? trimmed : null);
-  };
+    setRenaming(false)
+    const trimmed = draft.trim()
+    if (trimmed === label) return
+    onRename?.(trimmed.length > 0 ? trimmed : null)
+  }
 
-  const stale = state === "behind";
-  const reading = state === "reading" || state === "connecting";
-  const hasData = typeof used === "number";
-  const active = expanded || menuOpen;
-  const hasWindows = windows.length > 0;
+  const stale = state === 'behind'
+  const reading = state === 'reading' || state === 'connecting'
+  const hasData = typeof used === 'number'
+  const active = expanded || menuOpen
+  const hasWindows = windows.length > 0
 
-  const usedLevel = stale ? "stale" : severity !== "healthy" ? severity : undefined;
+  const usedLevel = stale ? 'stale' : severity !== 'healthy' ? severity : undefined
 
   const handleRowClick = () => {
     if (menuOpen) {
-      onToggleMenu?.();
-      return;
+      onToggleMenu?.()
+      return
     }
-    if (renaming) return;
-    onToggleExpand?.();
-  };
+    if (renaming) return
+    onToggleExpand?.()
+  }
 
   const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!menuOpen || !menuRef.current) return;
-    if ((e.target as HTMLElement).tagName === "INPUT") return;
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
-    const items = Array.from(menuRef.current.querySelectorAll("button")).filter((b) => !b.disabled);
-    if (items.length === 0) return;
-    e.preventDefault();
-    const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    items[nextMenuIndex(e.key, current, items.length)].focus();
-  };
+    if (!menuOpen || !menuRef.current) return
+    if ((e.target as HTMLElement).tagName === 'INPUT') return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
+    const items = Array.from(menuRef.current.querySelectorAll('button')).filter((b) => !b.disabled)
+    if (items.length === 0) return
+    e.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    items[nextMenuIndex(e.key, current, items.length)].focus()
+  }
 
   return (
     <div
       onClick={handleRowClick}
       onKeyDown={handleMenuKeyDown}
-      data-active={active ? "true" : undefined}
+      data-active={active ? 'true' : undefined}
       className={styles.row}
       style={style}
     >
@@ -290,11 +290,11 @@ export function SubscriptionRow({
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commitRename}
               onKeyDown={(e) => {
-                if (e.key === "Enter") commitRename();
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setDraft(label);
-                  setRenaming(false);
+                if (e.key === 'Enter') commitRename()
+                if (e.key === 'Escape') {
+                  e.stopPropagation()
+                  setDraft(label)
+                  setRenaming(false)
                 }
               }}
               className={styles.renameInput}
@@ -303,7 +303,7 @@ export function SubscriptionRow({
             <div className={styles.title}>{label}</div>
           )}
           {provider || account ? (
-            <div className={styles.subtitle}>{[account, provider].filter(Boolean).join(" · ")}</div>
+            <div className={styles.subtitle}>{[account, provider].filter(Boolean).join(' · ')}</div>
           ) : null}
         </div>
         {pinnedCount > 0 ? (
@@ -313,7 +313,7 @@ export function SubscriptionRow({
           </Badge>
         ) : null}
         {badge ? (
-          <Badge tone={stale ? "warn" : "danger"} className={styles.stateBadge}>
+          <Badge tone={stale ? 'warn' : 'danger'} className={styles.stateBadge}>
             {badge}
           </Badge>
         ) : null}
@@ -324,11 +324,11 @@ export function SubscriptionRow({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           data-quotos-menu-scope="true"
-          data-open={menuOpen ? "true" : undefined}
+          data-open={menuOpen ? 'true' : undefined}
           ref={menuButtonRef}
           onClick={(e) => {
-            e.stopPropagation();
-            onToggleMenu?.();
+            e.stopPropagation()
+            onToggleMenu?.()
           }}
           className={styles.menuButton}
         >
@@ -347,11 +347,11 @@ export function SubscriptionRow({
               value={codeDraft}
               onChange={(e) => setCodeDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") submitCode();
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setCodeDraft("");
-                  onCancelSignIn?.();
+                if (e.key === 'Enter') submitCode()
+                if (e.key === 'Escape') {
+                  e.stopPropagation()
+                  setCodeDraft('')
+                  onCancelSignIn?.()
                 }
               }}
               placeholder="Paste code"
@@ -389,18 +389,18 @@ export function SubscriptionRow({
           <CapacityBar used={used} reading={reading} stale={stale} severity={severity} />
         </>
       ) : (
-        <div className={styles.reasonText}>{reason || "No limits reported yet."}</div>
+        <div className={styles.reasonText}>{reason || 'No limits reported yet.'}</div>
       )}
 
       <div className={styles.footer}>
-        <span className={styles.footerNote} data-stale={stale ? "true" : undefined}>
+        <span className={styles.footerNote} data-stale={stale ? 'true' : undefined}>
           {reading
-            ? "Reading…"
+            ? 'Reading…'
             : footerNote
               ? footerNote
               : lastRead
                 ? `Read ${lastRead}`
-                : "Not read yet"}
+                : 'Not read yet'}
         </span>
         {actionLabel ? (
           <button
@@ -408,8 +408,8 @@ export function SubscriptionRow({
             title={actionLabel}
             disabled={actionDisabled}
             onClick={(e) => {
-              e.stopPropagation();
-              onAction?.();
+              e.stopPropagation()
+              onAction?.()
             }}
             className={styles.actionButton}
           >
@@ -421,12 +421,12 @@ export function SubscriptionRow({
             type="button"
             aria-expanded={expanded}
             onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand?.();
+              e.stopPropagation()
+              onToggleExpand?.()
             }}
             className={styles.disclosureButton}
           >
-            {windows.length} {windows.length === 1 ? "limit" : "limits"}
+            {windows.length} {windows.length === 1 ? 'limit' : 'limits'}
             <Chevron open={expanded} />
           </button>
         ) : null}
@@ -434,7 +434,7 @@ export function SubscriptionRow({
 
       <div
         aria-hidden={!expanded}
-        data-expanded={expanded && hasWindows ? "true" : undefined}
+        data-expanded={expanded && hasWindows ? 'true' : undefined}
         className={styles.detailWrapper}
       >
         <div className={styles.detailInner}>
@@ -459,39 +459,39 @@ export function SubscriptionRow({
           style={{
             top: menuPos ? menuPos.top : 0,
             left: menuPos ? menuPos.left : 0,
-            visibility: menuPos ? "visible" : "hidden",
+            visibility: menuPos ? 'visible' : 'hidden',
             minWidth: MENU_MIN_WIDTH,
           }}
         >
           <MenuItem
             onClick={() => {
-              onToggleMenu?.();
-              onReadNow?.();
+              onToggleMenu?.()
+              onReadNow?.()
             }}
           >
             Read now
           </MenuItem>
           <MenuItem
             onClick={() => {
-              onToggleMenu?.();
-              setRenaming(true);
+              onToggleMenu?.()
+              setRenaming(true)
             }}
           >
             Rename
           </MenuItem>
           <MenuItem
             onClick={() => {
-              onToggleMenu?.();
-              onTogglePin?.();
+              onToggleMenu?.()
+              onTogglePin?.()
             }}
           >
-            {headlinePinned ? "Hide from menu bar" : "Show in menu bar"}
+            {headlinePinned ? 'Hide from menu bar' : 'Show in menu bar'}
           </MenuItem>
           <MenuItem
             disabled={!canMoveUp}
             onClick={() => {
-              onToggleMenu?.();
-              onMoveUp?.();
+              onToggleMenu?.()
+              onMoveUp?.()
             }}
           >
             Move up
@@ -499,8 +499,8 @@ export function SubscriptionRow({
           <MenuItem
             disabled={!canMoveDown}
             onClick={() => {
-              onToggleMenu?.();
-              onMoveDown?.();
+              onToggleMenu?.()
+              onMoveDown?.()
             }}
           >
             Move down
@@ -509,8 +509,8 @@ export function SubscriptionRow({
           <MenuItem
             danger
             onClick={() => {
-              onToggleMenu?.();
-              onStopTracking?.();
+              onToggleMenu?.()
+              onStopTracking?.()
             }}
           >
             Stop tracking
@@ -518,5 +518,5 @@ export function SubscriptionRow({
         </div>
       ) : null}
     </div>
-  );
+  )
 }

@@ -1,17 +1,17 @@
-import type * as React from "react";
-import { joinClassNames } from "../../join-class-names";
-import styles from "./text-field.module.css";
+import type * as React from 'react'
+import { joinClassNames } from '../../join-class-names'
+import styles from './text-field.module.css'
 
 export interface TextFieldProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "style"> {
-  label?: string;
-  value?: string;
-  placeholder?: string;
-  mono?: boolean;
-  invalid?: boolean;
-  disabled?: boolean;
-  onChange?: React.ChangeEventHandler<HTMLInputElement>;
-  style?: React.CSSProperties;
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'style'> {
+  label?: string
+  value?: string
+  placeholder?: string
+  mono?: boolean
+  invalid?: boolean
+  disabled?: boolean
+  onChange?: React.ChangeEventHandler<HTMLInputElement>
+  style?: React.CSSProperties
 }
 
 export function TextField({
@@ -34,11 +34,11 @@ export function TextField({
         placeholder={placeholder}
         disabled={disabled}
         onChange={onChange}
-        data-mono={mono ? "true" : undefined}
-        data-invalid={invalid ? "true" : undefined}
+        data-mono={mono ? 'true' : undefined}
+        data-invalid={invalid ? 'true' : undefined}
         className={joinClassNames(styles.input, className)}
         {...rest}
       />
     </label>
-  );
+  )
 }

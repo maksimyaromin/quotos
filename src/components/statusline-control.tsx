@@ -1,68 +1,68 @@
-import { useEffect, useState } from "react";
-import { Button } from "@/design-system";
-import { statuslineInstall, statuslineRemove, statuslineStatus } from "@/lib/tauri-client";
-import { isStatuslineError, type StatuslineIntegrationStatus } from "@/types/entities";
-import styles from "./statusline-control.module.css";
+import { useEffect, useState } from 'react'
+import { Button } from '@/design-system'
+import { statuslineInstall, statuslineRemove, statuslineStatus } from '@/lib/tauri-client'
+import { isStatuslineError, type StatuslineIntegrationStatus } from '@/types/entities'
+import styles from './statusline-control.module.css'
 
 function describeError(err: unknown): string {
-  if (isStatuslineError(err) && err.kind !== "conflict" && "message" in err) {
-    return err.message;
+  if (isStatuslineError(err) && err.kind !== 'conflict' && 'message' in err) {
+    return err.message
   }
-  return "Quotos couldn't do that. Nothing was changed.";
+  return "Quotos couldn't do that. Nothing was changed."
 }
 
 export function StatuslineControl({ configDir }: { configDir: string }) {
-  const [status, setStatus] = useState<StatuslineIntegrationStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatuslineIntegrationStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false
     void statuslineStatus(configDir)
       .then((s) => {
-        if (!cancelled) setStatus(s);
+        if (!cancelled) setStatus(s)
       })
       .catch(() => {
-        if (!cancelled) setStatus({ kind: "not_installed" });
-      });
+        if (!cancelled) setStatus({ kind: 'not_installed' })
+      })
     return () => {
-      cancelled = true;
-    };
-  }, [configDir]);
+      cancelled = true
+    }
+  }, [configDir])
 
   const enable = async (force: boolean) => {
-    setBusy(true);
-    setError(null);
+    setBusy(true)
+    setError(null)
     try {
-      await statuslineInstall(configDir, force);
-      setStatus({ kind: "installed" });
+      await statuslineInstall(configDir, force)
+      setStatus({ kind: 'installed' })
     } catch (err) {
-      if (isStatuslineError(err) && err.kind === "conflict") {
-        setStatus({ kind: "conflict", existing_command: err.existing_command });
+      if (isStatuslineError(err) && err.kind === 'conflict') {
+        setStatus({ kind: 'conflict', existing_command: err.existing_command })
       } else {
-        setError(describeError(err));
+        setError(describeError(err))
       }
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
-  };
+  }
 
   const turnOff = async () => {
-    setBusy(true);
-    setError(null);
+    setBusy(true)
+    setError(null)
     try {
-      await statuslineRemove(configDir);
-      setStatus({ kind: "not_installed" });
+      await statuslineRemove(configDir)
+      setStatus({ kind: 'not_installed' })
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err))
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
-  };
+  }
 
-  if (!status) return null;
+  if (!status) return null
 
-  if (status.kind === "installed") {
+  if (status.kind === 'installed') {
     return (
       <div className={styles.row}>
         <span className={styles.note}>Live updates from Claude Code — on, free</span>
@@ -75,14 +75,14 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
           </span>
         ) : null}
       </div>
-    );
+    )
   }
 
-  if (status.kind === "conflict") {
+  if (status.kind === 'conflict') {
     return (
       <div className={styles.column}>
         <span className={styles.note}>
-          Claude Code already runs a different status line:{" "}
+          Claude Code already runs a different status line:{' '}
           <span className={styles.code}>{status.existing_command}</span>
         </span>
         <div className={styles.row}>
@@ -93,7 +93,7 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
             size="sm"
             variant="ghost"
             disabled={busy}
-            onClick={() => setStatus({ kind: "not_installed" })}
+            onClick={() => setStatus({ kind: 'not_installed' })}
           >
             Not now
           </Button>
@@ -104,7 +104,7 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
           </span>
         ) : null}
       </div>
-    );
+    )
   }
 
   return (
@@ -118,5 +118,5 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
         </span>
       ) : null}
     </div>
-  );
+  )
 }
