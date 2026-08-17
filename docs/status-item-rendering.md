@@ -1,5 +1,7 @@
 # Status item rendering
 
+<img src="images/menu-bar.png" alt="The composited status item in the menu bar: the capacity glyph followed by two accounts' percentage figures, separated by a hairline">
+
 `status_item_render.rs` composites the status item's glyph and colored
 percentage digits into a raw RGBA buffer. `tray-icon` 0.24.2's macOS
 `set_title` calls `NSStatusItem`'s button `setTitle:` with a plain

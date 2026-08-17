@@ -1,11 +1,20 @@
+<div align="center">
+<img src="src-tauri/icons/128x128.png" width="96" height="96" alt="Quotos icon">
+
 # Quotos
 
 A macOS menu bar app that shows, at a glance, how much of each Claude
-subscription is left. Quotos reads accounts directly from the machine,
-with no server and no account of its own. See
-[the design brief](docs/design/brief.md) for the full product
-specification and [the architecture](docs/architecture.md) for how the
-application is built.
+subscription is left.
+
+[![CI](https://github.com/maksimyaromin/quotos/actions/workflows/ci.yml/badge.svg)](https://github.com/maksimyaromin/quotos/actions/workflows/ci.yml) [![License](https://img.shields.io/github/license/maksimyaromin/quotos)](LICENSE) ![macOS](https://img.shields.io/badge/macOS-15%2B-lightgrey)
+
+<img src="docs/images/panel.png" width="380" alt="The Quotos panel open, showing two tracked Claude accounts with their session and weekly usage">
+</div>
+
+Quotos reads accounts directly from the machine, with no server and no
+account of its own. See [the design brief](docs/design/brief.md) for
+the full product specification and [the architecture](docs/architecture.md)
+for how the application is built.
 
 ## Requirements
 
@@ -55,9 +64,12 @@ only one.
    open /Applications/Quotos.app
    ```
 
-Quotos appears in the menu bar. Click it to open the panel; it starts
-empty, with an "Add subscription" button that lists every Claude Code
-account Quotos found on the Mac.
+Quotos appears in the menu bar as a single status item:
+
+<img src="docs/images/menu-bar.png" alt="The Quotos status item in the menu bar, reading 25% 11% 0% and 0% 0% across two tracked accounts">
+
+Click it to open the panel; it starts empty, with an "Add subscription"
+button that lists every Claude Code account Quotos found on the Mac.
 
 If the menu bar icon shows no usage, or the "Add subscription" list is
 empty, Claude Code is not installed or not signed in on this Mac.

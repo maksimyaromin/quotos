@@ -250,6 +250,15 @@ standard icon sizes, 16 through 1024, pack the results into a standard
 `.iconset` directory, and convert with `iconutil -c icns`, which ships
 with Xcode's command line tools.
 
+## Screenshots
+
+`docs/images/` holds the screenshots the README and the documentation
+embed, kept small and cropped to exactly what the surrounding text
+describes. `sips -c` crops from the image's center, not from a stated
+origin, so an offset crop needs a different tool; Pillow, `pip install
+pillow`, crops from an exact box and is what produced the tracked
+images.
+
 ## Commits
 
 Commits follow Conventional Commits: `type(scope): summary`, for example
