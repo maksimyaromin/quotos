@@ -109,4 +109,5 @@ security issue instead? See [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) for the application. The bundled Inter typeface is
+licensed separately under the [SIL Open Font License, Version 1.1](src/design-system/assets/fonts/OFL.txt).
