@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "app:install": "node tools/app-install.ts",
     "test": "vitest run",
     "format": "biome format --write .",
     "format:check": "biome format .",
