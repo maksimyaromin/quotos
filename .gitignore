@@ -24,3 +24,6 @@ src-tauri/gen
 *.njsproj
 *.sln
 *.sw?
+
+src/design-system/assets/fonts/MonoLisa-*.woff2
+src/design-system/tokens/monolisa.generated.css

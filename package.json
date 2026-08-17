@@ -8,8 +8,11 @@
     "node": ">=24"
   },
   "scripts": {
+    "predev": "npm run generate:monolisa-font-faces",
     "dev": "vite",
+    "prebuild": "npm run generate:monolisa-font-faces",
     "build": "tsc -p tsconfig.app.json && vite build",
+    "generate:monolisa-font-faces": "node tools/generate-monolisa-font-faces.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "app:install": "node tools/app-install.ts",
