@@ -174,9 +174,11 @@ File names are kebab-case in every language, including TypeScript:
 `row-presentation.ts`, not `rowPresentation.ts` or `RowPresentation.ts`. A
 React component's exported name still reads `PascalCase`; only its file,
 and its `.module.css`, `.prompt.md` and `.spec` siblings, move. `README.md`,
-`AGENTS.md` and `CLAUDE.md` keep the capitalization the ecosystem expects
-of them, and `Cargo.toml`, `Cargo.lock` and `Info.plist` keep the exact
-spelling their own tooling requires. A source file under `src-tauri/src`
+`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md` and
+`.github/pull_request_template.md` keep the capitalization, or in the
+last case the underscores, that GitHub itself expects of them, and
+`Cargo.toml`, `Cargo.lock` and `Info.plist` keep the exact spelling
+their own tooling requires. A source file under `src-tauri/src`
 stays `snake_case`, matching the module identifier Rust derives from its
 file name; a `#[path]` attribute to carry a kebab-case file under a
 snake_case module was weighed and rejected; see

@@ -101,6 +101,12 @@ projects, the test suite, a handful of repository checks, and the Rust
 equivalents. [docs/contributing.md](docs/contributing.md) covers what
 each lane checks and where the rest of the documentation lives.
 
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the gate a change has
+to pass, and what to expect after opening a pull request. Found a
+security issue instead? See [SECURITY.md](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE)

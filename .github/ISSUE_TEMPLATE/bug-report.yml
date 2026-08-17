@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in Quotos is broken or behaving unexpectedly.
+labels:
+  - bug
+body:
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "15.4"
+    validations:
+      required: true
+
+  - type: input
+    id: quotos-version
+    attributes:
+      label: Quotos version
+      description: >-
+        From package.json's version field, or the commit you built
+        from.
+      placeholder: "0.5.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: claude-code-signed-in
+    attributes:
+      label: Is Claude Code installed and signed in?
+      description: >-
+        Quotos reads Claude Code's own account configuration and
+        Keychain credential; most reports trace back to this.
+      options:
+        - "Yes"
+        - "No"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: false

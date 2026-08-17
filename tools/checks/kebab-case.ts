@@ -9,10 +9,15 @@ const EXACT_EXCEPTIONS = new Set([
   'README.md',
   'AGENTS.md',
   'CLAUDE.md',
+  'CONTRIBUTING.md',
+  'SECURITY.md',
   'Cargo.toml',
   'Cargo.lock',
   'Info.plist',
   'LICENSE',
+  // GitHub only recognizes this exact, underscored name as the
+  // default pull request template.
+  'pull_request_template.md',
 ])
 
 const EXEMPT_PREFIXES = ['src-tauri/icons/', 'src/design-system/assets/fonts/']
