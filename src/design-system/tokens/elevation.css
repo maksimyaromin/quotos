@@ -30,6 +30,8 @@
   * {
     animation: none !important;
   }
+  /* Stopping the animation alone leaves the shimmer as a static stripe;
+     it must be hidden outright, not just frozen. */
   [data-quotos-shimmer] {
     display: none;
   }

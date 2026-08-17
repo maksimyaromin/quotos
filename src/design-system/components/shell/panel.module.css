@@ -9,6 +9,9 @@
   position: relative;
   border-radius: var(--radius-xl);
   overflow: hidden;
+  /* No blur-behind filter, plain filter, transform, or will-change here or
+     on any descendant above the row menu: each creates a containing block
+     that traps its position: fixed. */
 }
 
 .header {

@@ -11,6 +11,7 @@ body {
 body {
   display: flex;
   justify-content: center;
+  /* Must equal panel.tsx's NOTCH_RESERVE, synced by hand across both files. */
   padding-top: 12px;
   color: var(--text-primary);
 }
