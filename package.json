@@ -24,6 +24,7 @@
     "check:doc-links": "node tools/checks/doc-links.ts",
     "check:kebab-case": "node tools/checks/kebab-case.ts",
     "check:comment-length": "node tools/checks/comment-length.ts",
+    "check:provider-name-leak": "node tools/checks/provider-name-leak.ts",
     "cargo:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "cargo:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "cargo:test": "cargo test --manifest-path src-tauri/Cargo.toml",
