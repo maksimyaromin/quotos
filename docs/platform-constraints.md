@@ -64,8 +64,20 @@ this codebase is `(async)`.
 - A variable-length status item's button is measurably wider than its
   own composited image, by a fixed AppKit margin per side. `shell.rs`'s
   `sync_status_item_length` pins the item's length to the image's own
-  width on every repaint, so this app's own highlight painting and
-  AppKit's native click highlight share one frame.
+  width on every repaint, so the button's bounds and the image's bounds
+  match.
+- Matching bounds is not the same as one frame: nothing stops AppKit
+  from painting its own click highlight, in its own corner radius and
+  color, underneath this app's own drawn pill. `shell.rs`'s
+  `disable_status_item_native_highlight` sets the button's cell to
+  `NSCellStyleMask::NoCellMask` once at startup, reached through the
+  same `with_inner_tray_icon`/`ns_status_item()` route as
+  `sync_status_item_length`, so AppKit paints nothing there and the
+  drawn pill is the only frame for a click and for the panel-open state
+  alike. `NSControl` and `NSCell`, which that call needs, are already
+  resolved through `tray-icon`'s own request of the same
+  `objc2-app-kit` version, so this needed no new feature in
+  `Cargo.toml`.
 
 ## The non-activating panel class swap
 
