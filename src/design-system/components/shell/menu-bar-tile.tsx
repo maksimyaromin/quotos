@@ -2,8 +2,6 @@ import type * as React from "react";
 import type { SubscriptionState } from "../indicators/status-dot";
 import styles from "./menu-bar-tile.module.css";
 
-/** The placeholder quota-ring glyph. Not a logo, since Quotos has none. A
- *  functional macOS template mark, monochrome via currentColor. */
 export function QuotaGlyph({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={styles.glyph}>
@@ -37,17 +35,13 @@ function AttentionMark() {
 }
 
 export interface PinnedFigure {
-  /** % consumed shown for this pinned figure. */
   used?: number | null;
   state?: SubscriptionState;
 }
 
 export interface MenuBarTileProps {
-  /** The pinned subscriptions shown beside the glyph, typically 0 to 2. */
   pins?: PinnedFigure[];
-  /** Click opens the panel. */
   onClick?: () => void;
-  /** Render on a mock menu-bar strip by default, or bare when false, for embedding. */
   showStrip?: boolean;
   style?: React.CSSProperties;
 }
@@ -59,11 +53,6 @@ function tintLevel(pin: PinnedFigure): "amber" | "red" | null {
   return null;
 }
 
-/** The status item's representation: the glyph plus optional pinned
- *  figures. Monochrome by macOS convention, so a pinned figure only takes
- *  a warning tint, amber or red, when it actually needs attention. Broken
- *  pins show a small mark instead of a stale number. Renders on a mock
- *  menu-bar strip for preview. */
 export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: MenuBarTileProps) {
   const tile = (
     <button type="button" onClick={onClick} className={styles.tile}>
@@ -93,7 +82,6 @@ export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: Men
   return (
     <div className={styles.stripWrapper} style={style}>
       {tile}
-      {/* Faint neighbors, to show it living among other menu-bar items. */}
       <span className={styles.neighborBattery}>
         100%
         <svg width="22" height="12" viewBox="0 0 26 13" fill="none">

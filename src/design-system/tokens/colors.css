@@ -1,8 +1,3 @@
-/* Cool graphite neutrals and a single teal accent. Semantic capacity and
-   status colors are muted on purpose, so the common case reads as calm,
-   never as an alert. Dark is the hero appearance; light mirrors it.
-   :root defaults to dark; [data-appearance="light"] overrides. */
-
 :root {
   --graphite-0: #0d0f11;
   --graphite-1: #131518;
@@ -17,26 +12,24 @@
   --graphite-10: #d6d9dd;
   --graphite-11: #eceef0;
 
-  /* --- accent: muted teal-green (calm, not glowing) --- */
-  --teal-muted: #17332e;   /* tint fills / selected bg */
+  --teal-muted: #17332e;
   --teal-dim: #2c6b60;
-  --teal: #3f8b7e;         /* primary accent */
-  --teal-bright: #4e9c8d;  /* hover / focus ring */
+  --teal: #3f8b7e;
+  --teal-bright: #4e9c8d;
 
-  /* --- semantic hues (muted, macOS-calm) --- */
-  --amber: #e0a92b;        /* warn / behind / stale */
+  --amber: #e0a92b;
   --amber-muted: #3a2f13;
-  --red: #e5646a;          /* broken / critical */
+  --red: #e5646a;
   --red-muted: #3a1f22;
-  --blue: #5b8def;         /* info / waiting-on-limits / connecting */
+  --blue: #5b8def;
   --blue-muted: #1b2740;
 
-  --bg-base: var(--graphite-0);        /* behind the vibrancy blur */
-  --bg-panel: rgba(19, 21, 24, 0.86);  /* the popover surface, translucent, vibrancy shows through */
-  --bg-row: transparent;               /* rows sit on the panel */
+  --bg-base: var(--graphite-0);
+  --bg-panel: rgba(19, 21, 24, 0.86);
+  --bg-row: transparent;
   --bg-row-hover: var(--graphite-3);
-  --bg-elevated: var(--graphite-2);    /* nested cards, menus */
-  --bg-sunken: var(--graphite-0);      /* wells, track backgrounds */
+  --bg-elevated: var(--graphite-2);
+  --bg-sunken: var(--graphite-0);
   --bg-input: var(--graphite-3);
   --bg-selected: var(--teal-muted);
 
@@ -52,18 +45,17 @@
   --text-accent: var(--teal-bright);
   --text-on-accent: #f4faf8;
 
-  /* --- capacity bar fill (encodes "how much is left") --- */
   --cap-track: var(--graphite-4);
-  --cap-healthy: var(--teal);   /* plenty left */
-  --cap-warn: var(--amber);     /* getting low */
-  --cap-critical: var(--red);   /* nearly out */
+  --cap-healthy: var(--teal);
+  --cap-warn: var(--amber);
+  --cap-critical: var(--red);
 
   --status-working: var(--teal);
-  --status-progress: var(--graphite-8);   /* connecting / reading */
+  --status-progress: var(--graphite-8);
   --status-behind: var(--amber);
   --status-broken: var(--red);
   --status-waiting: var(--blue);
-  --status-idle: var(--graphite-6);        /* not connected */
+  --status-idle: var(--graphite-6);
 }
 
 [data-appearance="light"] {

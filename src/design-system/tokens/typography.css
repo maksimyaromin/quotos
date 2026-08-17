@@ -1,24 +1,19 @@
-/* UI text is Inter; every number that matters is MonoLisa, so digits align
-   and read like data. Sizes are compact: this lives in a narrow popover,
-   see --panel-width in spacing.css. */
-
 :root {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "MonoLisa", "SF Mono", ui-monospace, "Menlo", monospace;
 
-  --text-2xs: 10px;    /* menu-bar glyph text, micro-meta */
-  --text-xs: 11px;     /* timestamps, captions, chip text */
-  --text-sm: 12px;     /* secondary labels, provider names */
-  --text-base: 13px;   /* default body or control label, macOS standard */
-  --text-md: 14px;     /* row title */
-  --text-lg: 16px;     /* panel section heading */
-  --text-xl: 20px;     /* sheet title */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
 
-  /* numerals, MonoLisa */
-  --numeral-sm: 13px;  /* inline percentages, window values */
-  --numeral-md: 18px;  /* pinned menu-bar figure */
-  --numeral-lg: 30px;  /* the headline "% left" in a row */
-  --numeral-xl: 44px;  /* verify-result hero figure */
+  --numeral-sm: 13px;
+  --numeral-md: 18px;
+  --numeral-lg: 30px;
+  --numeral-xl: 44px;
 
   --weight-regular: 400;
   --weight-medium: 500;
@@ -29,9 +24,8 @@
   --leading-snug: 1.3;
   --leading-normal: 1.45;
 
-  /* letter-spacing: SF wants slight negative tracking as size grows */
   --tracking-tight: -0.01em;
   --tracking-tighter: -0.02em;
-  --tracking-wide: 0.02em;    /* small all-caps meta labels */
+  --tracking-wide: 0.02em;
   --tracking-caps: 0.06em;
 }

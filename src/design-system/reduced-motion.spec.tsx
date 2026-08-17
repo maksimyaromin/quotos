@@ -5,10 +5,6 @@ import elevation from "./tokens/elevation.css?raw";
 
 afterEach(cleanup);
 
-// See elevation.css's own comment for the mechanism; jsdom cannot
-// evaluate a real media query, so these tests pin the pieces it relies on
-// instead.
-
 const reducedBlock = elevation.split("@media (prefers-reduced-motion: reduce)")[1];
 
 describe("prefers-reduced-motion contract", () => {
@@ -25,8 +21,6 @@ describe("prefers-reduced-motion contract", () => {
   });
 
   test("stops keyframe animations and hides the shimmer overlay", () => {
-    // The keyframe animations carry literal durations in inline styles, so
-    // only !important reaches them.
     expect(reducedBlock).toMatch(/animation:\s*none\s*!important/);
     expect(reducedBlock).toContain("[data-quotos-shimmer]");
   });

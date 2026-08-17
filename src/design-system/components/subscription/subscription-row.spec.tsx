@@ -8,16 +8,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** The panel's own window is 360x560 logical. jsdom's default viewport is
- *  not, and the flip-above branch only makes sense against a real one. */
 function useWindow(width: number, height: number) {
   Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
   Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
 }
 
-/** jsdom reports every rect as zero, so the "…" button's position, the only
- *  input the placement math has, must be supplied. These tests assert the
- *  anchoring rules rather than exact pixel offsets. */
 function anchorButtonAt({ top, bottom, right }: { top: number; bottom: number; right: number }) {
   const original = Element.prototype.getBoundingClientRect;
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
@@ -44,8 +39,6 @@ function openMenu() {
   );
 }
 
-// An absolutely positioned element is clipped by, and counts toward the
-// scroll extent of, its scroll-container ancestor. A fixed one is neither.
 describe("SubscriptionRow's row menu overlays the panel instead of living inside its scroll box", () => {
   beforeEach(() => useWindow(360, 560));
 
@@ -64,14 +57,11 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     const menu = screen
       .getByText("Stop tracking")
       .closest<HTMLElement>("[data-quotos-menu-scope]")!;
-    // Below the button's bottom edge, by a small gap.
     expect(parseFloat(menu.style.top)).toBeGreaterThanOrEqual(120);
     expect(parseFloat(menu.style.top)).toBeLessThan(130);
   });
 
   test("flips above the button rather than off the bottom of the window", () => {
-    // A row near the panel's bottom: the menu cannot open downward and
-    // still fit inside a 560px window.
     anchorButtonAt({ top: 520, bottom: 540, right: 320 });
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(122);
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(178);
@@ -80,8 +70,8 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
       .getByText("Stop tracking")
       .closest<HTMLElement>("[data-quotos-menu-scope]")!;
     const top = parseFloat(menu.style.top);
-    expect(top).toBeLessThan(520); // above the button
-    expect(top).toBeGreaterThanOrEqual(8); // and still inside the window
+    expect(top).toBeLessThan(520);
+    expect(top).toBeGreaterThanOrEqual(8);
     expect(top + 122).toBeLessThanOrEqual(560);
   });
 
@@ -97,9 +87,6 @@ describe("SubscriptionRow's row menu overlays the panel instead of living inside
     expect(left + 178).toBeLessThanOrEqual(360 - 8);
   });
 
-  // app.tsx's click-away handler recognises "inside the menu" by this
-  // attribute alone on both the dropdown and its trigger. Moving the
-  // dropdown out of the row's own box must not cost it that.
   test("keeps the menu-scope marker the click-away handler matches on", () => {
     anchorButtonAt({ top: 100, bottom: 120, right: 320 });
     openMenu();
@@ -145,8 +132,6 @@ describe("the 'N limits' disclosure is a real, focusable control", () => {
       />,
     );
     screen.getByRole("button", { name: /2 limits/ }).click();
-    // Exactly once: the button's stopPropagation must keep the row div's
-    // onClick, the pointer expand path, from firing a second toggle.
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
 
@@ -207,9 +192,6 @@ describe("the row menu's Move up and Move down", () => {
 });
 
 describe("the row menu is keyboard-operable", () => {
-  // Keydowns bubble from wherever focus is to the row div's own handler, so
-  // firing on the trigger models "Enter opened the menu, focus still on the
-  // '…' button".
   const arrow = (key: string) =>
     fireEvent.keyDown(
       document.activeElement === document.body
@@ -264,10 +246,10 @@ describe("the row menu is keyboard-operable", () => {
 
   test("skips disabled items, exactly as the pointer path does", () => {
     render(<SubscriptionRow label="Claude Max" state="working" used={40} menuOpen canMoveDown />);
-    arrow("ArrowDown"); // Read now
-    arrow("ArrowDown"); // Rename
-    arrow("ArrowDown"); // Show in menu bar
-    arrow("ArrowDown"); // Move up is disabled, so this lands on Move down.
+    arrow("ArrowDown");
+    arrow("ArrowDown");
+    arrow("ArrowDown");
+    arrow("ArrowDown");
     expect(document.activeElement?.textContent).toBe("Move down");
   });
 
@@ -405,9 +387,6 @@ describe("committing a rename without editing keeps an existing custom name", ()
   });
 });
 
-// visibility: hidden is what removes clipped content from the tab order.
-// jsdom computes no focusability from style, so these pin the computed
-// style itself rather than simulating Tab.
 describe("a collapsed row's pin buttons are out of reach, not just out of sight", () => {
   const windows = [
     { id: "w1", name: "Session", used: 40 },
@@ -435,10 +414,6 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
     expect(getComputedStyle(detail).visibility).toBe("visible");
   });
 
-  // jsdom's CSS engine cannot parse a multi-value transition shorthand back
-  // into its longhand computed properties, so this reads the rule's actual
-  // text instead of getComputedStyle, the same way reduced-motion.spec.tsx
-  // reads a stylesheet's real text for a fact jsdom cannot compute.
   test("transitions visibility on the same duration token as grid-template-rows, so content stays visible while the row closes", () => {
     expect(rowStylesheet).toContain("grid-template-rows var(--dur-base)");
     expect(rowStylesheet).toContain("visibility var(--dur-base)");

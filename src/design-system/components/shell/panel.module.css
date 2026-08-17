@@ -34,8 +34,6 @@
   letter-spacing: var(--tracking-tight);
 }
 
-/* No reserved scrollbar gutter: app.css hides the track outright, so
-   there is nothing to reserve space for. */
 .body {
   display: flex;
   flex-direction: column;

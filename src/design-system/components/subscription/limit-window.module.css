@@ -42,10 +42,6 @@
   white-space: nowrap;
 }
 
-/* text-overflow only applies to block containers, and Badge is itself a
-   flex container, so overflow:hidden on it hard-clips the tag
-   mid-character with no ellipsis. The badge keeps only the layout
-   constraints, and scopeInner, a block span, owns the truncation. */
 .scopeBadge {
   flex: 0 1 auto;
   min-width: 0;

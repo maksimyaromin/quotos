@@ -65,6 +65,39 @@ constraints in CSS rather than only through the `style` prop. See
 [Testing](#testing) below for how a spec verifies a CSS Module's rules
 rather than an inline style.
 
+`text-overflow: ellipsis` only applies to a block container, never a
+flex one. `limit-window.module.css`'s `.scopeBadge` wraps `Badge`,
+itself a flex container, so the truncation styles live one level
+deeper, on `.scopeInner`, a plain block `span` inside it; `.scopeBadge`
+itself carries only the layout constraints that size it. Moving
+`overflow: hidden` and `text-overflow: ellipsis` onto the flex container
+directly hard-clips the text mid-character with no ellipsis at all,
+silently, since a flex container is a valid enough target for those
+properties to accept without warning.
+
+No ancestor of `Panel`'s body, `panel.module.css`'s `.content` and
+everything inside it, may ever carry a `backdrop-filter` or another
+property that creates a CSS containing block for fixed-position
+descendants, such as `filter`, `transform`, or `will-change`.
+`SubscriptionRow`'s row menu depends on `position: fixed` escaping all
+the way to the viewport; a containing block anywhere above it would trap
+the menu inside that ancestor's own box instead, an effect that would
+not show up as an error, only as a menu rendered in the wrong place.
+This is also why `Panel` itself never applies `backdrop-filter` to its
+own fill layer: the surrounding window is fully transparent with
+nothing behind it to blur, so the filter would only add flicker.
+
+`tokens/elevation.css`'s `prefers-reduced-motion: reduce` block is the
+whole mechanism behind macOS's Reduce Motion setting, under System
+Settings, Accessibility, Display. Every ordinary transition takes its
+duration from a `--dur-*` token, so zeroing those tokens under the media
+query covers all of them at once. The infinite keyframe animations,
+pulse, spin, and shimmer, carry literal durations in inline styles
+instead, which only a blanket `animation: none !important` reaches; the
+shimmer overlay is additionally hidden outright with `display: none`,
+since merely stopping its gradient would leave it sitting as a static
+white stripe rather than disappearing.
+
 ## TypeScript configuration
 
 The tree is a solution-style set of project references. The root

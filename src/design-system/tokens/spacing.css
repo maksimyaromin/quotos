@@ -1,7 +1,3 @@
-/* Tight 2px-based scale: a menu bar popover is dense, so spacing stays
-   tight. Radii follow macOS: small controls about 5 to 6px, the popover
-   itself about 12px, chips about 4px. */
-
 :root {
   --space-0: 0;
   --space-0-5: 2px;
@@ -16,16 +12,16 @@
   --space-8: 32px;
 
   --radius-xs: 3px;
-  --radius-sm: 5px;   /* buttons, inputs */
-  --radius-md: 7px;   /* rows, small cards */
-  --radius-lg: 10px;  /* nested cards, menus */
-  --radius-xl: 12px;  /* the popover shell */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
   --radius-pill: 999px;
 
-  --panel-width: 332px;      /* the popover */
-  --sheet-width: 360px;      /* add-subscription sheet */
+  --panel-width: 332px;
+  --sheet-width: 360px;
   --row-min-height: 60px;
-  --control-height: 26px;    /* macOS small control */
+  --control-height: 26px;
   --control-height-lg: 30px;
   --cap-bar-height: 4px;
   --hit-target: 28px;

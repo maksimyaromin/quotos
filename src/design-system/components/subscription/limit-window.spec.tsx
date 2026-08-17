@@ -4,11 +4,6 @@ import { LimitWindow } from "./limit-window";
 
 afterEach(cleanup);
 
-// text-overflow only applies to block containers, never a flex container,
-// so the scope badge must stay inline-flex for vertical centering while an
-// inner block span, not the badge itself, owns the ellipsis truncation.
-// jsdom cannot render either behavior, but it can pin the styles that make
-// both work in a real browser.
 describe("LimitWindow scope badge", () => {
   test("keeps the base Badge's inline-flex display so its text stays vertically centered", () => {
     const { getByText } = render(
@@ -29,8 +24,6 @@ describe("LimitWindow scope badge", () => {
     expect(style.overflow).toBe("hidden");
     expect(style.textOverflow).toBe("ellipsis");
     expect(style.whiteSpace).toBe("nowrap");
-    // The badge itself must not reintroduce text-overflow: on a flex
-    // container it silently hard-clips instead of ellipsizing.
     const badgeStyle = getComputedStyle(inner.parentElement!);
     expect(badgeStyle.display).toBe("inline-flex");
     expect(badgeStyle.textOverflow).not.toBe("ellipsis");

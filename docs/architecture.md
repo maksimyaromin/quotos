@@ -365,6 +365,22 @@ it off the glyph; the clamp only keeps the notch on the panel, since
 `buildPanelOutlinePath` shrinks whichever top corner the notch
 encroaches on rather than letting the notch move off the glyph.
 
+`panel.tsx`'s `BEAK_BASE_HALF`, `BEAK_HEIGHT`, and `NOTCH_RESERVE` are
+the frontend half of that same three-file sync: `BEAK_BASE_HALF * 2`
+must equal `geometry.rs`'s `BEAK_BASE_WIDTH`, `BEAK_HEIGHT` is what that
+function subtracts to put the beak's tip just under the menu bar rather
+than the panel's own top edge, and `NOTCH_RESERVE` must be at least
+`BEAK_HEIGHT` plus half the outline's 0.5px stroke width while also
+equaling `app.css`'s `padding-top`, so the beak stays inside the
+transparent window instead of being clipped by its edge.
+
+`tokens/elevation.css`'s `--shadow-popover` blur radius has to stay
+within the transparent window's own 14px margin around the panel, the
+same margin `app.css`'s `padding-top` and this section's panel insets
+both draw on. A wider blur hard-clips against the window's edge instead
+of fading out, reading as a dark halo band against a bright desktop
+rather than a soft shadow.
+
 The window's y solves for where the beak's tip should land: the tip
 sits a fixed clearance below the menu bar's bottom edge, read live from
 `NSScreen.visibleFrame` rather than a constant, since the notched
