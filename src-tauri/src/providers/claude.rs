@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::{AccountDescriptor, FetchError, RequestBudget};
+use super::{AccountDescriptor, FetchError};
 
 const USER_AGENT: &str = "claude-code/2.1.227";
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -505,8 +505,11 @@ fn map_unexpected_status(status: u16) -> FetchError {
 }
 
 fn rate_limited(retry_after_secs: Option<u64>) -> FetchError {
+    // Mirrors scheduler::AUTO_REFRESH_INTERVAL: with no header telling us
+    // otherwise, a 429 costs the account exactly the ordinary minute, not
+    // a longer, invented wait.
     FetchError::RateLimited {
-        retry_after_secs: retry_after_secs.unwrap_or(300),
+        retry_after_secs: retry_after_secs.unwrap_or(60),
     }
 }
 
@@ -518,7 +521,6 @@ pub struct UsageRead {
 pub async fn fetch_usage(
     client: &reqwest::Client,
     config_dir: &Path,
-    budget: &dyn RequestBudget,
 ) -> Result<UsageRead, FetchError> {
     let mut credential = read_credential(config_dir)?;
     let mut renewed_this_read = false;
@@ -550,7 +552,6 @@ pub async fn fetch_usage(
         }
     }
 
-    budget.reserve().map_err(|secs| rate_limited(Some(secs)))?;
     let first = get_json(client, USAGE_URL, &credential.access_token).await?;
     read_trace!(
         "{}: /usage answered HTTP {}",
@@ -585,7 +586,6 @@ pub async fn fetch_usage(
         return Err(verdict);
     };
 
-    budget.reserve().map_err(|secs| rate_limited(Some(secs)))?;
     let second = get_json(client, USAGE_URL, &renewed.access_token).await?;
     read_trace!(
         "{}: /usage retry answered HTTP {}",
@@ -836,6 +836,26 @@ mod tests {
         assert!(parse_credential(r#"{"claudeAiOauth":{"refreshToken":"r"}}"#).is_none());
         assert!(parse_credential(r#"{"claudeAiOauth":{"accessToken":""}}"#).is_none());
         assert!(parse_credential("not json at all").is_none());
+    }
+
+    #[test]
+    fn a_429_with_no_retry_after_header_costs_only_the_ordinary_minute() {
+        assert!(matches!(
+            rate_limited(None),
+            FetchError::RateLimited {
+                retry_after_secs: 60
+            }
+        ));
+    }
+
+    #[test]
+    fn a_429_with_a_retry_after_header_uses_it_verbatim() {
+        assert!(matches!(
+            rate_limited(Some(214)),
+            FetchError::RateLimited {
+                retry_after_secs: 214
+            }
+        ));
     }
 
     #[test]

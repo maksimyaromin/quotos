@@ -132,8 +132,9 @@ Opens on click. Shows every subscription. Needs:
 - a way to reach adding a subscription
 - graceful behaviour at 1, 5 and 10+ subscriptions
 
-While the panel is open it refreshes every two minutes, so the design must
-handle values changing under the person's eyes without jarring them.
+Opening the panel reads every tracked subscription right away, then keeps
+reading once a minute while it stays open, so the design must handle
+values changing under the person's eyes without jarring them.
 
 ### 5.3 Adding a subscription
 

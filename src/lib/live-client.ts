@@ -63,10 +63,6 @@ export async function endWindowDrag(): Promise<void> {
   return invoke('end_window_drag')
 }
 
-export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
-  return invoke('debug_rate_limit_snapshot')
-}
-
 export async function startSignIn(accountId: string, configDir: string): Promise<void> {
   return invoke('start_sign_in', { accountId, configDir })
 }

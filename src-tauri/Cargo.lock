@@ -2679,6 +2679,7 @@ dependencies = [
 name = "quotos-app"
 version = "0.5.3"
 dependencies = [
+ "block2",
  "chrono",
  "objc2",
  "objc2-app-kit",

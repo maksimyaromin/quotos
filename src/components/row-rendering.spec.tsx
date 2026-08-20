@@ -57,8 +57,8 @@ function clockTimesIn(container: HTMLElement): string[] {
   return container.textContent?.match(/\b\d{1,2}:\d{2}\s?(?:AM|PM)?/g) ?? []
 }
 
-describe('subscription row never shows contradictory sign-in and rate-budget states', () => {
-  test('a sign-in row shows the sign-in story only, with no rate-budget wait and no clock time', () => {
+describe('subscription row never shows contradictory sign-in and rate-limited states', () => {
+  test('a sign-in row shows the sign-in story only, with no rate-limited wait and no clock time', () => {
     const { container } = renderRow(
       sub({
         state: 'broken',
@@ -71,7 +71,7 @@ describe('subscription row never shows contradictory sign-in and rate-budget sta
 
     expect(screen.getByText('Needs sign-in')).toBeTruthy()
     expect(screen.getByText(/The sign-in expired\./)).toBeTruthy()
-    expect(container.textContent).not.toMatch(/rate budget/i)
+    expect(container.textContent).not.toMatch(/rate limited/i)
     expect(container.textContent).not.toMatch(/Retry at/)
     expect(clockTimesIn(container)).toHaveLength(0)
   })
@@ -86,7 +86,7 @@ describe('subscription row never shows contradictory sign-in and rate-budget sta
       }),
     )
 
-    expect(container.textContent).toMatch(/Waiting for the rate budget/)
+    expect(container.textContent).toMatch(/Rate limited by the provider/)
     expect(clockTimesIn(container)).toHaveLength(1)
     expect(container.textContent).not.toMatch(/Retry at/)
   })
@@ -110,6 +110,6 @@ describe('subscription row never shows contradictory sign-in and rate-budget sta
     const { container } = renderRow(sub())
     expect(container.textContent).toMatch(/20/)
     expect(container.textContent).not.toMatch(/Needs sign-in/)
-    expect(container.textContent).not.toMatch(/rate budget/i)
+    expect(container.textContent).not.toMatch(/rate limited/i)
   })
 })

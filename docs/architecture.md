@@ -16,15 +16,15 @@ this page is the map between them.
 | `geometry.rs` | Pure placement math and read-only screen queries. No module here moves a window; `shell.rs` does that with these numbers. |
 | `panel_window.rs` | Turns the panel into a non-activating `NSPanel`, the AppKit window class that can hold keyboard focus without activating its application. |
 | `status_item_render.rs` | Composites the status item's glyph and colored percentage digits into an RGBA bitmap, since `tray-icon` has no colored-title path. See [status-item-rendering.md](status-item-rendering.md). |
-| `accounts.rs` | The account-data plane: discovery, the one real fetch path, the shared per-account rate budget, the native refresh scheduler, and the IPC commands for the tracked list, statusline integration, and sign-in. |
-| `ratelimit.rs` | The sliding-window request budget one account's reads share with Claude Code itself. |
+| `accounts.rs` | The account-data plane: discovery, the one real fetch path, the native refresh scheduler and its idle/lock pause, and the IPC commands for the tracked list, statusline integration, and sign-in. |
+| `idle.rs` | Read-only queries for system idle time and screen-lock state, and the pure decision of whether automatic reads should pause. |
 | `scheduler.rs` | The native one-read-per-account-per-minute timer. |
 | `persistence.rs` / `atomic_write.rs` | The tracked-subscriptions list as a durable JSON file, and the fsync-then-rename write helper it shares with `statusline.rs`. |
-| `providers/mod.rs` | The provider trait, the request-budget trait, and the typed `FetchError` every provider returns on failure. |
+| `providers/mod.rs` | The provider trait and the typed `FetchError` every provider returns on failure. |
 | `providers/claude.rs` | The Claude Code adapter: Keychain reads, the usage and profile HTTP calls, credential renewal. |
 | `signin.rs` | Drives Claude Code's own `claude setup-token` login over a pty. Quotos never touches or writes a credential itself. |
 | `statusline.rs` | Installs and reads the opt-in Claude Code statusline feed, a second, zero-cost usage source. |
-| `single_instance.rs` | The OS file lock that keeps one Quotos running per machine, since the shared request budget assumes exactly one reader. |
+| `single_instance.rs` | The OS file lock that keeps one Quotos running per machine, since two live instances would double the polling against the provider's own limit. |
 | `launch_at_login.rs` | The Launch at Login toggle, through `SMAppService`. Quotos stores nothing; the OS is the single owner of this state. |
 
 ### Module file names
@@ -90,10 +90,9 @@ below.
 1. A read starts from `scheduler.rs`'s native timer or a manual action;
    both call the same `fetch_snapshot` command, so a manual refresh resets
    the scheduled minute for free.
-2. `fetch_snapshot` reserves one slot of the account's shared request
-   budget, calls the provider, and returns a normalized snapshot or a
-   typed `FetchError` over IPC, never a stale number as if it were
-   current.
+2. `fetch_snapshot` calls the provider directly and returns a normalized
+   snapshot or a typed `FetchError` over IPC, never a stale number as if
+   it were current.
 3. `use-subscriptions.ts` applies the result the same way whether it
    arrived from a direct call or from the scheduler's `quota-refresh`
    push event, through `applyRefreshResult`.
@@ -115,17 +114,18 @@ below.
   "working"` with `used: null` means a good read that had nothing to
   report. `lib/row-presentation.ts` shows `reason ?? "No limits reported
   yet."` for every state without a number.
-- **Health and the rate-limit budget are separate fields on purpose.** A
-  self-imposed wait must never overwrite a real diagnosis. `use-subscriptions.ts`
-  intercepts a `rate_limited` outcome before it reaches a provider's
-  outcome mapper and restores the state and reason captured before the
-  attempt started, except when that captured state was itself in
-  flight, in which case it settles to `working` or `idle` instead of
-  being written back verbatim as "reading forever."
-- **A subscription's refresh is never skipped client-side for being
-  rate-limited.** The Rust limiter refuses without spending anything, so
-  attempting is free, and skipping would make a wrong diagnosis
-  impossible to retest.
+- **Health and a pending rate-limit wait are separate fields on
+  purpose.** A wait the provider itself imposed via a 429 must never
+  overwrite a real diagnosis. `use-subscriptions.ts` intercepts a
+  `rate_limited` outcome before it reaches a provider's outcome mapper
+  and restores the state and reason captured before the attempt started,
+  except when that captured state was itself in flight, in which case it
+  settles to `working` or `idle` instead of being written back verbatim
+  as "reading forever."
+- **A manual refresh or the panel opening is never skipped client-side
+  for a pending wait.** Only the native scheduler's own automatic cadence
+  honors it; a manual attempt always reaches the provider, so a wrong
+  diagnosis is never impossible to retest.
 - **`FetchError` distinguishes `Unauthorized`, meaning the sign-in itself
   ended, from `CredentialStale`, meaning the access token merely aged
   out and is still renewable.** Conflating the two reports a working
@@ -197,34 +197,32 @@ old shape to read. Any time an entity's wire shape changes, check
 whether this struct still mirrors it, since a mismatched Rust struct
 does not error; it silently reshapes the JSON in transit.
 
-## Refresh scheduling and the shared request budget
+## Refresh scheduling and pausing when nobody is looking
 
 `scheduler.rs` runs natively rather than as a JavaScript interval,
 because macOS suspends timers in a hidden or occluded `WKWebView`: a
 measured 8-second `setInterval` produced zero ticks over 150 seconds
 while the window stayed hidden and the process itself stayed alive and
 idle. An OS-level timer has no notion of "hidden" at all.
-`ratelimit.rs`'s sliding window is the account-level budget this
-scheduler's cadence assumes stays full; the request budget itself is
-reserved per real HTTP request, not per read attempt, since a read that
-quietly makes two requests would otherwise spend the shared allowance
-twice as fast as the limiter believes. `RequestBudget::reserve` is
-passed into the provider rather than taken once by the caller, because
-only the provider knows how many requests one read actually costs: a
-single reservation per read attempt would undercount the 401
-refresh-and-retry path by a factor of two, leaving Quotos hard-throttled
-by the provider's own 429 while the limiter still believes it is under
-budget.
+
+No request is ever refused by Quotos itself; the provider is the only
+thing that says no. Opening the panel and pressing its manual refresh
+both fire a real HTTP request for every tracked account, through
+`use-subscriptions.ts`'s `refreshAll`, regardless of any pending wait.
+Only `scheduler.rs`'s own automatic cadence ever holds back.
 
 Each account is due for an automatic read once a minute, anchored to
 its last attempt rather than a free-running timer: `mark_attempted`
 anchors the next automatic read 60 seconds out from whenever the
 attempt actually happened, whether that attempt came from the
-scheduler's own periodic pass or from a manual refresh, so a manual
-refresh resets the minute for free with nothing extra to wire up. A
-rate-limited `retry_after` under one minute is floored at one minute
-anyway, since retrying earlier would only spend another slot on a
-guaranteed second failure.
+scheduler's own periodic pass or a manual read, so a manual refresh
+resets the minute for free with nothing extra to wire up. A rate-limited
+`retry_after` is honored exactly for that next automatic read, floored
+at one minute when the provider's own header asks for less, since
+retrying an automatic read earlier would only draw a guaranteed second
+429. A manual read during that wait still reaches the provider; if it
+draws its own 429, `mark_attempted` re-anchors the wait from that fresh
+header rather than extending the first one.
 
 Two independent entrants can call the scheduler's due-pass: its own
 periodic loop and the frontend's launch-time kick. An account is only
@@ -232,10 +230,10 @@ marked attempted after its fetch completes, and a fetch may first run a
 bounded credential renewal ahead of the ordinary token expiry, so the
 kicked pass can still be mid-fetch when the loop's own tick arrives.
 Without a gate, both entrants would see the same account as due and
-fetch it twice, spending two slots of the shared budget on one read;
-`begin_pass` lets only one entrant run at a time and the loser skips
-outright, since whatever is due is already the running pass's job and
-anything that becomes due later is at most one tick away.
+fetch it twice at the same instant; `begin_pass` lets only one entrant
+run at a time and the loser skips outright, since whatever is due is
+already the running pass's job and anything that becomes due later is
+at most one tick away.
 
 `spawn_scheduler`'s native timer ticks every 5 seconds, cheap since each
 tick is just a due-time comparison per tracked account with no network
@@ -252,12 +250,27 @@ skipped, and both go through the same `is_due` and `mark_attempted`
 bookkeeping, so whichever reaches a given account first makes the other
 a no-op rather than a second scheduler.
 
-Because that budget is shared per account and not per process,
-`single_instance.rs` keeps exactly one Quotos running per machine with an
-OS file lock: two live instances would each spend the whole allowance at
-double speed until the provider answers 429. Double-clicking the bundle
-never produces two instances, since Launch Services activates the
-running copy instead; a dev run alongside an installed build, or a
+Every automatic pass also asks `idle.rs` whether anyone is actually
+watching: `system_idle_seconds` reads macOS's own idle timer, and
+`watch_screen_lock_state` keeps a flag current from the
+`com.apple.screenIsLocked` / `com.apple.screenIsUnlocked` distributed
+notifications, registered once at startup and never unregistered for
+the life of the process. Ten minutes idle or a locked screen skips every
+account's automatic read outright, without even touching `is_due`; a
+manual refresh or the panel opening ignores this pause entirely, since
+those are real requests, not a scheduled poll. `Scheduler::observe_pause`
+records the pass's decision and reports the one pass where it flips from
+paused back to active; that pass calls `wake_all` to clear every tracked
+account's anchored due time, so the very next tick reads everything
+immediately instead of waiting out whatever was left of each account's
+own minute.
+
+Because reads are unattended, `single_instance.rs` keeps exactly one
+Quotos running per machine with an OS file lock: two live instances
+would each poll on their own one-minute cadence, doubling the request
+rate against the provider's own limit for no benefit. Double-clicking
+the bundle never produces two instances, since Launch Services activates
+the running copy instead; a dev run alongside an installed build, or a
 duplicated `.app`, does, since both share one bundle identifier and
 therefore one config dir, where the lock file lives. `File::try_lock`
 calls `flock`, which the kernel releases whenever the owning process
@@ -267,11 +280,12 @@ file locking since Rust 1.89, so a dedicated single-instance plugin,
 built around forwarding argv to a window to focus, would be a dependency
 pulled in for one syscall this windowless app has no use for.
 
-Every path that spends a real fetch on an account, a header refresh, a
-row's manual refresh, a launch read, or a newly added subscription's
-first read, funnels through `use-subscriptions.ts`'s
-`refreshOneGuarded`, the one per-account in-flight guard, so a concurrent
-request joins the in-flight read instead of spending a second slot.
+Every path that reads an account, a header refresh, a row's manual
+refresh, a launch read, or a newly added subscription's first read,
+funnels through `use-subscriptions.ts`'s `refreshOneGuarded`, the one
+per-account in-flight guard, so a concurrent request joins the in-flight
+read instead of firing a second one for the same account at the same
+instant.
 
 ## Coordinate spaces and panel placement
 

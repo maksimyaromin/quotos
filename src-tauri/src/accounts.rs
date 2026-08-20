@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -6,25 +5,14 @@ use serde::Serialize;
 use tauri::{Emitter, Manager};
 
 use crate::AppState;
+use crate::idle;
 use crate::persistence::TrackedAccount;
 use crate::providers::{self, AccountDescriptor, FetchError, RawSnapshot};
-use crate::ratelimit::{RateLimitStatus, RateLimiter};
 use crate::statusline;
 
 #[tauri::command(async)]
 pub(crate) fn list_accounts() -> Vec<AccountDescriptor> {
     providers::claude::discover_accounts()
-}
-
-struct AccountBudget<'a> {
-    limiter: &'a RateLimiter,
-    account_id: &'a str,
-}
-
-impl providers::RequestBudget for AccountBudget<'_> {
-    fn reserve(&self) -> Result<(), u64> {
-        self.limiter.try_acquire(self.account_id)
-    }
 }
 
 async fn perform_fetch(
@@ -39,13 +27,8 @@ async fn perform_fetch(
         });
     }
 
-    let budget = AccountBudget {
-        limiter: &state.rate_limiter,
-        account_id,
-    };
-
     let path = PathBuf::from(config_dir);
-    let usage = providers::claude::fetch_usage(&state.http, &path, &budget).await?;
+    let usage = providers::claude::fetch_usage(&state.http, &path).await?;
     let profile = cached_profile(state, account_id, &path).await;
 
     let statusline = statusline::read_feed(&state.statusline_root, &path);
@@ -172,6 +155,23 @@ async fn run_due_pass(app: &tauri::AppHandle) {
         tracked.iter().map(|t| t.id.clone()).collect();
     state.scheduler.retain(&live_ids);
 
+    let paused = idle::should_pause_automatic_reads(
+        idle::system_idle_seconds(),
+        state
+            .screen_locked
+            .load(std::sync::atomic::Ordering::Relaxed),
+        idle::AUTO_READ_PAUSE_THRESHOLD,
+    );
+    if state.scheduler.observe_pause(paused) {
+        // Nobody was watching for at least one whole pass; treat every
+        // tracked account as due again rather than waiting out whatever
+        // was left of its own anchored minute.
+        state.scheduler.wake_all(&live_ids);
+    }
+    if paused {
+        return;
+    }
+
     for account in tracked {
         if !state.scheduler.is_due(&account.id) {
             continue;
@@ -208,13 +208,6 @@ pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
 #[tauri::command]
 pub(crate) async fn kick_scheduler(app: tauri::AppHandle) {
     run_due_pass(&app).await;
-}
-
-#[tauri::command]
-pub(crate) fn debug_rate_limit_snapshot(
-    state: tauri::State<'_, AppState>,
-) -> HashMap<String, RateLimitStatus> {
-    state.rate_limiter.snapshot()
 }
 
 #[tauri::command]
