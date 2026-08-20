@@ -1060,7 +1060,9 @@ mod tests {
         let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], false, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(
             found,
@@ -1073,7 +1075,9 @@ mod tests {
         let (buf, w, h) = render(&[seg("!", StatusItemColor::Red)], false, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(
             found,
@@ -1216,7 +1220,9 @@ mod tests {
         let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], true, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|px| (px[0], px[1], px[2], px[3]) == red);
         assert!(
             found,
