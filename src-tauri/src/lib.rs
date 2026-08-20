@@ -35,6 +35,7 @@ struct AppState {
     detached: Mutex<bool>,
     tracked_store: Store,
     statusline_root: PathBuf,
+    last_ok_snapshot: Mutex<HashMap<String, providers::RawSnapshot>>,
     scheduler: Scheduler,
     screen_locked: Arc<AtomicBool>,
     sign_in: signin::SignInRegistry,
@@ -69,8 +70,8 @@ pub fn run() {
             accounts::cancel_sign_in,
             accounts::forget_sign_in,
             accounts::statusline_status,
-            accounts::statusline_install,
-            accounts::statusline_remove,
+            accounts::statusline_enable,
+            accounts::statusline_disable,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -79,13 +80,16 @@ pub fn run() {
             log_status_item_font_choice();
 
             let app_support_dir = app.path().app_config_dir()?;
+            let _ = std::fs::create_dir_all(&app_support_dir);
             claim_single_instance_or_exit(&app_support_dir);
+            migrate_legacy_statusline(&app_support_dir);
             let tracked_path = app_support_dir.join("tracked.json");
             let (initial_rgba, initial_w, initial_h) = status_item_render::plain_glyph_rgba(0);
             let state = initial_app_state(app_support_dir, tracked_path, initial_w);
             idle::watch_screen_lock_state(state.screen_locked.clone());
             app.manage(state);
             accounts::spawn_scheduler(app.handle().clone());
+            accounts::spawn_statusline_watcher(app.handle().clone());
 
             let window = app
                 .get_webview_window("main")
@@ -140,6 +144,14 @@ fn claim_single_instance_or_exit(app_support_dir: &Path) {
     }
 }
 
+fn migrate_legacy_statusline(app_support_dir: &Path) {
+    let candidates: Vec<PathBuf> = providers::claude::discover_accounts()
+        .into_iter()
+        .map(|a| PathBuf::from(a.config_dir))
+        .collect();
+    statusline::migrate_legacy(app_support_dir, &candidates);
+}
+
 fn initial_app_state(
     app_support_dir: PathBuf,
     tracked_path: PathBuf,
@@ -154,6 +166,7 @@ fn initial_app_state(
         detached: Mutex::new(false),
         tracked_store: Store::load(tracked_path),
         statusline_root: app_support_dir,
+        last_ok_snapshot: Mutex::new(HashMap::new()),
         scheduler: Scheduler::new(),
         screen_locked: Arc::new(AtomicBool::new(false)),
         sign_in: signin::SignInRegistry::new(),

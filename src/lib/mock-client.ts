@@ -261,33 +261,18 @@ export function onSignInFinished(
   })
 }
 
-const statuslineState = new Map<string, StatuslineIntegrationStatus>([
-  ['~/.claude-team', { kind: 'conflict', existing_command: '~/.claude-team/my-own-statusline.sh' }],
-])
+const statuslineState = new Map<string, StatuslineIntegrationStatus>()
 
 export async function statuslineStatus(configDir: string): Promise<StatuslineIntegrationStatus> {
   return delay(statuslineState.get(configDir) ?? { kind: 'not_installed' })
 }
 
-export async function statuslineInstall(
-  configDir: string,
-  force: boolean,
-): Promise<{ replaced_existing: boolean }> {
-  const current = statuslineState.get(configDir) ?? { kind: 'not_installed' }
-  if (current.kind === 'conflict' && !force) {
-    const rejection = delay({ kind: 'conflict', existing_command: current.existing_command }).then(
-      (e) => {
-        throw e
-      },
-    )
-    return rejection as Promise<never>
-  }
-  const replaced = current.kind === 'conflict'
+export async function statuslineEnable(configDir: string): Promise<void> {
   statuslineState.set(configDir, { kind: 'installed' })
-  return delay({ replaced_existing: replaced })
+  return delay(undefined)
 }
 
-export async function statuslineRemove(configDir: string): Promise<void> {
+export async function statuslineDisable(configDir: string): Promise<void> {
   statuslineState.set(configDir, { kind: 'not_installed' })
   return delay(undefined)
 }

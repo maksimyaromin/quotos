@@ -20,7 +20,3 @@
 .note[data-tone="error"] {
   color: var(--red);
 }
-
-.code {
-  font-family: var(--font-mono);
-}

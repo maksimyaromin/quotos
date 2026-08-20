@@ -46,8 +46,8 @@ vi.mock('./lib/tauri-client', () => ({
   onQuotaRefresh: () => Promise.resolve(() => {}),
   kickScheduler: () => Promise.resolve(),
   statuslineStatus: () => Promise.resolve({ kind: 'not_installed' }),
-  statuslineInstall: () => Promise.resolve(),
-  statuslineRemove: () => Promise.resolve(),
+  statuslineEnable: () => Promise.resolve(),
+  statuslineDisable: () => Promise.resolve(),
   onPanelBeakOffset: () => Promise.resolve(() => {}),
 }))
 
