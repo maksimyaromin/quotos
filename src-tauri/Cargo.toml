@@ -1,6 +1,6 @@
 [package]
 name = "quotos-app"
-version = "0.5.3"
+version = "0.5.4"
 description = "Quotos: menu bar quota tracker for AI subscriptions"
 license = "MIT"
 edition = "2024"
