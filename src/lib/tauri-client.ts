@@ -26,7 +26,6 @@ export const kickScheduler: () => Promise<void> = isTauri ? live.kickScheduler :
 export const onPanelBeakOffset: (callback: (offsetPx: number) => void) => Promise<() => void> =
   isTauri ? live.onPanelBeakOffset : async () => () => {}
 
-export const debugRateLimitSnapshot = client.debugRateLimitSnapshot
 export const startSignIn = client.startSignIn
 export const submitSignInCode = client.submitSignInCode
 export const cancelSignIn = client.cancelSignIn

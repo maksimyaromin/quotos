@@ -33,7 +33,7 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
 }
 
 describe('presentRow, failure states are mutually exclusive', () => {
-  test('a row that needs signing in never also shows a rate-budget wait', () => {
+  test('a row that needs signing in never also shows a rate-limited wait', () => {
     const result = presentRow(
       sub({
         state: 'broken',
@@ -49,10 +49,10 @@ describe('presentRow, failure states are mutually exclusive', () => {
     expect(result.footerNote).toBeNull()
   })
 
-  test('a rate-budget wait states the time once, and offers nothing to press', () => {
+  test('a rate-limited wait states the time once, and offers nothing to press', () => {
     const result = presentRow(sub({ state: 'behind', rateLimitedUntil: IN_AN_HOUR }), NOW)
     expect(result.actionLabel).toBeNull()
-    expect(result.footerNote).toMatch(/^Waiting for the rate budget — retry at /)
+    expect(result.footerNote).toMatch(/^Rate limited by the provider — retry at /)
     const times = result.footerNote!.match(/\d{1,2}:\d{2}/g) ?? []
     expect(times).toHaveLength(1)
   })

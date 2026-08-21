@@ -78,7 +78,7 @@ describe('useSubscriptions refresh policy in the browser mock harness path', () 
     expect(result.current.subscriptions[0].state).toBe('working')
   })
 
-  test('an explicit manual refresh spends budget on demand', async () => {
+  test('an explicit manual refresh reads on demand', async () => {
     const { result } = renderHook(() => useSubscriptions())
     await flush()
     expect(fetchSnapshot).toHaveBeenCalledTimes(1)

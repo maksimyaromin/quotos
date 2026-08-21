@@ -1,11 +1,11 @@
 mod accounts;
 mod atomic_write;
 mod geometry;
+mod idle;
 mod launch_at_login;
 mod panel_window;
 mod persistence;
 mod providers;
-mod ratelimit;
 mod scheduler;
 mod shell;
 mod signin;
@@ -15,7 +15,8 @@ pub mod statusline;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tauri::image::Image;
@@ -24,19 +25,18 @@ use tauri::tray::{TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 use persistence::Store;
-use ratelimit::RateLimiter;
 use scheduler::Scheduler;
 
 use geometry::{DockedLayout, DragAnchor, PANEL_WINDOW_HEIGHT_LOGICAL, PANEL_WINDOW_WIDTH_LOGICAL};
 
 struct AppState {
     http: reqwest::Client,
-    rate_limiter: RateLimiter,
     profile_cache: Mutex<HashMap<String, serde_json::Value>>,
     detached: Mutex<bool>,
     tracked_store: Store,
     statusline_root: PathBuf,
     scheduler: Scheduler,
+    screen_locked: Arc<AtomicBool>,
     sign_in: signin::SignInRegistry,
     last_status_item_rect: Mutex<Option<(f64, f64)>>,
     last_icon_width_px: Mutex<u32>,
@@ -64,7 +64,6 @@ pub fn run() {
             shell::set_detached,
             shell::drag_window_step,
             shell::end_window_drag,
-            accounts::debug_rate_limit_snapshot,
             accounts::start_sign_in,
             accounts::submit_sign_in_code,
             accounts::cancel_sign_in,
@@ -83,7 +82,9 @@ pub fn run() {
             claim_single_instance_or_exit(&app_support_dir);
             let tracked_path = app_support_dir.join("tracked.json");
             let (initial_rgba, initial_w, initial_h) = status_item_render::plain_glyph_rgba(0);
-            app.manage(initial_app_state(app_support_dir, tracked_path, initial_w));
+            let state = initial_app_state(app_support_dir, tracked_path, initial_w);
+            idle::watch_screen_lock_state(state.screen_locked.clone());
+            app.manage(state);
             accounts::spawn_scheduler(app.handle().clone());
 
             let window = app
@@ -146,15 +147,15 @@ fn initial_app_state(
 ) -> AppState {
     AppState {
         http: reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(5))
             .build()
             .expect("failed to build HTTP client"),
-        rate_limiter: RateLimiter::new(5, Duration::from_secs(300)),
         profile_cache: Mutex::new(HashMap::new()),
         detached: Mutex::new(false),
         tracked_store: Store::load(tracked_path),
         statusline_root: app_support_dir,
         scheduler: Scheduler::new(),
+        screen_locked: Arc::new(AtomicBool::new(false)),
         sign_in: signin::SignInRegistry::new(),
         last_status_item_rect: Mutex::new(None),
         last_icon_width_px: Mutex::new(initial_icon_width),

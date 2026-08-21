@@ -30,7 +30,3 @@ pub enum FetchError {
     Network { message: String },
     Other { message: String },
 }
-
-pub trait RequestBudget: Send + Sync {
-    fn reserve(&self) -> Result<(), u64>;
-}

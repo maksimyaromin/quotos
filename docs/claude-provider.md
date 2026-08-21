@@ -9,9 +9,11 @@ adapter plugs into.
 
 Quotos reads a Keychain-backed OAuth token and calls the undocumented but
 first-party `/api/oauth/usage` and `/api/oauth/profile` endpoints. That
-endpoint is rate-limited at 5 requests per 300 seconds per account,
-shared with Claude Code itself; `ratelimit.rs` is the budget that keeps
-Quotos inside it.
+endpoint is rate-limited by Claude's own servers, shared with Claude Code
+itself; Quotos never models that limit locally, it just reads the
+provider's own `Retry-After` on a 429 and backs off. See "Refresh
+scheduling and pausing when nobody is looking" in
+[architecture.md](architecture.md).
 
 The Keychain item's own decrypt and export ACL trusts exactly
 `/usr/bin/security` with `promptSelector=0`, so the `security
@@ -19,13 +21,11 @@ find-generic-password -w` call this app shells out to is authorized and
 never raises a sign-in prompt. `QUOTOS_DEBUG_READS=1` traces the
 credential and read decisions, never a token, to standard error.
 
-`fetch_usage` follows three rules: renew before spending a request
-whenever the stored token is at or past its own expiry, the ordinary
-case rather than an edge case, since Claude Code's tokens live roughly 8
-hours; on an unexpected 401, renew once, retrying only if the credential
-actually changed, per "Sign-in recovery" below; and reserve one budget
-slot per real request, never per read attempt, per "Refresh scheduling
-and the shared request budget" in architecture.md.
+`fetch_usage` follows two rules: renew before spending a request whenever
+the stored token is at or past its own expiry, the ordinary case rather
+than an edge case, since Claude Code's tokens live roughly 8 hours; and
+on an unexpected 401, renew once, retrying only if the credential
+actually changed, per "Sign-in recovery" below.
 
 `security(1)`'s exit status for "no such Keychain item",
 `errSecItemNotFound`, is not documented anywhere Apple publishes; `44` is
@@ -43,12 +43,9 @@ report" answer, a healthy-looking read that silently wipes every
 window. A non-200 answer is classified by its status alone, and its body
 is never consumed, so an unreadable one changes nothing.
 
-`fetch_profile` is deliberately outside the request budget and fetched
-at most once per account per app run, since the caller caches it: the
-fixed one-read-per-minute cadence already consumes the whole 5-per-300s
-allowance, so charging this call too would make the limiter refuse a
-scheduled read every launch. One un-budgeted request per account per run
-is a bounded, documented overshoot.
+`fetch_profile` is fetched at most once per account per app run and then
+cached by the caller, since the account name and plan it reports almost
+never change within a single run.
 
 ## `CLAUDE_CONFIG_DIR`
 
@@ -117,9 +114,9 @@ wait-and-notify thread takes ownership of both and holds `master` until
 before that thread was spawned, so cancelling a session never contends
 with the thread that is blocked waiting on it.
 
-`run_cli_credential_refresh` renews a stale access token at zero cost
-against the shared request budget: any CLI invocation refreshes and
-writes back the stored credential, and `claude mcp list` does no
+`run_cli_credential_refresh` renews a stale access token without
+spending an HTTP request of Quotos's own: any CLI invocation refreshes
+and writes back the stored credential, and `claude mcp list` does no
 inference beyond that, since an expired token's `expiresAt` advances
 across exactly this call. That it ran is not proof anything was
 renewed; only re-reading the credential afterward can distinguish an
@@ -128,11 +125,12 @@ actual renewal from the CLI running without changing anything.
 ## The statusline feed
 
 While an interactive Claude Code session is running, its statusline hook
-reports the same `rate_limits` numbers the usage endpoint does, at no
-cost against the shared request budget. `statusline.rs` installs a tiny
-helper as that hook, opt-in per subscription from the Subscriptions
-screen, by read-merge-writing the Claude Code config's `settings.json`
-and backing up whatever `statusLine` value was there before.
+reports the same `rate_limits` numbers the usage endpoint does, without
+Quotos spending a request of its own to get them. `statusline.rs`
+installs a tiny helper as that hook, opt-in per subscription from the
+Subscriptions screen, by read-merge-writing the Claude Code config's
+`settings.json` and backing up whatever `statusLine` value was there
+before.
 
 The installed helper is a copy of Quotos's own executable, not a
 separate binary: `main.rs` intercepts an ingest flag as `argv[1]` before

@@ -14,6 +14,7 @@ fn next_wait(retry_after: Option<Duration>) -> Duration {
 pub struct Scheduler {
     next_due: Mutex<HashMap<String, Instant>>,
     pass_running: AtomicBool,
+    auto_reads_paused: AtomicBool,
 }
 
 pub struct PassGuard<'a> {
@@ -31,6 +32,7 @@ impl Scheduler {
         Self {
             next_due: Mutex::new(HashMap::new()),
             pass_running: AtomicBool::new(false),
+            auto_reads_paused: AtomicBool::new(false),
         }
     }
 
@@ -58,6 +60,23 @@ impl Scheduler {
     pub fn retain(&self, live_ids: &HashSet<String>) {
         let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");
         next_due.retain(|id, _| live_ids.contains(id));
+    }
+
+    /// Records this pass's pause decision; returns true only on the
+    /// paused-to-active transition, so the caller wakes every tracked
+    /// account instead of waiting out each one's own anchored minute.
+    pub fn observe_pause(&self, currently_paused: bool) -> bool {
+        let was_paused = self
+            .auto_reads_paused
+            .swap(currently_paused, Ordering::AcqRel);
+        was_paused && !currently_paused
+    }
+
+    /// Clears every tracked account's anchored due time so the next
+    /// `is_due` check treats all of them as due immediately.
+    pub fn wake_all(&self, live_ids: &HashSet<String>) {
+        let mut next_due = self.next_due.lock().expect("scheduler mutex poisoned");
+        next_due.retain(|id, _| !live_ids.contains(id));
     }
 }
 
@@ -100,6 +119,31 @@ mod tests {
     }
 
     #[test]
+    fn a_37_second_retry_after_still_floors_the_next_automatic_read_at_a_minute() {
+        assert_eq!(
+            next_wait(Some(Duration::from_secs(37))),
+            AUTO_REFRESH_INTERVAL
+        );
+    }
+
+    #[test]
+    fn a_second_429_re_anchors_the_wait_from_its_own_retry_after() {
+        let scheduler = Scheduler::new();
+        scheduler.mark_attempted("claude:claude", Some(Duration::from_secs(214)));
+        let first_due_by =
+            scheduler.next_due.lock().expect("scheduler mutex poisoned")["claude:claude"];
+
+        scheduler.mark_attempted("claude:claude", Some(Duration::from_secs(5)));
+        let second_due_by =
+            scheduler.next_due.lock().expect("scheduler mutex poisoned")["claude:claude"];
+
+        assert!(
+            second_due_by < first_due_by,
+            "a manual refresh's own 429 must re-anchor the wait, not extend the first one"
+        );
+    }
+
+    #[test]
     fn retain_drops_untracked_accounts_bookkeeping() {
         let scheduler = Scheduler::new();
         scheduler.mark_attempted("claude:claude", None);
@@ -134,5 +178,45 @@ mod tests {
         let scheduler = Scheduler::new();
         drop(scheduler.begin_pass());
         assert!(scheduler.begin_pass().is_some());
+    }
+
+    #[test]
+    fn observe_pause_only_reports_a_resume_on_the_transition() {
+        let scheduler = Scheduler::new();
+        assert!(
+            !scheduler.observe_pause(false),
+            "starting active is not a resume"
+        );
+        assert!(
+            !scheduler.observe_pause(true),
+            "becoming paused is not a resume"
+        );
+        assert!(
+            !scheduler.observe_pause(true),
+            "staying paused is not a resume"
+        );
+        assert!(
+            scheduler.observe_pause(false),
+            "leaving paused is exactly the resume transition"
+        );
+        assert!(
+            !scheduler.observe_pause(false),
+            "staying active afterward is not a resume"
+        );
+    }
+
+    #[test]
+    fn wake_all_clears_only_the_live_accounts_due_time() {
+        let scheduler = Scheduler::new();
+        scheduler.mark_attempted("claude:claude", None);
+        scheduler.mark_attempted("claude:team", None);
+        assert!(!scheduler.is_due("claude:claude"));
+        assert!(!scheduler.is_due("claude:team"));
+
+        let live: HashSet<String> = ["claude:claude".to_string()].into_iter().collect();
+        scheduler.wake_all(&live);
+
+        assert!(scheduler.is_due("claude:claude"));
+        assert!(!scheduler.is_due("claude:team"));
     }
 }

@@ -6,7 +6,6 @@ import { Button, IconButton, Panel, SubscriptionRow } from '@/design-system'
 import { useSubscriptions } from '@/hooks/use-subscriptions'
 import { presentRow } from '@/lib/row-presentation'
 import {
-  debugRateLimitSnapshot,
   dragWindowStep,
   endWindowDrag,
   hidePanel,
@@ -89,8 +88,12 @@ export default function App() {
     let cancelled = false
     let unlisten: (() => void) | undefined
     void onPanelVisibility((visible) => {
-      if (visible) setNow(Date.now())
-      else setOpenMenuId(null)
+      if (visible) {
+        setNow(Date.now())
+        void refreshAll()
+      } else {
+        setOpenMenuId(null)
+      }
     }).then((fn) => {
       if (cancelled) fn()
       else unlisten = fn
@@ -99,7 +102,7 @@ export default function App() {
       cancelled = true
       unlisten?.()
     }
-  }, [])
+  }, [refreshAll])
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), NOW_TICK_MS)
@@ -193,11 +196,9 @@ export default function App() {
   const goList = () => setScreen('list')
 
   const handleDebugDump = async () => {
-    const rateLimit = await debugRateLimitSnapshot()
     const dump = {
       dumpedAt: new Date().toISOString(),
       subscriptions,
-      rateLimit,
     }
     const json = JSON.stringify(dump, null, 2)
     console.log('[quotos debug state]', dump)
@@ -223,7 +224,7 @@ export default function App() {
   const refreshLabel = refreshing
     ? 'Reading…'
     : allBlocked
-      ? `Waiting for the rate budget — retry at ${formatClockTime(earliestAvailable)}`
+      ? `Rate limited by the provider — retry at ${formatClockTime(earliestAvailable)}`
       : 'Read all now'
   const mostRecentRead = trackedSubscriptions.reduce<string | null>((latest, s) => {
     if (!s.lastReadAt) return latest

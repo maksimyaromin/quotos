@@ -20,7 +20,7 @@ export function presentRow(sub: Subscription, now: number): RowPresentation {
     return {
       badge,
       actionLabel: null,
-      footerNote: `Waiting for the rate budget — retry at ${formatClockTime(waitingUntil)}`,
+      footerNote: `Rate limited by the provider — retry at ${formatClockTime(waitingUntil)}`,
     }
   }
 

@@ -37,7 +37,6 @@ vi.mock('./lib/tauri-client', () => ({
   setDetached: () => Promise.resolve(),
   dragWindowStep: () => Promise.resolve(),
   endWindowDrag: () => Promise.resolve(),
-  debugRateLimitSnapshot: () => Promise.resolve(null),
   startSignIn: () => Promise.resolve(),
   submitSignInCode: () => Promise.resolve(),
   cancelSignIn: () => Promise.resolve(),
@@ -179,5 +178,16 @@ describe('panel reopen refreshes the presentation clock', () => {
     nowSpy.mockRestore()
 
     expect(screen.getByText('Last read 2h ago')).toBeTruthy()
+  })
+
+  test('opening the panel sends a real read for every tracked account, not a local wait', async () => {
+    await renderAppWithRow()
+    const callsBefore = fetchSnapshotSpy.mock.calls.length
+
+    await act(async () => {
+      visibilityCallback!(true)
+    })
+
+    expect(fetchSnapshotSpy.mock.calls.length).toBe(callsBefore + 1)
   })
 })

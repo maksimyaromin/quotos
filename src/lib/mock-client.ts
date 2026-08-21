@@ -232,15 +232,6 @@ export function onPanelVisibility(callback: (visible: boolean) => void): Promise
 
 export async function setDetached(_detached: boolean): Promise<void> {}
 
-export async function debugRateLimitSnapshot(): Promise<Record<string, unknown>> {
-  return Object.fromEntries(
-    Array.from(callCounts.entries()).map(([id, n]) => [
-      id,
-      { used: Math.min(n, 5), max: 5, retry_after_secs: null },
-    ]),
-  )
-}
-
 export async function startSignIn(accountId: string, _configDir: string): Promise<void> {
   signInSessions.add(accountId)
 }
