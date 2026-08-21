@@ -33,7 +33,7 @@ async fn perform_fetch(
 
     let statusline = statusline::read_feed(&state.statusline_root, &path);
 
-    Ok(RawSnapshot {
+    let snapshot = RawSnapshot {
         account_id: account_id.to_string(),
         provider: provider.to_string(),
         config_dir: config_dir.to_string(),
@@ -41,7 +41,13 @@ async fn perform_fetch(
         usage: usage.body,
         profile,
         statusline,
-    })
+    };
+    state
+        .last_ok_snapshot
+        .lock()
+        .expect("last_ok_snapshot mutex poisoned")
+        .insert(account_id.to_string(), snapshot.clone());
+    Ok(snapshot)
 }
 
 async fn cached_profile(
@@ -116,20 +122,19 @@ pub(crate) fn statusline_status(
 }
 
 #[tauri::command(async)]
-pub(crate) fn statusline_install(
-    state: tauri::State<'_, AppState>,
-    config_dir: String,
-    force: bool,
-) -> Result<statusline::InstallOutcome, statusline::StatuslineError> {
-    statusline::install(&state.statusline_root, &PathBuf::from(config_dir), force)
-}
-
-#[tauri::command(async)]
-pub(crate) fn statusline_remove(
+pub(crate) fn statusline_enable(
     state: tauri::State<'_, AppState>,
     config_dir: String,
 ) -> Result<(), statusline::StatuslineError> {
-    statusline::remove(&state.statusline_root, &PathBuf::from(config_dir))
+    statusline::enable(&state.statusline_root, &PathBuf::from(config_dir))
+}
+
+#[tauri::command(async)]
+pub(crate) fn statusline_disable(
+    state: tauri::State<'_, AppState>,
+    config_dir: String,
+) -> Result<(), statusline::StatuslineError> {
+    statusline::disable(&state.statusline_root, &PathBuf::from(config_dir))
 }
 
 #[derive(Serialize, Clone)]
@@ -203,6 +208,71 @@ pub(crate) fn spawn_scheduler(app: tauri::AppHandle) {
             run_due_pass(&app).await;
         }
     });
+}
+
+/// Instant delivery for a Claude Code turn; see "The statusline feed" in
+/// docs/claude-provider.md for why this pairs the fresh feed with
+/// `last_ok_snapshot` instead of re-emitting a full API read.
+pub(crate) fn spawn_statusline_watcher(app: tauri::AppHandle) {
+    use notify::{RecursiveMode, Watcher};
+
+    let watch_root = app.state::<AppState>().statusline_root.clone();
+    let callback_app = app.clone();
+    let callback_root = watch_root.clone();
+    let result = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        if !matches!(
+            event.kind,
+            notify::EventKind::Create(_) | notify::EventKind::Modify(_)
+        ) {
+            return;
+        }
+        for path in &event.paths {
+            handle_statusline_feed_change(&callback_app, &callback_root, path);
+        }
+    });
+    let Ok(mut watcher) = result else {
+        eprintln!("quotos: statusline feed watcher failed to start");
+        return;
+    };
+    if watcher
+        .watch(&watch_root, RecursiveMode::Recursive)
+        .is_err()
+    {
+        eprintln!("quotos: statusline feed watcher failed to watch {watch_root:?}");
+        return;
+    }
+    // Leaked on purpose: the watcher must outlive this function to keep
+    // observing feed writes for the lifetime of the app.
+    std::mem::forget(watcher);
+}
+
+fn handle_statusline_feed_change(app: &tauri::AppHandle, app_support_dir: &Path, path: &Path) {
+    let Some(slug) = statusline::feed_slug_from_path(path) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let tracked = state.tracked_store.list();
+    let Some(account) = tracked
+        .iter()
+        .find(|a| statusline::slug_for(&a.config_dir) == slug)
+    else {
+        return;
+    };
+    let Some(feed) = statusline::read_feed(app_support_dir, Path::new(&account.config_dir)) else {
+        return;
+    };
+    let cached = state
+        .last_ok_snapshot
+        .lock()
+        .expect("last_ok_snapshot mutex poisoned")
+        .get(&account.id)
+        .cloned();
+    let Some(mut snapshot) = cached else {
+        return;
+    };
+    snapshot.statusline = Some(feed);
+    let _ = app.emit("quota-refresh", ScheduledRefreshEvent::Ok { snapshot });
 }
 
 #[tauri::command]

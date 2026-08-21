@@ -16,8 +16,8 @@ vi.mock('../lib/tauri-client', () => ({
   listAccounts: () => listAccounts(),
   onPanelVisibility: (callback: (visible: boolean) => void) => onPanelVisibility(callback),
   statuslineStatus: () => Promise.resolve({ kind: 'not_installed' }),
-  statuslineInstall: () => Promise.resolve(),
-  statuslineRemove: () => Promise.resolve(),
+  statuslineEnable: () => Promise.resolve(),
+  statuslineDisable: () => Promise.resolve(),
 }))
 
 import { SubscriptionsScreen } from './subscriptions-screen'

@@ -66,17 +66,12 @@ export interface StatuslineFeedWire {
   }
 }
 
-export type StatuslineIntegrationStatus =
-  | { kind: 'not_installed' }
-  | { kind: 'installed' }
-  | { kind: 'conflict'; existing_command: string }
+export type StatuslineIntegrationStatus = { kind: 'not_installed' } | { kind: 'installed' }
 
 export type StatuslineError =
   | { kind: 'parse_failed'; message: string }
   | { kind: 'read_failed'; message: string }
   | { kind: 'write_failed'; message: string }
-  | { kind: 'helper_install_failed'; message: string }
-  | { kind: 'conflict'; existing_command: string }
 
 export function isStatuslineError(value: unknown): value is StatuslineError {
   return (

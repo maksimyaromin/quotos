@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/design-system'
-import { statuslineInstall, statuslineRemove, statuslineStatus } from '@/lib/tauri-client'
+import { statuslineDisable, statuslineEnable, statuslineStatus } from '@/lib/tauri-client'
 import { isStatuslineError, type StatuslineIntegrationStatus } from '@/types/entities'
 import styles from './statusline-control.module.css'
 
 function describeError(err: unknown): string {
-  if (isStatuslineError(err) && err.kind !== 'conflict' && 'message' in err) {
+  if (isStatuslineError(err) && 'message' in err) {
     return err.message
   }
   return "Quotos couldn't do that. Nothing was changed."
@@ -30,28 +30,24 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
     }
   }, [configDir])
 
-  const enable = async (force: boolean) => {
+  const enable = async () => {
     setBusy(true)
     setError(null)
     try {
-      await statuslineInstall(configDir, force)
+      await statuslineEnable(configDir)
       setStatus({ kind: 'installed' })
     } catch (err) {
-      if (isStatuslineError(err) && err.kind === 'conflict') {
-        setStatus({ kind: 'conflict', existing_command: err.existing_command })
-      } else {
-        setError(describeError(err))
-      }
+      setError(describeError(err))
     } finally {
       setBusy(false)
     }
   }
 
-  const turnOff = async () => {
+  const disable = async () => {
     setBusy(true)
     setError(null)
     try {
-      await statuslineRemove(configDir)
+      await statuslineDisable(configDir)
       setStatus({ kind: 'not_installed' })
     } catch (err) {
       setError(describeError(err))
@@ -62,56 +58,27 @@ export function StatuslineControl({ configDir }: { configDir: string }) {
 
   if (!status) return null
 
-  if (status.kind === 'installed') {
-    return (
-      <div className={styles.row}>
-        <span className={styles.note}>Live updates from Claude Code — on, free</span>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void turnOff()}>
-          Turn off
-        </Button>
-        {error ? (
-          <span className={styles.note} data-tone="error">
-            {error}
-          </span>
-        ) : null}
-      </div>
-    )
-  }
-
-  if (status.kind === 'conflict') {
-    return (
-      <div className={styles.column}>
-        <span className={styles.note}>
-          Claude Code already runs a different status line:{' '}
-          <span className={styles.code}>{status.existing_command}</span>
-        </span>
-        <div className={styles.row}>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void enable(true)}>
-            Replace with live updates
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => setStatus({ kind: 'not_installed' })}
-          >
-            Not now
-          </Button>
-        </div>
-        {error ? (
-          <span className={styles.note} data-tone="error">
-            {error}
-          </span>
-        ) : null}
-      </div>
-    )
-  }
+  const installed = status.kind === 'installed'
+  const settingsPath = `${configDir}/settings.json`
 
   return (
-    <div className={styles.row}>
-      <Button size="sm" variant="ghost" disabled={busy} onClick={() => void enable(false)}>
-        Enable live updates from Claude Code
-      </Button>
+    <div className={styles.column}>
+      <div className={styles.row}>
+        <Button
+          size="sm"
+          variant="secondary"
+          style={installed ? { color: 'var(--red)' } : undefined}
+          disabled={busy}
+          onClick={() => void (installed ? disable() : enable())}
+        >
+          {installed ? 'Turn off live updates' : 'Enable live updates'}
+        </Button>
+      </div>
+      <span className={styles.note}>
+        {installed
+          ? `Live updates are on. Claude Code runs a script Quotos wrote, and Claude Code hides its footer keyboard hints while any status line is configured.`
+          : `Enabling writes a status line command into ${settingsPath}, keeping a backup of what was there. It wraps an existing status line if you already have one, and Claude Code hides its footer keyboard hints while any status line is configured.`}
+      </span>
       {error ? (
         <span className={styles.note} data-tone="error">
           {error}

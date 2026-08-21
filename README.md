@@ -76,6 +76,25 @@ empty, Claude Code is not installed or not signed in on this Mac.
 Install it, sign in, then reopen the panel: Quotos rescans for accounts
 each time it opens.
 
+## Live updates from Claude Code
+
+Each tracked account on the Subscriptions screen has an "Enable live
+updates" button. Turning it on writes a `statusLine` entry into that
+account's `<config dir>/settings.json`, pointing at a small script
+Quotos generates at `<config dir's app support directory>/claude-statusline/<slug>.sh`,
+and keeps one timestamped backup of the file it changed. If the account
+already ran its own status line, the new script wraps it: your line
+keeps working, with Quotos listening in front of it. Configuring any
+status line makes Claude Code hide most of its footer keyboard hints
+(`esc to interrupt`, `? for shortcuts`) for the rest of the session,
+which is Claude Code's own behavior, not something Quotos can turn off.
+
+Turning the button off restores the exact previous `statusLine` value
+(or removes the key if there wasn't one) and deletes everything Quotos
+wrote for that account. To undo it by hand instead, run `/statusline
+remove` inside Claude Code, or delete the `statusLine` key from
+`settings.json` yourself.
+
 ## Run
 
 ```bash

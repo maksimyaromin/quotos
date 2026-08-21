@@ -89,13 +89,10 @@ export async function statuslineStatus(configDir: string): Promise<StatuslineInt
   return invoke('statusline_status', { configDir })
 }
 
-export async function statuslineInstall(
-  configDir: string,
-  force: boolean,
-): Promise<{ replaced_existing: boolean }> {
-  return invoke('statusline_install', { configDir, force })
+export async function statuslineEnable(configDir: string): Promise<void> {
+  return invoke('statusline_enable', { configDir })
 }
 
-export async function statuslineRemove(configDir: string): Promise<void> {
-  return invoke('statusline_remove', { configDir })
+export async function statuslineDisable(configDir: string): Promise<void> {
+  return invoke('statusline_disable', { configDir })
 }

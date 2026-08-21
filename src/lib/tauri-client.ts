@@ -32,5 +32,5 @@ export const cancelSignIn = client.cancelSignIn
 export const forgetSignIn = client.forgetSignIn
 export const onSignInFinished = client.onSignInFinished
 export const statuslineStatus = client.statuslineStatus
-export const statuslineInstall = client.statuslineInstall
-export const statuslineRemove = client.statuslineRemove
+export const statuslineEnable = client.statuslineEnable
+export const statuslineDisable = client.statuslineDisable

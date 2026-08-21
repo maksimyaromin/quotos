@@ -127,50 +127,72 @@ actual renewal from the CLI running without changing anything.
 While an interactive Claude Code session is running, its statusline hook
 reports the same `rate_limits` numbers the usage endpoint does, without
 Quotos spending a request of its own to get them. `statusline.rs`
-installs a tiny helper as that hook, opt-in per subscription from the
-Subscriptions screen, by read-merge-writing the Claude Code config's
-`settings.json` and backing up whatever `statusLine` value was there
-before.
+generates a small POSIX `sh` script per enabled account, opt-in from the
+Subscriptions screen, at
+`<app config dir>/claude-statusline/<slug>.sh` (`slug_for` hashes the
+account's own config dir). The script is self-contained: the feed path
+and, if the account already had a `statusLine`, that previous command
+are baked in as shell-quoted literals at generation time, so the script
+reads stdin, no arguments, no `jq`, and no Quotos binary involved at
+all.
 
-The installed helper is a copy of Quotos's own executable, not a
-separate binary: `main.rs` intercepts an ingest flag as `argv[1]` before
-touching Tauri at all, so the copy Claude Code's hook invokes, possibly
-many times a minute, never starts a second GUI instance. Reusing the
-whole GUI binary avoids Tauri's `externalBin` sidecar bundling,
-target-triple-suffixed binaries staged into a `binaries/` folder before
-`tauri build`, for a purpose-built helper that would only ever need to
-spawn, parse one JSON payload, and exit; the tradeoff is tens of extra
-megabytes on disk, not correctness, for a local desktop app.
+The script does exactly three things: read stdin into a variable; write
+it verbatim, atomically (a temp file in the same directory, then `mv
+-f`), to the feed file `<slug>.json` next to it; then either pipe that
+same payload into the wrapped previous command and pass its stdout
+through unchanged, or, if there was no previous status line, print the
+single line `Quotos is listening`. Claude Code's own docs state that a
+nonzero exit or malformed `statusLine` output just blanks that row, so
+the script never tries to fail loudly; a failed write to the feed file
+still lets the emit step run.
 
-Writing `settings.json` follows six rules: only on an explicit in-app
-opt-in per subscription, never automatic; read-merge-write, refusing and
-changing nothing on a parse failure, preserving every other key, and
-writing atomically through a temp file and rename in the same directory;
-never clobbering a `statusLine` that is already configured and
-different, unless the caller forces a replace; a timestamped backup of
-the previous file plus a small metadata record of the previous
-`statusLine` value, which removal restores exactly; the installed
-command points at the copied helper described above; and the feed is
-always a second source; the frontend's reconciliation, not the Rust
-side, decides which reading wins. `statusline.rs` never invents a window
-the API did not already report.
+Writing `settings.json` follows the same read-merge-write discipline as
+before: refusing and changing nothing on a parse failure, preserving
+every other key, writing atomically through a temp file and rename in
+the same directory, and preserving `padding` and `refreshInterval` from
+a wrapped entry. There is no conflict state to refuse into any more:
+enabling always wraps whatever `statusLine` command was already there.
+Enabled means exactly one thing, checked fresh every time —
+`settings.json`'s `statusLine.command` equals the command Quotos would
+generate for that account — so a status line the user changed by hand
+through `/statusline` simply reads as off, nothing more to reconcile.
+Disabling restores the previous `statusLine` value exactly (or clears
+the key when there was none), deletes the script, the feed file, and
+that account's single timestamped `settings.json` backup, and removes
+the `claude-statusline` directory once it's empty.
 
-`run_ingest_from_stdin`, the helper invocation itself, always exits 0
-and writes nothing on any failure to read or parse its stdin payload:
-Claude Code's own documentation states that a nonzero exit or malformed
-output from a `statusLine` command just blanks that row of the
-statusline, never surfaces as an error, so failing loudly here would
-gain nothing and risks looking like a Claude Code bug instead of a
-Quotos one.
+Anyone who enabled the old copied-binary version is migrated once, on
+app start: `migrate_legacy` finds any of the three legacy directories it
+left behind, and for every old backup record whose account's
+`settings.json` still points at the old copied binary, regenerates the
+new script wrapping that record's previous status line and rewrites the
+entry; a record whose
+settings no longer point at us is left untouched. The three legacy
+directories are then removed unconditionally, so a second run is a
+silent no-op.
 
 This is a scoped exception to the provider-adapter seam in
 [architecture.md](architecture.md): the feed's own vocabulary,
 `five_hour` and `seven_day`, is Claude Code CLI vocabulary, not a
-generic shape, but the install, backup, restore, and read plumbing is
+generic shape, but the generate, backup, restore, and read plumbing is
 per-config-dir infrastructure with nothing Claude-specific in how it
 works. This puts it in the same category as `persistence.rs` and
 `scheduler.rs`, which are shell-owned even though Claude is their only
 current caller.
+
+Reading a feed file never trusts a `written_at` field the script might
+have written — there isn't one, since the script has no way to produce
+a timestamp portably. `read_feed_file` takes the file's own mtime as the
+observation time instead, which is also what `spawn_statusline_watcher`
+relies on: it watches `claude-statusline` with the `notify` crate
+(FSEvents on macOS), and on a change to a feed file, re-emits
+`quota-refresh` for the matching tracked account by pairing the fresh
+feed with that account's last real API read from `last_ok_snapshot`, so
+the tray and panel update within about a second of each Claude Code turn
+without spending a request. The periodic scheduler tick still reads the
+feed file directly on every pass, so a missed FSEvent, or a feed update
+that arrives before any API read has ever populated the cache, costs at
+most one tick.
 
 On the frontend, `statusline-merge.ts`'s `reconcileWithStatusline` patches
 the raw usage shape before `normalizeUsage` ever sees it, so headline
