@@ -7,7 +7,6 @@ import {
 } from '@/types/entities'
 import {
   collectPinnedEntries,
-  findGroupForMember,
   isGroupColor,
   layoutPinnedEntries,
   nextGroupColor,
@@ -170,14 +169,6 @@ describe('rollUpUsed', () => {
 
   test('is null when no member has a figure at all', () => {
     expect(rollUpUsed([])).toBeNull()
-  })
-})
-
-describe('findGroupForMember', () => {
-  test('names the group a pin is filed under, or none', () => {
-    const groups = [group({ id: 'g1', memberKeys: [pinMemberKey('a', 'session')] })]
-    expect(findGroupForMember(groups, pinMemberKey('a', 'session'))?.id).toBe('g1')
-    expect(findGroupForMember(groups, pinMemberKey('a', 'weekly_all'))).toBeNull()
   })
 })
 

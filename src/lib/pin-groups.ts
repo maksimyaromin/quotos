@@ -77,10 +77,6 @@ export function sortPinGroups(groups: PinGroup[]): PinGroup[] {
     .map((entry) => entry.group)
 }
 
-export function findGroupForMember(groups: PinGroup[], key: string): PinGroup | null {
-  return groups.find((group) => group.memberKeys.includes(key)) ?? null
-}
-
 // Every group is reported, members or not, so the panel can still show
 // and dissolve one whose members were all unpinned.
 export function layoutPinnedEntries(
