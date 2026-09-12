@@ -206,7 +206,7 @@ describe('panel reopen refreshes the presentation clock', () => {
   })
 })
 
-describe('pinning a limit window into a group, end to end', () => {
+describe('arranging pins into groups on the customize screen, end to end', () => {
   beforeEach(() => {
     renderStatusItem.mockReset()
     trayGroupClick = null
@@ -224,49 +224,87 @@ describe('pinning a limit window into a group, end to end', () => {
     return renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]
   }
 
-  async function pinSessionIntoNewGroup(name: string) {
-    render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: /2 limits/ }))
-    fireEvent.click(screen.getAllByLabelText('Show in menu bar')[0])
-    fireEvent.click(screen.getByText('New group…'))
-    const field = screen.getByPlaceholderText('Group name')
-    fireEvent.change(field, { target: { value: name } })
+  // Each step flushes on its own: the drag reads its own state back
+  // between the press, the move and the release, exactly as a real one
+  // does across three separate events.
+  async function dragOnto(what: string, target: string) {
+    fireEvent.mouseDown(screen.getByText(what), { button: 0 })
+    fireEvent.mouseMove(screen.getByText(target))
     await act(async () => {
-      fireEvent.keyDown(field, { key: 'Enter' })
+      fireEvent.mouseUp(window)
     })
   }
 
-  test('the tray shows the new group as one rolled-up figure, tagged with the group', async () => {
-    await pinSessionIntoNewGroup('Money')
+  async function pinBothLimits() {
+    fireEvent.click(await screen.findByRole('button', { name: /2 limits/ }))
+    for (const button of screen.getAllByLabelText('Show in menu bar')) {
+      await act(async () => {
+        fireEvent.click(button)
+      })
+    }
+  }
+
+  async function openCustomizeScreen() {
+    render(<App />)
+    await pinBothLimits()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Customize display' }))
+    })
+  }
+
+  async function groupTheTwoPins() {
+    await openCustomizeScreen()
+    await dragOnto('Claude — Weekly', 'Claude — Session')
+  }
+
+  test('pinning is a plain toggle again, with no destination menu to answer', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /2 limits/ }))
+    await act(async () => {
+      fireEvent.click(screen.getAllByLabelText('Show in menu bar')[0])
+    })
+
+    expect(screen.queryByText('Pin standalone')).toBeNull()
+    expect(screen.queryByText('New group…')).toBeNull()
+    expect(lastSegments()).toEqual([
+      { text: '10%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+    ])
+  })
+
+  test('the way in is offered only once something is pinned', async () => {
+    render(<App />)
+    await screen.findByRole('button', { name: /2 limits/ })
+    expect(screen.queryByRole('button', { name: 'Customize display' })).toBeNull()
+
+    await pinBothLimits()
+    expect(screen.getByRole('button', { name: 'Customize display' })).toBeTruthy()
+  })
+
+  test('the preview strip is the very segment list the menu bar is drawn from', async () => {
+    await openCustomizeScreen()
+
+    const strip = screen.getByLabelText('Menu bar preview')
+    expect(lastSegments().map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
+    for (const segment of lastSegments()) expect(strip.textContent).toContain(segment.text)
+  })
+
+  test('dragging one pin onto the other collects them into one rolled-up, coloured figure', async () => {
+    await groupTheTwoPins()
 
     const segments = lastSegments()
     expect(segments).toHaveLength(1)
-    expect(segments[0]).toMatchObject({ text: '10%', color: 'neutral' })
-    expect(segments[0].groupId).toBeTruthy()
+    expect(segments[0]).toMatchObject({ text: '20%', groupId: expect.any(String) })
+    expect(segments[0].groupColor).toBe('teal')
   })
 
-  test('the tooltip names the member under its group', async () => {
-    await pinSessionIntoNewGroup('Money')
+  test('the preview follows the arrangement without leaving the screen', async () => {
+    await groupTheTwoPins()
 
-    const tooltip = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[2]
-    expect(tooltip).toContain('Money: ')
-    expect(tooltip).toContain('Session 10%')
-  })
-
-  test('the panel itself grows no pinned section, just the row it always had', async () => {
-    await pinSessionIntoNewGroup('Money')
-
-    expect(screen.queryByText('Money')).toBeNull()
-    expect(screen.queryByText('PINNED')).toBeNull()
-    expect(screen.queryByRole('button', { name: /^(Expand|Collapse) all$/ })).toBeNull()
+    expect(screen.getByLabelText('Menu bar preview').textContent).toBe('20%')
   })
 
   test("a click on the group's figure in the menu bar opens it out to its members", async () => {
-    await pinSessionIntoNewGroup('Money')
-    fireEvent.click(screen.getAllByLabelText('Show in menu bar')[0])
-    fireEvent.click(screen.getByText('Add to Money'))
-    await act(async () => {})
-    expect(lastSegments()).toHaveLength(1)
+    await groupTheTwoPins()
 
     const groupId = lastSegments()[0].groupId
     await act(async () => {
@@ -278,27 +316,42 @@ describe('pinning a limit window into a group, end to end', () => {
     expect(segments.every((s: { groupId: string }) => s.groupId === groupId)).toBe(true)
   })
 
-  test('clicking it again rolls the group back up to one figure', async () => {
-    await pinSessionIntoNewGroup('Money')
-    const groupId = lastSegments()[0].groupId
+  test('taking a member back out leaves it pinned, standing on its own', async () => {
+    await groupTheTwoPins()
 
-    await act(async () => {
-      trayGroupClick?.(groupId)
-    })
-    await act(async () => {
-      trayGroupClick?.(groupId)
-    })
+    await dragOnto('Claude — Weekly', 'Drop here to leave the group')
 
-    expect(lastSegments()).toHaveLength(1)
+    const segments = lastSegments()
+    expect(segments.map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
+    expect(segments.map((s: { groupColor: string | null }) => s.groupColor)).toEqual(['teal', null])
   })
 
-  test('unpinning the window empties the tray again', async () => {
-    await pinSessionIntoNewGroup('Money')
+  test('deleting the group leaves both windows pinned, each on its own figure', async () => {
+    await groupTheTwoPins()
 
     await act(async () => {
-      fireEvent.click(screen.getAllByLabelText('Remove from menu bar')[0])
+      fireEvent.click(screen.getByLabelText('Delete Group 1'))
     })
 
-    expect(lastSegments()).toEqual([])
+    expect(lastSegments().map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
+  })
+
+  test('unpinning from the list takes the window out of its group as well', async () => {
+    await groupTheTwoPins()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getAllByLabelText('Remove from menu bar')[1])
+    })
+
+    expect(lastSegments().map((s: { text: string }) => s.text)).toEqual(['10%'])
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Customize display' }))
+    })
+    expect(screen.queryByText('Claude — Weekly')).toBeNull()
+    expect(screen.getByText('Claude — Session')).toBeTruthy()
   })
 })

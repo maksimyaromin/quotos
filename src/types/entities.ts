@@ -37,16 +37,27 @@ export interface Subscription {
   pendingRemoval: boolean
 }
 
+// The palette a pin group's colour comes from, small and fixed so the
+// colour reads as an identity rather than a choice. The same names are
+// mirrored by `status_item_render.rs`'s `GroupColor`, which draws them
+// in the menu bar, and by `tokens/colors.css` for the panel's side.
+export const GROUP_COLORS = ['teal', 'blue', 'violet', 'amber', 'red'] as const
+
+export type GroupColor = (typeof GROUP_COLORS)[number]
+
 // One named collection of pinned limit windows, drawn from any
 // subscription. `memberKeys` holds composite keys built by
-// `lib/pin-groups.ts`'s `pinMemberKey`, not bare window ids;
-// `collapsed` is how the group is drawn in the menu bar, rolled up to
-// one figure or opened out to every member's own.
+// `lib/pin-groups.ts`'s `pinMemberKey`, not bare window ids, in the
+// order the group draws them; `collapsed` is how the group is drawn in
+// the menu bar, rolled up to one figure or opened out to every
+// member's own; `color` is its identity wherever it is drawn, one of
+// `lib/pin-groups.ts`'s palette names.
 export interface PinGroup {
   id: string
   name: string
   collapsed: boolean
   order: number
+  color: GroupColor
   memberKeys: string[]
 }
 
@@ -141,4 +152,7 @@ export interface StatusItemSegment {
   // expanded one: the native side hit-tests a click against it to toggle
   // that group in the menu bar instead of opening the panel.
   groupId: string | null
+  // That group's colour, which the native side draws as a bar under the
+  // figure. Null for a standalone pin, which gets no bar.
+  groupColor: GroupColor | null
 }

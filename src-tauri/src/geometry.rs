@@ -3,16 +3,37 @@ use crate::status_item_render;
 pub(crate) const PANEL_WINDOW_WIDTH_LOGICAL: f64 = 360.0;
 pub(crate) const PANEL_WINDOW_HEIGHT_LOGICAL: f64 = 560.0;
 
+/// How far the composited image's left edge sits inside the item's own;
+/// see "Coordinate spaces and panel placement" in
+/// docs/architecture.md for why it is derived and not assumed.
+fn image_left_margin_points(item_width_points: Option<f64>, icon_width_px: f64) -> f64 {
+    let image_width_points = icon_width_px / status_item_render::RENDER_SCALE;
+    item_width_points
+        .map(|w| ((w - image_width_points) / 2.0).max(0.0))
+        .unwrap_or(0.0)
+}
+
 fn glyph_center_offset_from_item_left_points(
     item_width_points: Option<f64>,
     icon_width_px: f64,
 ) -> f64 {
     const GLYPH_WIDTH_POINTS: f64 = 18.0;
-    let image_width_points = icon_width_px / 2.0;
-    let margin_points = item_width_points
-        .map(|w| ((w - image_width_points) / 2.0).max(0.0))
-        .unwrap_or(0.0);
-    margin_points + status_item_render::GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0
+    image_left_margin_points(item_width_points, icon_width_px)
+        + status_item_render::GLYPH_LEFT_INSET_POINTS
+        + GLYPH_WIDTH_POINTS / 2.0
+}
+
+/// Where a click landed in the composited image's own pixel grid, the
+/// space `figure_spans` reports spans in. Click and item box both
+/// arrive in points on the item's display.
+pub(crate) fn click_x_in_icon_px(
+    click_x_points: f64,
+    item_left_points: f64,
+    item_width_points: Option<f64>,
+    icon_width_px: f64,
+) -> f64 {
+    let margin = image_left_margin_points(item_width_points, icon_width_px);
+    (click_x_points - item_left_points - margin) * status_item_render::RENDER_SCALE
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -207,6 +228,60 @@ mod tests {
         fn missing_item_rect_falls_back_to_glyph_flush_with_the_left_edge() {
             let offset = glyph_center_offset_from_item_left_points(None, 60.0);
             assert!((offset - 14.0).abs() < 0.01, "got {offset}");
+        }
+    }
+
+    mod click_offset {
+        use super::super::click_x_in_icon_px;
+
+        /// The same measured shape the glyph-offset tests use: a button
+        /// eight points wider than the image on each side.
+        const ITEM_LEFT: f64 = 1183.0;
+        const ICON_PX: f64 = 247.0;
+        const ITEM_WIDTH: f64 = ICON_PX / 2.0 + 16.0;
+
+        #[test]
+        fn the_images_own_left_edge_is_the_origin_not_the_buttons() {
+            let at_image_left =
+                click_x_in_icon_px(ITEM_LEFT + 8.0, ITEM_LEFT, Some(ITEM_WIDTH), ICON_PX);
+            assert!(at_image_left.abs() < 0.01, "got {at_image_left}");
+        }
+
+        #[test]
+        fn a_click_across_the_button_maps_onto_the_image_one_point_to_two_pixels() {
+            for icon_px in [0.0f64, 63.0, 193.0, ICON_PX] {
+                let click = ITEM_LEFT + 8.0 + icon_px / 2.0;
+                let got = click_x_in_icon_px(click, ITEM_LEFT, Some(ITEM_WIDTH), ICON_PX);
+                assert!(
+                    (got - icon_px).abs() < 0.01,
+                    "a click on image pixel {icon_px} came back as {got}"
+                );
+            }
+        }
+
+        #[test]
+        fn the_bare_fraction_of_the_buttons_width_lands_somewhere_else_entirely() {
+            let icon_px = 193.0;
+            let click = ITEM_LEFT + 8.0 + icon_px / 2.0;
+            let by_fraction = (click - ITEM_LEFT) / ITEM_WIDTH * ICON_PX;
+            assert!(
+                (by_fraction - icon_px).abs() > 4.0,
+                "the margin-blind arithmetic must visibly disagree, got {by_fraction}"
+            );
+        }
+
+        #[test]
+        fn a_click_left_of_the_image_comes_back_negative_rather_than_clamped() {
+            assert!(
+                click_x_in_icon_px(ITEM_LEFT + 2.0, ITEM_LEFT, Some(ITEM_WIDTH), ICON_PX) < 0.0
+            );
+        }
+
+        #[test]
+        fn a_button_no_wider_than_its_image_leaves_the_click_where_it_fell() {
+            let flush =
+                click_x_in_icon_px(ITEM_LEFT + 30.0, ITEM_LEFT, Some(ICON_PX / 2.0), ICON_PX);
+            assert!((flush - 60.0).abs() < 0.01, "got {flush}");
         }
     }
 

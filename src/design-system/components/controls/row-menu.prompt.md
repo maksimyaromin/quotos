@@ -1,4 +1,4 @@
-`RowMenu` is the overflow menu a row hangs off its "…" button. It is design system plumbing, not a component to reach for directly: `SubscriptionRow`, `PinGroupRow` and `LimitWindow` use it so every menu in the panel places, styles and keyboard-navigates identically.
+`RowMenu` is the overflow menu a row hangs off its "…" button. It is design system plumbing, not a component to reach for directly: `SubscriptionRow` uses it so every menu in the panel places, styles and keyboard-navigates identically.
 
 ```jsx
 const menu = useRowMenu(open)

@@ -227,12 +227,34 @@ Membership never survives unpinning, and unpinning is never a side
 effect of anything a group does: `app.tsx`'s `unpinWindow` is the one
 path that does both.
 
-A group lives in the menu bar, not in the panel. The panel lists pins
-the way it always has, flat and per subscription; the only thing it adds
-is where a pin gets filed, `PinDestinationItems` on both the row menu's
-"Show in menu bar" entry and a limit window's own pin button, which is
-also the only place a group is named. There is no group browser in the
-panel to keep in step with the menu bar.
+Pinning is a plain toggle, wherever it is offered: a limit window's own
+pin button and the row menu's "Show in menu bar" entry both pin or
+unpin and nothing else. Where a pin sits is a separate decision, made
+on its own screen, so nobody has to think about grouping at the moment
+they pin something.
+
+That screen is `components/customize-display-screen.tsx`, reached from
+the panel header and offered only once something is pinned. Every
+pinned window is a row: grouped rows boxed under their group's header,
+standalone rows loose below them. Dragging one row onto another groups
+the two, onto a group's box joins that group, onto a member joins ahead
+of that member, and onto the strip that appears at the end of the list
+returns a member to standing alone. Dragging a group's header onto
+another group's reorders the two. None of it ever unpins anything.
+
+The strip at the top of that screen previews the menu bar from
+`use-subscriptions.ts`'s own `statusItemSegments`, the very list
+`set_status_item_state` is called with, not a second derivation of it,
+so the preview cannot drift from what the status item draws.
+
+A group's `color`, one of `lib/pin-groups.ts`'s fixed palette names, is
+persisted with it rather than derived from its position, so the colour
+is a stable identity: `status_item_render.rs` draws it as a bar under
+every figure the group owns, and `tokens/colors.css` carries the same
+names for the panel's own swatches. A new group takes the first palette
+colour no group is wearing. A group loaded from a file written before
+colours shipped is assigned one in `lib/persistence.ts`, so every
+reader downstream can count on there being one.
 
 `collapsed` is that group's state in the menu bar: rolled up to one
 figure, or opened out so every member shows its own. It is persisted in
@@ -247,19 +269,30 @@ A left click on a pin group's own figure belongs to that group: it
 toggles `collapsed` in place, with no panel involved. A click anywhere
 else on the status item opens the panel exactly as it always did.
 
-Telling the two apart needs the click's offset inside the item.
-`TrayIconEvent::Click` carries both `position`, the click point, and
-`rect`, the item's own box. `tray-icon`'s macOS backend converts both
-with the same window backing scale factor, so they share units and their
-ratio is the fraction of the item's width the click landed at, with no
-points-versus-pixels conversion involved at all. That ratio is also why
-the display's scale never enters the picture: the same fraction maps
-onto the rendered bitmap whether the screen draws it at 1x or 2x.
+Telling the two apart needs the click's position inside the composited
+image. `TrayIconEvent::Click` carries both `position`, the click point,
+and `rect`, the item's own box, both converted by `tray-icon`'s macOS
+backend with the same window backing scale factor, so they share units
+and their difference is the click's offset across the button.
+
+That offset is not the offset into the image. The button is wider than
+the image it centres, by the same system margin the beak's own
+positioning has to account for, so treating the click as a bare
+fraction of the button's width and scaling it back out by the image's
+width stretches and shifts it: at the measured eight points per side
+the error reaches about sixteen pixels at either end of the image, more
+than the dead gap between two figures, which is what made a click on a
+group's figure open the panel some of the time and toggle the group the
+rest. `group_at_click` takes both into points on the item's own display
+and calls `geometry.rs`'s `click_x_in_icon_px`, which subtracts the
+margin derived from the two widths — the same derivation
+`glyph_center_offset_from_item_left_points` uses — and scales into the
+image's own pixels.
 
 `shell.rs` caches each figure's rendered pixel span in
 `last_status_item_figure_spans` on every repaint, beside the segments
-themselves, and turns a fraction back into an index; see "Resolving a
-click back to a figure" in
+themselves, and looks that pixel up; see "Resolving a click back to a
+figure" in
 [status-item-rendering.md](status-item-rendering.md#resolving-a-click-back-to-a-figure)
 for how those spans are derived and padded.
 

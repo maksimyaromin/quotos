@@ -412,30 +412,9 @@ describe("a collapsed row's pin buttons are out of reach, not just out of sight"
   })
 })
 
-describe("the row menu's own pin entry, once a pin can be filed into a group", () => {
-  const pinGroups = [{ id: 'g1', name: 'Money' }]
-
-  test('turns the menu into the destination list rather than pinning outright', () => {
-    render(
-      <SubscriptionRow
-        label="Claude Max"
-        state="working"
-        used={40}
-        menuOpen
-        pinGroups={pinGroups}
-        onPinHeadline={() => {}}
-      />,
-    )
-    fireEvent.click(screen.getByText('Show in menu bar'))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
-      'Pin standalone',
-      'Add to Money',
-      'New group…',
-    ])
-  })
-
-  test('reports the chosen destination and closes the menu', () => {
-    const onPinHeadline = vi.fn()
+describe("the row menu's pin entry is a plain toggle", () => {
+  test('pinning fires straight away, with no destination list in the way', () => {
+    const onTogglePin = vi.fn()
     const onToggleMenu = vi.fn()
     render(
       <SubscriptionRow
@@ -443,18 +422,16 @@ describe("the row menu's own pin entry, once a pin can be filed into a group", (
         state="working"
         used={40}
         menuOpen
-        pinGroups={pinGroups}
-        onPinHeadline={onPinHeadline}
+        onTogglePin={onTogglePin}
         onToggleMenu={onToggleMenu}
       />,
     )
     fireEvent.click(screen.getByText('Show in menu bar'))
-    fireEvent.click(screen.getByText('Add to Money'))
-    expect(onPinHeadline).toHaveBeenCalledWith('g1')
+    expect(onTogglePin).toHaveBeenCalledTimes(1)
     expect(onToggleMenu).toHaveBeenCalled()
   })
 
-  test('unpinning is still one click, no destination list in the way', () => {
+  test('unpinning is the same one click', () => {
     const onTogglePin = vi.fn()
     render(
       <SubscriptionRow
@@ -463,46 +440,10 @@ describe("the row menu's own pin entry, once a pin can be filed into a group", (
         used={40}
         menuOpen
         headlinePinned
-        pinGroups={pinGroups}
-        onPinHeadline={() => {}}
         onTogglePin={onTogglePin}
       />,
     )
     fireEvent.click(screen.getByText('Hide from menu bar'))
     expect(onTogglePin).toHaveBeenCalledTimes(1)
-  })
-
-  test('comes back to the ordinary actions the next time the menu opens', () => {
-    const { rerender } = render(
-      <SubscriptionRow
-        label="Claude Max"
-        state="working"
-        used={40}
-        menuOpen
-        pinGroups={pinGroups}
-        onPinHeadline={() => {}}
-      />,
-    )
-    fireEvent.click(screen.getByText('Show in menu bar'))
-    rerender(
-      <SubscriptionRow
-        label="Claude Max"
-        state="working"
-        used={40}
-        pinGroups={pinGroups}
-        onPinHeadline={() => {}}
-      />,
-    )
-    rerender(
-      <SubscriptionRow
-        label="Claude Max"
-        state="working"
-        used={40}
-        menuOpen
-        pinGroups={pinGroups}
-        onPinHeadline={() => {}}
-      />,
-    )
-    expect(screen.getByText('Read now')).toBeTruthy()
   })
 })

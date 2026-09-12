@@ -28,6 +28,11 @@ pub struct PinGroup {
     pub name: String,
     pub collapsed: bool,
     pub order: u32,
+    /// The group's own colour, a palette name from
+    /// `lib/pin-groups.ts`. A record written before colours shipped
+    /// loads with none, and the panel assigns one.
+    #[serde(default)]
+    pub color: Option<String>,
     #[serde(default)]
     pub member_keys: Vec<String>,
 }
@@ -317,6 +322,7 @@ mod tests {
             name: name.to_string(),
             collapsed: true,
             order: 0,
+            color: Some("blue".to_string()),
             member_keys: vec!["claude%3Aclaude::weekly_all".to_string()],
         }
     }
@@ -365,6 +371,21 @@ mod tests {
         let store = Store::load(path);
         assert!(store.list_groups().is_empty());
         assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn a_group_written_before_colours_shipped_loads_with_none_rather_than_refusing() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"tracked":[],"groups":[{"id":"g1","name":"Money","collapsed":true,"order":0,"memberKeys":[]}]}"#,
+        )
+        .unwrap();
+
+        let groups = Store::load(path).list_groups();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].color, None);
     }
 
     #[test]

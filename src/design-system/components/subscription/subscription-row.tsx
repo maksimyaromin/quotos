@@ -6,7 +6,6 @@ import { CapacityBar } from '../indicators/capacity-bar'
 import type { SubscriptionState } from '../indicators/status-dot'
 import { StatusDot } from '../indicators/status-dot'
 import { LimitWindow, type LimitWindowProps } from './limit-window'
-import { PinDestinationItems, type PinDestinationGroup } from './pin-destination-items'
 import styles from './subscription-row.module.css'
 
 export interface SubscriptionRowProps {
@@ -43,16 +42,6 @@ export interface SubscriptionRowProps {
   signInInProgress?: boolean
   onSubmitSignInCode?: (code: string) => void
   onCancelSignIn?: () => void
-  // Pin groups: the destinations a pin can be filed under, and which one
-  // each window is already in.
-  pinGroups?: PinDestinationGroup[]
-  headlineGroupId?: string | null
-  onPinHeadline?: (groupId: string | null) => void
-  onCreateGroupWithHeadline?: (name: string) => void
-  openPinMenuWindowId?: string | null
-  onToggleWindowPinMenu?: (id: string) => void
-  onPinWindow?: (id: string, groupId: string | null) => void
-  onCreateGroupWithWindow?: (id: string, name: string) => void
   style?: React.CSSProperties
 }
 
@@ -90,14 +79,6 @@ export function SubscriptionRow({
   signInInProgress = false,
   onSubmitSignInCode,
   onCancelSignIn,
-  pinGroups,
-  headlineGroupId = null,
-  onPinHeadline,
-  onCreateGroupWithHeadline,
-  openPinMenuWindowId = null,
-  onToggleWindowPinMenu,
-  onPinWindow,
-  onCreateGroupWithWindow,
   style,
 }: SubscriptionRowProps) {
   const [renaming, setRenaming] = React.useState(false)
@@ -106,12 +87,6 @@ export function SubscriptionRow({
   const [codeDraft, setCodeDraft] = React.useState('')
   const codeInputRef = React.useRef<HTMLInputElement>(null)
   const menu = useRowMenu(menuOpen)
-  // The menu's second page: where to file a pin the row is about to make.
-  const [choosingPinDestination, setChoosingPinDestination] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!menuOpen) setChoosingPinDestination(false)
-  }, [menuOpen])
 
   React.useEffect(() => {
     if (signInInProgress) {
@@ -146,7 +121,6 @@ export function SubscriptionRow({
   const hasData = typeof used === 'number'
   const active = expanded || menuOpen
   const hasWindows = windows.length > 0
-  const offersPinDestinations = onPinHeadline !== undefined
 
   const usedLevel = stale ? 'stale' : severity !== 'healthy' ? severity : undefined
 
@@ -329,17 +303,7 @@ export function SubscriptionRow({
           {hasWindows ? (
             <div className={styles.windowsList}>
               {windows.map((w, i) => (
-                <LimitWindow
-                  key={w.id ?? i}
-                  {...w}
-                  stale={stale}
-                  onTogglePin={onToggleWindowPin}
-                  pinGroups={pinGroups}
-                  pinMenuOpen={w.id !== undefined && openPinMenuWindowId === w.id}
-                  onTogglePinMenu={onToggleWindowPinMenu}
-                  onPin={onPinWindow}
-                  onCreateGroupWithWindow={onCreateGroupWithWindow}
-                />
+                <LimitWindow key={w.id ?? i} {...w} stale={stale} onTogglePin={onToggleWindowPin} />
               ))}
             </div>
           ) : null}
@@ -348,79 +312,58 @@ export function SubscriptionRow({
 
       {menuOpen ? (
         <RowMenu anchor={menu} label="Subscription actions">
-          {choosingPinDestination ? (
-            <PinDestinationItems
-              groups={pinGroups}
-              currentGroupId={headlineGroupId}
-              onPin={(groupId) => {
-                onToggleMenu?.()
-                onPinHeadline?.(groupId)
-              }}
-              onCreateGroup={(name) => {
-                onToggleMenu?.()
-                onCreateGroupWithHeadline?.(name)
-              }}
-            />
-          ) : (
-            <>
-              <MenuItem
-                onClick={() => {
-                  onToggleMenu?.()
-                  onReadNow?.()
-                }}
-              >
-                Read now
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  onToggleMenu?.()
-                  setRenaming(true)
-                }}
-              >
-                Rename
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  if (!headlinePinned && offersPinDestinations) {
-                    setChoosingPinDestination(true)
-                    return
-                  }
-                  onToggleMenu?.()
-                  onTogglePin?.()
-                }}
-              >
-                {headlinePinned ? 'Hide from menu bar' : 'Show in menu bar'}
-              </MenuItem>
-              <MenuItem
-                disabled={!canMoveUp}
-                onClick={() => {
-                  onToggleMenu?.()
-                  onMoveUp?.()
-                }}
-              >
-                Move up
-              </MenuItem>
-              <MenuItem
-                disabled={!canMoveDown}
-                onClick={() => {
-                  onToggleMenu?.()
-                  onMoveDown?.()
-                }}
-              >
-                Move down
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem
-                danger
-                onClick={() => {
-                  onToggleMenu?.()
-                  onStopTracking?.()
-                }}
-              >
-                Stop tracking
-              </MenuItem>
-            </>
-          )}
+          <MenuItem
+            onClick={() => {
+              onToggleMenu?.()
+              onReadNow?.()
+            }}
+          >
+            Read now
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onToggleMenu?.()
+              setRenaming(true)
+            }}
+          >
+            Rename
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onToggleMenu?.()
+              onTogglePin?.()
+            }}
+          >
+            {headlinePinned ? 'Hide from menu bar' : 'Show in menu bar'}
+          </MenuItem>
+          <MenuItem
+            disabled={!canMoveUp}
+            onClick={() => {
+              onToggleMenu?.()
+              onMoveUp?.()
+            }}
+          >
+            Move up
+          </MenuItem>
+          <MenuItem
+            disabled={!canMoveDown}
+            onClick={() => {
+              onToggleMenu?.()
+              onMoveDown?.()
+            }}
+          >
+            Move down
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            danger
+            onClick={() => {
+              onToggleMenu?.()
+              onStopTracking?.()
+            }}
+          >
+            Stop tracking
+          </MenuItem>
         </RowMenu>
       ) : null}
     </div>

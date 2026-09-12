@@ -37,7 +37,14 @@ function subscription(overrides: Partial<Subscription> & { id: string }): Subscr
 }
 
 function group(overrides: Partial<PinGroup> & { id: string }): PinGroup {
-  return { name: overrides.id, collapsed: true, order: 0, memberKeys: [], ...overrides }
+  return {
+    name: overrides.id,
+    collapsed: true,
+    order: 0,
+    color: 'teal',
+    memberKeys: [],
+    ...overrides,
+  }
 }
 
 describe('buildStatusItemSegments', () => {
@@ -82,9 +89,9 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '61%', color: 'neutral', groupStart: false, groupId: null },
-      { text: '74%', color: 'neutral', groupStart: false, groupId: null },
-      { text: '52%', color: 'neutral', groupStart: true, groupId: null },
+      { text: '61%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+      { text: '74%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+      { text: '52%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
     ])
   })
 
@@ -98,7 +105,7 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '20%', color: 'neutral', groupStart: false, groupId: null },
+      { text: '20%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
     ])
   })
 
@@ -140,7 +147,7 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '10%', color: 'neutral', groupStart: false, groupId: null },
+      { text: '10%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
     ])
   })
 })
@@ -265,17 +272,17 @@ describe('buildStatusItemSegments with pin groups', () => {
 
   test("shows one rolled-up figure for a group, the worst member's, and none of its members", () => {
     expect(buildStatusItemSegments(twoSubscriptions, [currentLimit])).toEqual([
-      { text: '99%', color: 'red', groupStart: false, groupId: 'g1' },
-      { text: '12%', color: 'neutral', groupStart: true, groupId: null },
+      { text: '99%', color: 'red', groupStart: false, groupId: 'g1', groupColor: 'teal' },
+      { text: '12%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
     ])
   })
 
   test("opens a group out to every member's own figure once it is not collapsed", () => {
     const opened = { ...currentLimit, collapsed: false }
     expect(buildStatusItemSegments(twoSubscriptions, [opened])).toEqual([
-      { text: '99%', color: 'red', groupStart: false, groupId: 'g1' },
-      { text: '47%', color: 'neutral', groupStart: false, groupId: 'g1' },
-      { text: '12%', color: 'neutral', groupStart: true, groupId: null },
+      { text: '99%', color: 'red', groupStart: false, groupId: 'g1', groupColor: 'teal' },
+      { text: '47%', color: 'neutral', groupStart: false, groupId: 'g1', groupColor: 'teal' },
+      { text: '12%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
     ])
   })
 
@@ -286,6 +293,34 @@ describe('buildStatusItemSegments with pin groups', () => {
     )
     expect(grouped).toHaveLength(2)
     expect(grouped.every((s) => s.groupId === 'g1')).toBe(true)
+  })
+
+  test("carries the group's own colour on its figure, and none on a standalone pin", () => {
+    const coloured = { ...currentLimit, color: 'violet' as const }
+    const segments = buildStatusItemSegments(twoSubscriptions, [coloured])
+    expect(segments[0].groupColor).toBe('violet')
+    expect(segments[segments.length - 1].groupColor).toBeNull()
+  })
+
+  test("every figure of an opened group carries the group's colour, not just the first", () => {
+    const opened = { ...currentLimit, collapsed: false, color: 'amber' as const }
+    const grouped = buildStatusItemSegments(twoSubscriptions, [opened]).filter(
+      (s) => s.groupId !== null,
+    )
+    expect(grouped.map((s) => s.groupColor)).toEqual(['amber', 'amber'])
+  })
+
+  test("an opened group's members come out in the order the group holds them", () => {
+    const opened = {
+      ...currentLimit,
+      collapsed: false,
+      memberKeys: [pinMemberKey('b', 'session'), pinMemberKey('a', 'session')],
+    }
+    expect(
+      buildStatusItemSegments(twoSubscriptions, [opened])
+        .filter((s) => s.groupId !== null)
+        .map((s) => s.text),
+    ).toEqual(['47%', '99%'])
   })
 
   test('leaves a standalone pin carrying no group, so clicking it opens the panel', () => {
@@ -301,6 +336,7 @@ describe('buildStatusItemSegments with pin groups', () => {
       color: 'neutral',
       groupStart: true,
       groupId: null,
+      groupColor: null,
     })
     expect(ungrouped).toHaveLength(3)
   })
@@ -316,6 +352,7 @@ describe('buildStatusItemSegments with pin groups', () => {
       color: 'neutral',
       groupStart: false,
       groupId: 'g2',
+      groupColor: 'teal',
     })
   })
 

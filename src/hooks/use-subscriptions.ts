@@ -510,15 +510,21 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     })()
   }, [trackedSubscriptions])
 
+  // The one segment list there is: the menu bar is drawn from it, and
+  // the customize screen previews it rather than deriving its own.
+  const statusItemSegments = useMemo(
+    () => buildStatusItemSegments(trackedSubscriptions, pinGroups),
+    [trackedSubscriptions, pinGroups],
+  )
+
   useEffect(() => {
-    const segments = buildStatusItemSegments(trackedSubscriptions, pinGroups)
     const worstUsedPercent = computeWorstActiveLimitPercent(trackedSubscriptions)
     renderStatusItem(
-      segments,
+      statusItemSegments,
       worstUsedPercent,
       buildStatusItemTooltip(trackedSubscriptions, pinGroups),
     )
-  }, [trackedSubscriptions, pinGroups])
+  }, [statusItemSegments, trackedSubscriptions, pinGroups])
 
   const displayLabelFor = useCallback(
     (account: AccountDescriptor) => knownLabels[account.id] ?? deriveAccountLabel(account),
@@ -528,6 +534,7 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
   return {
     subscriptions,
     trackedSubscriptions,
+    statusItemSegments,
     saveError,
     refreshAll,
     refreshAccountById,

@@ -148,10 +148,12 @@ re-deriving the geometry, so the spans a click is tested against are the
 ones the figures were drawn at. `shell.rs` computes them once per
 repaint and caches them; nothing measures anything at click time.
 
-`figure_at` takes the click as a fraction of the item's own width rather
-than a coordinate, which keeps points, pixels and display scale out of
-it entirely: the caller divides the click's offset by the item's width,
-both of which arrive in the same units from the same event.
+`figure_at` takes the click as a coordinate in this buffer's own pixels,
+which is the space the spans are reported in;
+`geometry.rs`'s `click_x_in_icon_px` is what puts a click there, and
+"Clicking a figure in the menu bar" in
+[architecture.md](architecture.md#clicking-a-figure-in-the-menu-bar)
+covers why the item's own width cannot stand in for the image's.
 
 `HIT_PADDING_PX` widens every span a little before the test, because a
 figure's ink is only as wide as its digits and a click a point or two
@@ -159,6 +161,18 @@ shy of them clearly still means that figure. A compile-time assertion
 keeps the padding, doubled, narrower than `FIGURE_GAP_PX` less the
 rounding slack the span edges pick up from flooring and ceiling, so two
 adjacent figures can never both claim the same pixel.
+
+## The group bar
+
+A figure that belongs to a pin group carries that group's colour as a
+bar under its digits, so which figures belong together reads without
+clicking anything; a standalone pin's figure carries none.
+`draw_group_underline` spans exactly the figure's own `FigureSpan`, the
+same span a click is tested against, and sits a fixed inset above the
+buffer's bottom edge rather than being placed off the text's baseline,
+which keeps it clear of the digits without measuring them. The bar
+never changes the item's width, since it is drawn inside ink the layout
+has already reserved.
 
 ## Compositing
 

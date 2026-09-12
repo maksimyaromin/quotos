@@ -30,6 +30,7 @@ const SAMPLE_GROUP: PinGroup = {
   name: 'Money',
   collapsed: true,
   order: 0,
+  color: 'blue',
   memberKeys: ['claude%3Aclaude::weekly_all'],
 }
 
@@ -205,6 +206,28 @@ describe('pin groups alongside the tracked list', () => {
     await savePinGroups([SAMPLE_GROUP])
     expect(invoke).toHaveBeenCalledWith('save_pin_groups', { groups: [SAMPLE_GROUP] })
     expect(await loadPinGroups()).toEqual([SAMPLE_GROUP])
+  })
+
+  test('a group stored before colours shipped comes back wearing one', async () => {
+    setNative()
+    const { color: _unused, ...colourless } = SAMPLE_GROUP
+    invoke.mockImplementation((cmd: string) =>
+      cmd === 'load_pin_groups' ? Promise.resolve([colourless]) : Promise.resolve(),
+    )
+
+    expect(await loadPinGroups()).toEqual([{ ...colourless, color: 'teal' }])
+  })
+
+  test('two colourless groups are not handed the same colour', async () => {
+    setNative()
+    const { color: _unused, ...colourless } = SAMPLE_GROUP
+    invoke.mockImplementation((cmd: string) =>
+      cmd === 'load_pin_groups'
+        ? Promise.resolve([colourless, { ...colourless, id: 'g2' }])
+        : Promise.resolve(),
+    )
+
+    expect((await loadPinGroups()).map((g) => g.color)).toEqual(['teal', 'blue'])
   })
 
   test('falls back to none if the native load itself fails', async () => {
