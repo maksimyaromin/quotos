@@ -3,5 +3,18 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "anb hook",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }

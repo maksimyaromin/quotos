@@ -18,6 +18,9 @@ const EXACT_EXCEPTIONS = new Set([
   // GitHub only recognizes this exact, underscored name as the
   // default pull request template.
   'pull_request_template.md',
+  // A Claude Code skill is only found under this exact, capitalized
+  // name in its own directory.
+  'SKILL.md',
 ])
 
 const EXEMPT_PREFIXES = ['src-tauri/icons/', 'src/design-system/assets/fonts/']

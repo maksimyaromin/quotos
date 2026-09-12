@@ -32,6 +32,9 @@ test commands.
   the pieces fit together and the non-obvious constraints they run into.
 - [docs/contributing.md](docs/contributing.md) covers the conventions and
   the gate.
+<!-- anb:begin -->- `.agent-notebook/` is the project notebook: the
+  decisions and standing rules behind the code, as plain Markdown.
+  `anb recall` reads it; so does opening the files.<!-- anb:end -->
 
 ## Architecture
 
