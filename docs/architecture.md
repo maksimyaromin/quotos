@@ -27,7 +27,7 @@ this page is the map between them.
 | `single_instance.rs` | The OS file lock that keeps one Quotos running per machine, since two live instances would double the polling against the provider's own limit. |
 | `launch_at_login.rs` | The Launch at Login toggle, through `SMAppService`. Quotos stores nothing; the OS is the single owner of this state. |
 
-### Module file names
+### Rust source file names
 
 Rust derives a module's identifier from its file name, and a Rust
 identifier cannot contain a hyphen, so a kebab-case file such as
@@ -47,6 +47,13 @@ identifiers is also the convention the Rust ecosystem itself uses
 throughout the standard library and crates.io, the same kind of
 established, tool-recognized spelling this repository already keeps for
 `README.md`. This crate's source files stay `snake_case`.
+
+That reasoning is about `mod` declarations, but the convention is not
+kept only where a `mod` needs it: `examples/`, the build script, and
+anything Cargo adds beside them follow it too, since a crate whose files
+were snake_case in one directory and kebab-case in the next would be
+reporting a distinction that does not exist. `tools/checks/kebab-case.ts`
+exempts every `.rs` file under `src-tauri/` on that basis.
 
 ## React frontend
 
