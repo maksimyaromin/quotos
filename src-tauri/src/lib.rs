@@ -93,7 +93,7 @@ pub fn run() {
             migrate_legacy_statusline(&app_support_dir);
             let tracked_path = app_support_dir.join("tracked.json");
             let (initial_rgba, initial_w, initial_h) =
-                status_item_render::render(&[], false, 0, status_item_render::is_dark_mode());
+                status_item_render::render(&[], 0, status_item_render::is_dark_mode());
             let state = initial_app_state(app_support_dir, tracked_path, initial_w);
             idle::watch_screen_lock_state(state.screen_locked.clone());
             app.manage(state);
@@ -114,7 +114,6 @@ pub fn run() {
                 launch_item,
             )?;
             shell::sync_status_item_length(&status_item, initial_w);
-            shell::disable_status_item_native_highlight(&status_item);
             app.manage(status_item);
 
             spawn_debug_auto_open_if_enabled(app.handle().clone());

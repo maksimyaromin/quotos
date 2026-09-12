@@ -18,13 +18,15 @@ menu bar. Digits render as real system text through Core Text; see
 ## Layout padding
 
 Horizontal air on each side of the glyph and digits, inside the
-composited image, is not optional. The "panel open" highlight paints
-across the whole buffer, so without padding it hugs the ink and reads
-as a box drawn around the glyph rather than a pressed menu bar button,
-the way macOS fills a status item's own width for its own open items.
-The padding also applies unconditionally, highlighted or not, so the
-glyph's position inside the item cannot shift when the highlight
-toggles; a shift there would move the beak too.
+composited image, is not optional: `SIDE_PAD_PX` is what keeps the mark
+and the trailing figure off the item's own edges, and so off the icons
+either side of it in the menu bar.
+
+Nothing else is painted in this buffer. The frame behind an open panel
+is AppKit's own, which it draws around the item rather than inside the
+image; see "The panel-open highlight" in
+[platform-constraints.md](platform-constraints.md). A pill drawn in here
+would sit inside that frame as a second, smaller one.
 
 `geometry.rs`'s `glyph_center_offset_from_item_left_points` reads
 `GLYPH_LEFT_INSET_POINTS` and `GLYPH_WIDTH_POINTS` rather than
@@ -299,15 +301,15 @@ over the menu bar's own ground, so it cannot fall behind the code.
 
 ## Compositing
 
-The buffer can carry two translucent layers, the "panel open" highlight
-and then the glyph or digits drawn over it, so a plain overwrite would
-discard whichever layer drew second wherever they overlap, losing the
-highlight everywhere the glyph or a digit covers it. `blend_pixel` does
+The buffer carries translucent layers over each other — the limit
+chevron's track, and then its own bright fill over that — so a plain
+overwrite would discard whichever drew second wherever they overlap,
+and the filled part of the gauge would come out darkened by the track
+beneath it rather than reaching the limit colour. `blend_pixel` does
 standard src-over alpha compositing instead. A fully-opaque source or a
 fully-transparent destination pixel reduces to a plain overwrite, so a
-single-layer caller, such as glyph ink or digit text onto a blank
-buffer, is unaffected; only a highlighted, multi-layer case exercises
-the blend math.
+single-layer caller, such as a chip's frame or digit text onto a blank
+buffer, is unaffected.
 
 ## Text rendering
 
