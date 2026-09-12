@@ -74,7 +74,30 @@ export function asDropZone(id: string | number | undefined, data: unknown): Drop
     : { kind: 'group', groupId: item.groupId }
 }
 
-function dropPin(active: Extract<DragItem, { kind: 'pin' }>, over: DropZone): DropAction {
+// Where a pin dropped onto a member of `groupId` lands: ahead of that
+// member, except when the pin is already in the same group and above
+// it. Dropping a row onto one below it means going past that row, and
+// "ahead of it" would be where the row already was, since the list
+// closes up behind a drag before the drop is applied: the space would
+// open under the pointer and the release would then move nothing. The
+// slot the screen shows and the drop it carries out both read this.
+function landingAmong(
+  active: Extract<DragItem, { kind: 'pin' }>,
+  over: Extract<DropZone, { kind: 'pin' }>,
+  order: MemberOrder,
+): string | null {
+  const members = order[over.groupId as string] ?? []
+  const from = members.indexOf(active.key)
+  const to = members.indexOf(over.key)
+  if (from === -1 || to === -1 || from > to) return over.key
+  return members[to + 1] ?? null
+}
+
+function dropPin(
+  active: Extract<DragItem, { kind: 'pin' }>,
+  over: DropZone,
+  order: MemberOrder,
+): DropAction {
   switch (over.kind) {
     case 'ungrouped':
       return active.groupId === null ? { kind: 'nothing' } : { kind: 'leaveGroup', key: active.key }
@@ -82,12 +105,17 @@ function dropPin(active: Extract<DragItem, { kind: 'pin' }>, over: DropZone): Dr
       return { kind: 'joinGroup', key: active.key, groupId: over.groupId, beforeKey: null }
     case 'pin':
       if (over.key === active.key) return { kind: 'nothing' }
-      // A pin dropped on a grouped one joins that group ahead of it;
+      // A pin dropped on a grouped one joins that group beside it;
       // dropped on a loose one, the two become a group of their own,
       // the one that was standing there first.
       return over.groupId === null
         ? { kind: 'groupTogether', keys: [over.key, active.key] }
-        : { kind: 'joinGroup', key: active.key, groupId: over.groupId, beforeKey: over.key }
+        : {
+            kind: 'joinGroup',
+            key: active.key,
+            groupId: over.groupId,
+            beforeKey: landingAmong(active, over, order),
+          }
   }
 }
 
@@ -100,9 +128,24 @@ function dropGroup(active: Extract<DragItem, { kind: 'group' }>, over: DropZone)
   return { kind: 'moveGroup', groupId: active.groupId, beforeGroupId: target }
 }
 
-export function resolveDrop(active: DragItem | null, over: DropZone | null): DropAction {
+// Each group's members, in the order the screen is showing them. A
+// drop among them depends on where the pin already is, so the answer
+// cannot be read off the two ends of the gesture alone.
+export type MemberOrder = Record<string, string[]>
+
+export function memberOrder(groups: CustomizeGroup[]): MemberOrder {
+  return Object.fromEntries(
+    groups.map((group) => [group.id, group.members.map((member) => member.key)]),
+  )
+}
+
+export function resolveDrop(
+  active: DragItem | null,
+  over: DropZone | null,
+  order: MemberOrder = {},
+): DropAction {
   if (active === null || over === null) return { kind: 'nothing' }
-  return active.kind === 'pin' ? dropPin(active, over) : dropGroup(active, over)
+  return active.kind === 'pin' ? dropPin(active, over, order) : dropGroup(active, over)
 }
 
 // Where the slot a release would fill opens up: inside a group, ahead

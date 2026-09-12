@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { memberOrder, resolveDrop } from '@/lib/customize-drag'
 import type { PinGroup } from '@/types/entities'
 
 const loadPinGroups = vi.fn<() => Promise<PinGroup[]>>(() => Promise.resolve([]))
@@ -180,6 +181,40 @@ describe('usePinGroups', () => {
     await flush()
 
     expect(result.current.groups[0].memberKeys).toEqual(['a::w', 'c::w', 'b::w'])
+  })
+
+  // End to end with the decision that feeds it: the screen shows a
+  // space where a release would land, and the release has to land
+  // there. Reordering a member downwards used to open the space and
+  // then move nothing, because filing the pin clears it from the group
+  // first and "ahead of the row below me" is where it already was.
+  test('dragging a member onto the one below it really does move it past', async () => {
+    const group = {
+      id: 'g1',
+      name: 'A',
+      collapsed: false,
+      order: 0,
+      color: 'teal' as const,
+      memberKeys: ['a::w', 'b::w', 'c::w'],
+    }
+    const { result } = await mountWith([group])
+    const order = memberOrder([
+      {
+        ...group,
+        members: group.memberKeys.map((key) => ({ key, label: key, used: 1 })),
+      },
+    ])
+
+    const drop = resolveDrop(
+      { kind: 'pin', key: 'a::w', groupId: 'g1' },
+      { kind: 'pin', key: 'b::w', groupId: 'g1' },
+      order,
+    )
+    if (drop.kind !== 'joinGroup') throw new Error(`expected a joinGroup, got ${drop.kind}`)
+    act(() => result.current.addMemberToGroup(drop.key, drop.groupId, drop.beforeKey ?? undefined))
+    await flush()
+
+    expect(result.current.groups[0].memberKeys).toEqual(['b::w', 'a::w', 'c::w'])
   })
 
   test('dragging a group onto another takes its place in the order', async () => {

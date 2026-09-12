@@ -10,7 +10,9 @@ mod scheduler;
 mod shell;
 mod signin;
 mod single_instance;
-mod status_item_render;
+/// Public for `examples/dump_tray_scenes.rs`; see "Looking at the
+/// result" in docs/status-item-rendering.md.
+pub mod status_item_render;
 pub mod statusline;
 
 use std::collections::HashMap;
@@ -43,7 +45,7 @@ struct AppState {
     last_icon_width_px: Mutex<u32>,
     status_item_highlighted: Mutex<bool>,
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
-    last_status_item_slug_spans: Mutex<Vec<status_item_render::SlugSpan>>,
+    last_status_item_chip_spans: Mutex<Vec<status_item_render::ChipSpan>>,
     last_status_item_worst_used_percent: Mutex<u8>,
     last_status_item_tooltip: Mutex<String>,
     docked_target: Mutex<Option<DockedLayout>>,
@@ -65,6 +67,7 @@ pub fn run() {
             accounts::kick_scheduler,
             shell::hide_panel,
             shell::set_status_item_state,
+            shell::render_status_item_preview,
             shell::set_detached,
             shell::drag_window_step,
             shell::end_window_drag,
@@ -177,7 +180,7 @@ fn initial_app_state(
         last_icon_width_px: Mutex::new(initial_icon_width),
         status_item_highlighted: Mutex::new(false),
         last_status_item_segments: Mutex::new(Vec::new()),
-        last_status_item_slug_spans: Mutex::new(Vec::new()),
+        last_status_item_chip_spans: Mutex::new(Vec::new()),
         last_status_item_worst_used_percent: Mutex::new(0),
         last_status_item_tooltip: Mutex::new("Quotos".to_string()),
         docked_target: Mutex::new(None),
@@ -342,6 +345,11 @@ fn tray_click_intent(
     }
 }
 
+/// Whether AppKit may open the item's own menu on a left click.
+/// `tray-icon` defaults this to true; a left click belongs to the panel
+/// and to a group's chip, so it is false here.
+const SHOW_MENU_ON_LEFT_CLICK: bool = false;
+
 /// Attached only for as long as the menu is on screen. `show_menu`
 /// runs the menu's own tracking loop and returns once it closes, so
 /// the item is left owning no menu and cannot pop one on its own.
@@ -361,6 +369,7 @@ fn build_status_item(
 ) -> tauri::Result<TrayIcon> {
     let (rgba, w, h) = icon;
     TrayIconBuilder::with_id("main-status-item")
+        .show_menu_on_left_click(SHOW_MENU_ON_LEFT_CLICK)
         .icon(Image::new_owned(rgba, w, h))
         .icon_as_template(true)
         .tooltip("Quotos")
@@ -415,7 +424,7 @@ fn build_status_item(
                     else {
                         return;
                     };
-                    // A click on a group's slug folds that group; one
+                    // A click on a group's chip folds that group; one
                     // anywhere else, a bare figure included, opens the
                     // panel. See docs/architecture.md.
                     let item_width = match rect.size {
@@ -468,8 +477,30 @@ fn spawn_debug_auto_open_if_enabled(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{TrayClickIntent, tray_click_intent};
+    use super::{SHOW_MENU_ON_LEFT_CLICK, TrayClickIntent, tray_click_intent};
     use tauri::tray::{MouseButton, MouseButtonState};
+
+    /// The gap the last round's fix left: AppKit opens a menu of its
+    /// own off a left click whenever the item owns one, which it does
+    /// while a right-click's menu is being tracked.
+    #[test]
+    fn nothing_at_all_opens_the_menu_except_a_right_press() {
+        for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
+            for state in [MouseButtonState::Down, MouseButtonState::Up] {
+                // Every route to the menu there is: the intent this
+                // module reads, and AppKit's own behaviour on an item
+                // that owns one.
+                let by_this_module = tray_click_intent(button, state) == TrayClickIntent::ShowMenu;
+                let by_appkit = SHOW_MENU_ON_LEFT_CLICK && button == MouseButton::Left;
+                let expected = button == MouseButton::Right && state == MouseButtonState::Down;
+                assert_eq!(
+                    by_this_module || by_appkit,
+                    expected,
+                    "{button:?} {state:?}: by this module's own intent or by AppKit's"
+                );
+            }
+        }
+    }
 
     #[test]
     fn a_right_press_is_the_only_thing_that_shows_the_menu() {

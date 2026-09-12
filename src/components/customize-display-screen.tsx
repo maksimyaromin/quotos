@@ -20,8 +20,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { Fragment, useEffect, useRef, useState } from 'react'
-import { QuotaGlyph } from '@/design-system'
+import { useEffect, useRef, useState } from 'react'
 import {
   asDragItem,
   asDropZone,
@@ -32,6 +31,7 @@ import {
   groupDragId,
   type LandingSlot,
   landingSlot,
+  memberOrder,
   pinDragId,
   resolveDrop,
   sameDrop,
@@ -39,15 +39,20 @@ import {
 } from '@/lib/customize-drag'
 import type { StatusItemSegment } from '@/types/entities'
 import { dropSettle, grabTransition, pickedUp, reflowTransition } from './drag-motion'
+import { MenuBarPreview } from './menu-bar-preview'
 import { DragHandleGlyph, TrashIcon, UngroupIcon } from './icons'
 import styles from './customize-display-screen.module.css'
 
 export type { CustomizeGroup, CustomizePin }
 
 export interface CustomizeDisplayScreenProps {
-  // The real segment list the menu bar is drawn from, so the preview
-  // cannot drift from what the status item actually shows.
+  // The real segment list the menu bar is drawn from, handed straight
+  // to the menu bar's own compositor, so the preview cannot drift from
+  // what the status item actually shows.
   preview: StatusItemSegment[]
+  // What the capacity glyph in that preview is filled to, the same
+  // figure the live tray is drawn with.
+  worstUsedPercent: number
   groups: CustomizeGroup[]
   standalone: CustomizePin[]
   onAddToGroup: (key: string, groupId: string, beforeKey?: string) => void
@@ -96,7 +101,7 @@ function PinRow({ pin, groupId, dropHint, carried, reduced }: RowProps) {
   return (
     <motion.div
       ref={setNodeRef}
-      layout
+      layout="position"
       initial={false}
       animate={{ height: carried ? 0 : 'auto', opacity: carried ? 0 : 1 }}
       transition={reflowTransition(reduced)}
@@ -140,7 +145,7 @@ function LandingRow({
   return (
     <motion.div
       aria-hidden="true"
-      layout
+      layout="position"
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
@@ -234,7 +239,7 @@ function GroupBox({
   return (
     <motion.div
       ref={setNodeRef}
-      layout
+      layout="position"
       transition={reflowTransition(reduced)}
       role="group"
       aria-label={group.name}
@@ -354,7 +359,7 @@ function GroupSlot({ name, reduced }: { name: string; reduced: boolean }) {
   return (
     <motion.div
       aria-hidden="true"
-      layout
+      layout="position"
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
@@ -371,6 +376,7 @@ function GroupSlot({ name, reduced }: { name: string; reduced: boolean }) {
 
 export function CustomizeDisplayScreen({
   preview,
+  worstUsedPercent,
   groups,
   standalone,
   onAddToGroup,
@@ -421,10 +427,14 @@ export function CustomizeDisplayScreen({
     if (trimmed.length > 0) onRenameGroup(id, trimmed)
   }
 
+  // The arrangement on screen is half the answer to where a drop would
+  // land, so the same order the rows are drawn in is what decides it.
+  const order = memberOrder(groups)
   const actionFor = (event: DragOverEvent | DragEndEvent): DropAction =>
     resolveDrop(
       asDragItem(event.active.data.current),
       asDropZone(event.over?.id, event.over?.data.current),
+      order,
     )
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -486,21 +496,7 @@ export function CustomizeDisplayScreen({
   return (
     <div className={styles.screen}>
       <div className={styles.previewLabel}>In the menu bar</div>
-      <div className={styles.previewStrip} role="img" aria-label="Menu bar preview">
-        <QuotaGlyph size={14} />
-        {preview.map((segment, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a segment is a position in the strip rather than an entity, and carries no state of its own.
-          <Fragment key={`${segment.groupId ?? 'pin'}-${segment.text}-${index}`}>
-            {segment.groupStart ? <span className={styles.previewDivider} /> : null}
-            {segment.slug === null ? null : (
-              <span className={styles.previewSlug}>{segment.slug}</span>
-            )}
-            <span className={styles.previewFigure} data-color={segment.color}>
-              {segment.text}
-            </span>
-          </Fragment>
-        ))}
-      </div>
+      <MenuBarPreview segments={preview} worstUsedPercent={worstUsedPercent} />
 
       <p className={styles.description}>
         Drag a pin onto another to group them, or onto a group to join it. Grouping never unpins

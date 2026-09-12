@@ -266,12 +266,12 @@ survives a restart, and it is per group, so several can stand open at
 once. A new group starts rolled up, since spending less menu bar width
 is the reason to make one.
 
-## Clicking a group's slug in the menu bar
+## Clicking a group's chip in the menu bar
 
-A left click on a pin group's slug belongs to that group: it toggles
+A left click on a pin group's chip belongs to that group: it toggles
 `collapsed` in place, with no panel involved. A click anywhere else on
 the status item, a bare figure included, opens the panel exactly as it
-always did. The figure reports a number; the slug is the button.
+always did. The figure reports a number; the chip is the button.
 
 Telling the two apart needs the click's position inside the composited
 image. `TrayIconEvent::Click` carries both `position`, the click point,
@@ -285,7 +285,7 @@ positioning has to account for, so treating the click as a bare
 fraction of the button's width and scaling it back out by the image's
 width stretches and shifts it: at the measured eight points per side
 the error reaches about sixteen pixels at either end of the image, more
-than a slug is wide, which is what made a click on a group open the
+than a chip is wide, which is what made a click on a group open the
 panel some of the time and fold the group the rest. `group_at_click`
 takes both into points on the item's own display and calls
 `geometry.rs`'s `click_x_in_icon_px`, which subtracts the margin derived
@@ -293,17 +293,18 @@ from the two widths — the same derivation
 `glyph_center_offset_from_item_left_points` uses — and scales into the
 image's own pixels.
 
-`shell.rs` caches each slug's rendered pixel span in
-`last_status_item_slug_spans` on every repaint, beside the segments
+`shell.rs` caches each chip's rendered pixel span in
+`last_status_item_chip_spans` on every repaint, beside the segments
 themselves, and looks that pixel up; see "Resolving a click back to a
-slug" in
-[status-item-rendering.md](status-item-rendering.md#resolving-a-click-back-to-a-slug)
+chip" in
+[status-item-rendering.md](status-item-rendering.md#resolving-a-click-back-to-a-chip)
 for how those spans are derived and padded.
 
-Which figure carries a group's slug is the frontend's business, not the
-native side's: `StatusItemSegment.groupId` rides along with each
-segment, and `slug` is set on the figure leading that group's cluster,
-rolled up or opened out. When a click does resolve to a slug, the native
+Which item is a chip is the frontend's business, not the native side's:
+a `StatusItemSegment` is a `chip`, carrying the group's slug, colour and
+`groupId`, or a `figure`, carrying a percentage and nothing to fold.
+A group contributes one chip whether it is rolled up or opened out; only
+an opened one contributes figures too. When a click resolves to a chip, the native
 side emits `status-item-group-clicked` with the id and does nothing
 else; `use-pin-groups.ts` flips that group's flag, and the segment list
 is rebuilt and pushed back down through the same `set_status_item_state`

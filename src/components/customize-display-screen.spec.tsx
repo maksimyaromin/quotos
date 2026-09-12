@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { type DragItem, groupDragId, pinDragId, UNGROUPED_DROP_ID } from '@/lib/customize-drag'
+import { renderStatusItemPreview } from '@/lib/tauri-client'
 import type { StatusItemSegment } from '@/types/entities'
 import {
   type CustomizeDisplayScreenProps,
@@ -15,6 +16,15 @@ import {
 // would; everything below the context, the sortable rows included, is
 // the library's own.
 const dnd = vi.hoisted(() => ({ props: null as unknown }))
+
+// What the menu bar's own compositor hands back: a bitmap, which jsdom
+// can hold but not paint. The size is what this spec checks; the pixels
+// are the Rust renderer's own business and are proven there.
+const PREVIEW_IMAGE = { width: 120, height: 36, rgbaBase64: '' }
+
+vi.mock('@/lib/tauri-client', () => ({
+  renderStatusItemPreview: vi.fn(async () => PREVIEW_IMAGE),
+}))
 
 vi.mock('@dnd-kit/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dnd-kit/core')>()
@@ -32,8 +42,8 @@ vi.mock('@dnd-kit/core', async (importOriginal) => {
 
 afterEach(cleanup)
 
-function segment(overrides: Partial<StatusItemSegment> & { text: string }): StatusItemSegment {
-  return { color: 'neutral', groupStart: false, groupId: null, slug: null, ...overrides }
+function figure(text: string): StatusItemSegment {
+  return { kind: 'figure', text, color: 'neutral' }
 }
 
 const HANDLERS = {
@@ -51,6 +61,7 @@ function setup(overrides: Partial<CustomizeDisplayScreenProps> = {}) {
   for (const handler of Object.values(HANDLERS)) handler.mockClear()
   const props: CustomizeDisplayScreenProps = {
     preview: [],
+    worstUsedPercent: 0,
     groups: [
       {
         id: 'g1',
@@ -476,26 +487,34 @@ describe('an empty group can be made and named before anything goes in it', () =
 })
 
 describe('the preview strip', () => {
-  test("draws the segments it was handed, each group's figures led by its slug", () => {
-    setup({
-      preview: [
-        segment({ text: '99%', color: 'red', groupId: 'g1', slug: 'MON' }),
-        segment({ text: '12%', groupStart: true }),
-      ],
-    })
+  test("asks the menu bar's own compositor for the arrangement it is showing", async () => {
+    setup({ preview: [figure('99%'), figure('12%')], worstUsedPercent: 99 })
 
-    const strip = screen.getByLabelText('Menu bar preview')
-    expect(strip.textContent).toContain('MON')
-    expect(strip.textContent).toContain('99%')
-    expect(strip.textContent).toContain('12%')
-    expect(
-      Array.from(strip.querySelectorAll('[data-color]')).map((f) => f.getAttribute('data-color')),
-    ).toEqual(['red', 'neutral'])
+    await waitFor(() => expect(renderStatusItemPreview).toHaveBeenCalled())
+    expect(renderStatusItemPreview).toHaveBeenLastCalledWith([figure('99%'), figure('12%')], 99)
   })
 
-  test('a standalone figure is drawn on its own, with no slug in front of it', () => {
-    setup({ preview: [segment({ text: '12%' })] })
+  test('draws the bitmap that comes back, at the size the menu bar shows it', async () => {
+    setup({ preview: [figure('99%')] })
 
-    expect(screen.getByLabelText('Menu bar preview').textContent).toBe('12%')
+    const canvas = await waitFor(() => {
+      const found = screen.getByLabelText('Menu bar preview').querySelector('canvas')
+      expect(found).toBeTruthy()
+      return found as HTMLCanvasElement
+    })
+    expect(canvas.width).toBe(PREVIEW_IMAGE.width)
+    expect(canvas.height).toBe(PREVIEW_IMAGE.height)
+    // Two bitmap pixels to the point, `status_item_render.rs`'s own
+    // RENDER_SCALE, so the preview is the size the menu bar draws.
+    expect(canvas.style.width).toBe(`${PREVIEW_IMAGE.width / 2}px`)
+    expect(canvas.style.height).toBe(`${PREVIEW_IMAGE.height / 2}px`)
+  })
+
+  // The whole point of going through the command: there is no second
+  // description of a chip, a figure or a gap anywhere on this screen to
+  // drift from the one the tray is drawn by.
+  test('describes nothing about the arrangement itself', () => {
+    setup({ preview: [figure('99%'), figure('12%')] })
+    expect(screen.getByLabelText('Menu bar preview').textContent).toBe('')
   })
 })

@@ -5,6 +5,7 @@ import type {
   RawSnapshot,
   ScheduledRefreshEvent,
   SignInFinishedEvent,
+  StatusItemImage,
   StatusItemSegment,
   StatuslineIntegrationStatus,
 } from '@/types/entities'
@@ -53,6 +54,16 @@ export async function renderStatusItem(
   tooltip: string,
 ): Promise<void> {
   return invoke('set_status_item_state', { segments, worstUsedPercent, tooltip })
+}
+
+// The Customize display screen's preview, drawn by the same compositor
+// the menu bar is drawn by, from an arrangement the screen is showing
+// rather than the one the tray is currently set to.
+export async function renderStatusItemPreview(
+  segments: StatusItemSegment[],
+  worstUsedPercent: number,
+): Promise<StatusItemImage> {
+  return invoke('render_status_item_preview', { segments, worstUsedPercent })
 }
 
 export async function setDetached(detached: boolean): Promise<void> {

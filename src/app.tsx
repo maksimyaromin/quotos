@@ -67,6 +67,7 @@ export default function App() {
     subscriptions,
     trackedSubscriptions,
     statusItemSegments,
+    worstUsedPercent,
     refreshAll,
     refreshAccountById,
     togglePin,
@@ -368,6 +369,7 @@ export default function App() {
       ) : screen === 'customize' ? (
         <CustomizeDisplayScreen
           preview={statusItemSegments}
+          worstUsedPercent={worstUsedPercent}
           groups={customizeGroups}
           standalone={customizeStandalone}
           onAddToGroup={addMemberToGroup}
