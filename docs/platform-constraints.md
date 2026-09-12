@@ -66,18 +66,28 @@ this codebase is `(async)`.
   `sync_status_item_length` pins the item's length to the image's own
   width on every repaint, so the button's bounds and the image's bounds
   match.
-- Matching bounds is not the same as one frame: nothing stops AppKit
-  from painting its own click highlight, in its own corner radius and
-  color, underneath this app's own drawn pill. `shell.rs`'s
-  `disable_status_item_native_highlight` sets the button's cell to
-  `NSCellStyleMask::NoCellMask` once at startup, reached through the
-  same `with_inner_tray_icon`/`ns_status_item()` route as
-  `sync_status_item_length`, so AppKit paints nothing there and the
-  drawn pill is the only frame for a click and for the panel-open state
-  alike. `NSControl` and `NSCell`, which that call needs, are already
-  resolved through `tray-icon`'s own request of the same
-  `objc2-app-kit` version, so this needed no new feature in
-  `Cargo.toml`.
+
+## The panel-open highlight
+
+The frame behind an open panel is AppKit's own, set through
+`shell.rs`'s `set_status_item_native_highlight` — the same `highlighted`
+property AppKit sets on its own mouse-down, so the pressed state and the
+panel-open state are one drawing rather than two geometries that have to
+be kept in agreement.
+
+They cannot be kept in agreement any other way. This app can only paint
+inside its own image, and the image is the item's own bounds;
+AppKit's plate is the item's *slot*, which includes the spacing the menu
+bar reserves between items. Measured against a status item carrying a
+bare mark, one chip, one chip and two figures, and two chips and four
+figures, the plate is that item inflated by a constant 10pt on each side
+and 3pt above and below, whatever the content width. A pill drawn into
+the bitmap reached neither: it was the image's own 18pt height, flush
+with its own edges, and read as a smaller box nested inside the one a
+press produces.
+
+`setHighlighted:` does not survive `set_icon`, so `repaint_status_item`
+re-applies it after every repaint rather than once when the panel opens.
 
 ## The non-activating panel class swap
 

@@ -11,11 +11,12 @@ coordinate math lives in `geometry.rs`, bitmap composition in
 
 ## Repainting the status item
 
-`repaint_status_item` is the one place the icon actually gets redrawn,
-shared by its two independent inputs, the pinned-subscription digits and
-the "panel open" highlight, neither of which knows the other's current
-value, so it always reads both fresh from `AppState` rather than taking
-either as a parameter. `record_if_changed` compares the new state
+`repaint_status_item` is the one place the icon actually gets redrawn
+and the one place the panel-open highlight is set, shared by its two
+independent inputs, the pinned-subscription digits and whether the panel
+is open, neither of which knows the other's current value, so it always
+reads both fresh from `AppState` rather than taking either as a
+parameter. `record_if_changed` compares the new state
 against the last-painted one first, since the frontend fires
 `set_status_item_state` on every state change, most of which leave the
 pinned digits identical, and a full bitmap composite plus `set_icon` is
@@ -23,12 +24,13 @@ main-thread work worth skipping. The tooltip participates in that
 comparison too, since it can change alone: renaming a subscription
 rewrites its tooltip line while leaving every digit byte-identical.
 
-With any segments present, or the highlight active, the repaint drops
-`icon_as_template` and paints a composed bitmap instead, since a plain
-template image cannot carry its own background tint; with neither, it
-reverts to the plain template glyph. The title is always cleared with
-`Some("")`, never `None`; see "tray-icon 0.24.2 on macOS" in
-platform-constraints.md.
+The repaint always paints a composed bitmap and never an
+`icon_as_template` one: the mark carries two inks and its gauge a third
+tone, which a template image would flatten to one. The highlight is
+re-applied after every repaint rather than once when the panel opens,
+since `set_icon` clears it; see "The panel-open highlight" in
+platform-constraints.md. The title is always cleared with `Some("")`,
+never `None`; see "tray-icon 0.24.2 on macOS" there too.
 
 ## Keeping the item's length synced
 

@@ -1,5 +1,8 @@
 use std::process::Command;
 
+/// The whole image's height, and so the glyph canvas's: macOS presents
+/// this bitmap 18pt tall whatever its pixel size, which is what fixes
+/// the canvas at 18 CSS px.
 const GLYPH_PX: u32 = 36;
 const SIDE_PAD_PX: u32 = 10;
 /// Every buffer here is drawn at two pixels per point, which is also
@@ -7,6 +10,9 @@ const SIDE_PAD_PX: u32 = 10;
 /// this module's pixels halves into points and vice versa.
 pub const RENDER_SCALE: f64 = 2.0;
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / RENDER_SCALE;
+/// The glyph's canvas is as wide as the mark's own ink and no wider;
+/// see "The capacity glyph" in docs/status-item-rendering.md.
+pub const GLYPH_WIDTH_POINTS: f64 = GLYPH_W_PX as f64 / RENDER_SCALE;
 const GLYPH_GAP_PX: u32 = 19;
 /// Between any two adjacent items, whichever kinds they are; see
 /// "Spacing the items evenly" in docs/status-item-rendering.md.
@@ -192,8 +198,9 @@ const SPEND_CHEVRONS: [Chevron; 2] = [
     },
 ];
 /// How faint the limit chevron's always-drawn track is against its own
-/// fully-saturated fill.
-const LIMIT_TRACK_OPACITY: f64 = 0.3;
+/// fully-saturated fill, set against the menu bar's own dark ground;
+/// see "The capacity glyph" in docs/status-item-rendering.md.
+const LIMIT_TRACK_OPACITY: f64 = 0.45;
 
 /// The mark's own ink box on that grid, round caps included: the tips
 /// of the topmost and bottommost chevrons, and the outer edge of either
@@ -202,6 +209,26 @@ const INK_TOP_SVG: f64 = LIMIT_CHEVRON.tip_y - CHEVRON_STROKE_SVG / 2.0;
 const INK_BOTTOM_SVG: f64 = SPEND_CHEVRONS[1].tip_y + CHEVRON_STROKE_SVG / 2.0;
 const INK_HEIGHT_SVG: f64 = INK_BOTTOM_SVG - INK_TOP_SVG;
 const INK_CENTER_Y_SVG: f64 = (INK_TOP_SVG + INK_BOTTOM_SVG) / 2.0;
+const INK_WIDTH_SVG: f64 = (CHEVRON_RIGHT_X_SVG - CHEVRON_LEFT_X_SVG) + CHEVRON_STROKE_SVG;
+
+/// How tall the mark's own ink is drawn, in the 18 CSS px the image is
+/// presented at: sized against the icons it stands next to in a real
+/// menu bar rather than against the square the ring used to fill.
+const TARGET_INK_HEIGHT_CSS_PX: f64 = 16.0;
+const GLYPH_INK_HEIGHT_PX: f64 = TARGET_INK_HEIGHT_CSS_PX * RENDER_SCALE;
+const GLYPH_INK_WIDTH_PX: f64 = GLYPH_INK_HEIGHT_PX * (INK_WIDTH_SVG / INK_HEIGHT_SVG);
+/// Air for the antialiased outer edge on either side of that ink, so
+/// the canvas never clips the stroke it is sized around.
+const GLYPH_BLEED_PX: u32 = 2;
+/// The glyph's canvas width. The mark is tall and narrow, 12.6 by 24.1
+/// units, so a square canvas would stand it in nearly twice its own
+/// width of dead air; this one is the mark's own width and no more.
+const GLYPH_W_PX: u32 = GLYPH_INK_WIDTH_PX as u32 + 1 + GLYPH_BLEED_PX * 2;
+
+const _: () = assert!(
+    GLYPH_W_PX < GLYPH_PX,
+    "the mark is taller than it is wide, so its canvas must be too"
+);
 
 /// The mark drawn at the target resolution from its own vector
 /// geometry, in three layers rather than one; see "The capacity glyph"
@@ -217,13 +244,11 @@ struct GlyphCoverage {
     limit_fill: Vec<u8>,
 }
 
-fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> GlyphCoverage {
-    const TARGET_INK_HEIGHT_CSS_PX: f64 = 15.0;
-    const AA_HALF_WIDTH_PX: f64 = 0.75;
+fn glyph_coverage(used_fraction: f64) -> GlyphCoverage {
+    const AA_HALF_WIDTH_PX: f64 = 0.5;
 
-    let px_per_css_px = canvas_px as f64 / 18.0;
-    let scale = (TARGET_INK_HEIGHT_CSS_PX * px_per_css_px) / INK_HEIGHT_SVG;
-    let center = canvas_px as f64 / 2.0;
+    let scale = GLYPH_INK_HEIGHT_PX / INK_HEIGHT_SVG;
+    let (center_x, center_y) = (GLYPH_W_PX as f64 / 2.0, GLYPH_PX as f64 / 2.0);
 
     // The gauge runs from the limit chevron's own vertex up toward its
     // two arm-tips, so at 0% only the vertex is bright and at 100% the
@@ -235,17 +260,17 @@ fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> GlyphCoverage {
         (1.0 - ((distance - CHEVRON_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
     };
 
-    let size = (canvas_px * canvas_px) as usize;
+    let size = (GLYPH_W_PX * GLYPH_PX) as usize;
     let mut coverage = GlyphCoverage {
         spend: vec![0u8; size],
         limit_track: vec![0u8; size],
         limit_fill: vec![0u8; size],
     };
-    for y in 0..canvas_px {
-        for x in 0..canvas_px {
-            let ux = CHEVRON_APEX_X_SVG + (x as f64 + 0.5 - center) / scale;
-            let uy = INK_CENTER_Y_SVG + (y as f64 + 0.5 - center) / scale;
-            let at = (y * canvas_px + x) as usize;
+    for y in 0..GLYPH_PX {
+        for x in 0..GLYPH_W_PX {
+            let ux = CHEVRON_APEX_X_SVG + (x as f64 + 0.5 - center_x) / scale;
+            let uy = INK_CENTER_Y_SVG + (y as f64 + 0.5 - center_y) / scale;
+            let at = (y * GLYPH_W_PX + x) as usize;
 
             let spend = SPEND_CHEVRONS
                 .iter()
@@ -282,8 +307,8 @@ fn draw_glyph(
     let (sr, sg, sb) = spend_rgb(dark);
     let (lr, lg, lb) = limit_rgb(dark);
     for y in 0..GLYPH_PX {
-        for x in 0..GLYPH_PX {
-            let at = (y * GLYPH_PX + x) as usize;
+        for x in 0..GLYPH_W_PX {
+            let at = (y * GLYPH_W_PX + x) as usize;
             for (alpha, (r, g, b)) in [
                 (coverage.limit_track[at], (lr, lg, lb)),
                 (coverage.limit_fill[at], (lr, lg, lb)),
@@ -301,12 +326,12 @@ fn draw_glyph(
 /// The glyph's own rightmost ink pixel, scanned across every layer of
 /// its rendered coverage. See "Spacing the figures evenly" in
 /// docs/status-item-rendering.md.
-fn glyph_ink_right_edge_px(coverage: &GlyphCoverage, canvas_px: u32) -> f64 {
+fn glyph_ink_right_edge_px(coverage: &GlyphCoverage) -> f64 {
     const INK_EDGE_COVERAGE_THRESHOLD: u8 = 127;
     let mut max_x = None;
-    for y in 0..canvas_px {
-        for x in 0..canvas_px {
-            let at = (y * canvas_px + x) as usize;
+    for y in 0..GLYPH_PX {
+        for x in 0..GLYPH_W_PX {
+            let at = (y * GLYPH_W_PX + x) as usize;
             let ink = coverage.spend[at]
                 .max(coverage.limit_track[at])
                 .max(coverage.limit_fill[at]);
@@ -315,7 +340,7 @@ fn glyph_ink_right_edge_px(coverage: &GlyphCoverage, canvas_px: u32) -> f64 {
             }
         }
     }
-    max_x.map_or(canvas_px as f64 / 2.0, |x| x as f64 + 1.0)
+    max_x.map_or(GLYPH_W_PX as f64 / 2.0, |x| x as f64 + 1.0)
 }
 
 pub(crate) fn is_dark_mode() -> bool {
@@ -366,35 +391,8 @@ fn blend_pixel(buf: &mut [u8], w: u32, h: u32, x: u32, y: u32, rgba: (u8, u8, u8
     buf[idx + 3] = out_a as u8;
 }
 
-fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
-    const RADIUS_PHYSICAL: f64 = 10.0;
-    const AA_HALF_WIDTH_PX: f64 = 0.75;
-    let rgba = if dark {
-        (0xffu8, 0xffu8, 0xffu8, (0.20f64 * 255.0).round() as u8)
-    } else {
-        (0x00u8, 0x00u8, 0x00u8, (0.14f64 * 255.0).round() as u8)
-    };
-    let (bx, by) = (w as f64 / 2.0, h as f64 / 2.0);
-    for y in 0..h {
-        for x in 0..w {
-            let px = x as f64 + 0.5 - bx;
-            let py = y as f64 + 0.5 - by;
-            let qx = px.abs() - (bx - RADIUS_PHYSICAL);
-            let qy = py.abs() - (by - RADIUS_PHYSICAL);
-            let outside_len = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
-            let signed_dist = outside_len + qx.max(qy).min(0.0) - RADIUS_PHYSICAL;
-            let coverage = (0.5 - signed_dist / AA_HALF_WIDTH_PX).clamp(0.0, 1.0);
-            if coverage <= 0.0 {
-                continue;
-            }
-            let alpha = ((rgba.3 as f64) * coverage).round().clamp(0.0, 255.0) as u8;
-            blend_pixel(buf, w, h, x, y, (rgba.0, rgba.1, rgba.2, alpha));
-        }
-    }
-}
-
 /// A chip's rounded rectangle, filled with a muted tint of the group's
-/// colour, over the same signed-distance field the highlight uses.
+/// colour, over a signed-distance field.
 fn draw_chip(buf: &mut [u8], w: u32, h: u32, rect: ChipRect, rgb: (u8, u8, u8)) {
     const AA_HALF_WIDTH_PX: f64 = 0.75;
     let half_height = CHIP_HEIGHT_PX as f64 / 2.0;
@@ -1047,8 +1045,8 @@ fn layout_segments(
 }
 
 fn glyph_ink_right_edge_for(icon_fill_percent: u8) -> f64 {
-    let coverage = glyph_coverage(GLYPH_PX, icon_fill_percent as f64 / 100.0);
-    SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX)
+    let coverage = glyph_coverage(icon_fill_percent as f64 / 100.0);
+    SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage)
 }
 
 /// Shares `layout_segments` with `render`, so the spans a click is
@@ -1091,12 +1089,11 @@ pub fn chip_at(spans: &[ChipSpan], icon_width_px: u32, x: f64) -> Option<usize> 
 
 pub fn render(
     segments: &[StatusItemSegment],
-    highlighted: bool,
     icon_fill_percent: u8,
     dark: bool,
 ) -> (Vec<u8>, u32, u32) {
     let used_fraction = icon_fill_percent as f64 / 100.0;
-    let coverage = glyph_coverage(GLYPH_PX, used_fraction);
+    let coverage = glyph_coverage(used_fraction);
     let figure_font = text::load_font(text_font_size_pt());
     let slug_font = text::load_ui_font(slug_font_size_pt());
 
@@ -1108,14 +1105,10 @@ pub fn render(
     let total_w = if placed_anything {
         (content_ink_right + SIDE_PAD_PX as f64).ceil() as u32
     } else {
-        SIDE_PAD_PX * 2 + GLYPH_PX
+        SIDE_PAD_PX * 2 + GLYPH_W_PX
     };
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
-
-    if highlighted {
-        draw_highlight_background(&mut buf, total_w, total_h, dark);
-    }
 
     draw_glyph(&mut buf, total_w, total_h, SIDE_PAD_PX, &coverage, dark);
 
@@ -1278,7 +1271,7 @@ mod tests {
                     fig("12%", StatusItemColor::Neutral),
                 ],
             ] {
-                let (buf, w, h) = render(&segs, false, 0, true);
+                let (buf, w, h) = render(&segs, 0, true);
                 let columns = painted_columns(&buf, w, h);
                 let edges: Vec<InkSpan> = spans(&segs, 0).into_iter().flatten().collect();
                 for pair in edges.windows(2) {
@@ -1354,7 +1347,7 @@ mod tests {
         #[test]
         fn a_chip_is_a_frame_around_its_letters_not_bare_text() {
             let segs = [chip("FAB")];
-            let (buf, w, h) = render(&segs, false, 0, true);
+            let (buf, w, h) = render(&segs, 0, true);
             let frame = chip_spans(&segs, 0)[0].span;
             let letters = {
                 let ink = measure_segments(&segs);
@@ -1384,7 +1377,7 @@ mod tests {
                 slug: "FAB".into(),
                 color: GroupColor::Blue,
             }];
-            let (buf, w, h) = render(&segs, false, 0, true);
+            let (buf, w, h) = render(&segs, 0, true);
             let (r, g, b) = GroupColor::Blue.rgb(true);
             let frame = chip_spans(&segs, 0)[0].span;
 
@@ -1407,7 +1400,7 @@ mod tests {
         #[test]
         fn a_chip_stands_clear_of_the_top_and_bottom_of_the_image() {
             let segs = [chip("FAB")];
-            let (buf, w, h) = render(&segs, false, 0, true);
+            let (buf, w, h) = render(&segs, 0, true);
             let frame = chip_spans(&segs, 0)[0].span;
             for x in frame.x0..frame.x1.min(w) {
                 assert_eq!(
@@ -1451,18 +1444,17 @@ mod tests {
             let segs = [chip(""), fig("55%", StatusItemColor::Neutral)];
             assert!(chip_spans(&segs, 0).is_empty());
             assert_eq!(
-                render(&segs, false, 0, true).1,
-                render(&[fig("55%", StatusItemColor::Neutral)], false, 0, true).1,
+                render(&segs, 0, true).1,
+                render(&[fig("55%", StatusItemColor::Neutral)], 0, true).1,
                 "an empty slug reserves no width and costs no gap"
             );
         }
 
         #[test]
         fn a_chip_widens_the_image_by_its_own_frame_plus_one_gap() {
-            let bare = render(&[fig("55%", StatusItemColor::Neutral)], false, 0, false);
+            let bare = render(&[fig("55%", StatusItemColor::Neutral)], 0, false);
             let with_chip = render(
                 &[chip("FAB"), fig("55%", StatusItemColor::Neutral)],
-                false,
                 0,
                 false,
             );
@@ -1545,8 +1537,8 @@ mod tests {
                     vec![fig("42%", StatusItemColor::Neutral)],
                     vec![chip("FAB")],
                 ] {
-                    let glyph_ink_right_edge = SIDE_PAD_PX as f64
-                        + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
+                    let glyph_ink_right_edge =
+                        SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&glyph_coverage(0.0));
                     let glyph_gap = drawn_edges(&font, &segs)[0].0 - glyph_ink_right_edge;
                     assert!(
                         (glyph_gap - GLYPH_GAP_PX as f64).abs() < 1e-6,
@@ -1569,10 +1561,7 @@ mod tests {
                 fig("18%", StatusItemColor::Neutral),
                 fig("55%", StatusItemColor::Neutral),
             ];
-            assert_eq!(
-                render(&with_hole, false, 0, true).1,
-                render(&without, false, 0, true).1
-            );
+            assert_eq!(render(&with_hole, 0, true).1, render(&without, 0, true).1);
         }
     }
 
@@ -1587,7 +1576,7 @@ mod tests {
                 chip("CUR"),
             ];
             let spans = chip_spans(&segs, 0);
-            let (_, width, _) = render(&segs, false, 0, false);
+            let (_, width, _) = render(&segs, 0, false);
 
             assert_eq!(spans.len(), 2);
             for chip in &spans {
@@ -1613,7 +1602,7 @@ mod tests {
             let segs = [chip("FAB"), fig("55%", StatusItemColor::Neutral)];
             let chips = chip_spans(&segs, 0);
             let figure = figure_spans(&segs, 0)[0];
-            let (_, width, _) = render(&segs, false, 0, false);
+            let (_, width, _) = render(&segs, 0, false);
 
             for x in [
                 figure.x0 as f64 + HIT_PADDING_PX as f64 + 1.0,
@@ -1628,7 +1617,7 @@ mod tests {
         fn a_click_on_the_glyph_or_past_either_end_folds_nothing() {
             let segs = [chip("FAB")];
             let spans = chip_spans(&segs, 0);
-            let (_, width, _) = render(&segs, false, 0, false);
+            let (_, width, _) = render(&segs, 0, false);
 
             assert_eq!(
                 chip_at(&spans, width, (SIDE_PAD_PX + GLYPH_PX / 2) as f64),
@@ -1642,7 +1631,7 @@ mod tests {
         fn a_click_just_off_a_chip_still_folds_its_group() {
             let segs = [chip("FAB")];
             let spans = chip_spans(&segs, 0);
-            let (_, width, _) = render(&segs, false, 0, false);
+            let (_, width, _) = render(&segs, 0, false);
             for off in 1..HIT_PADDING_PX {
                 assert_eq!(
                     chip_at(&spans, width, spans[0].span.x0 as f64 - off as f64),
@@ -1699,7 +1688,7 @@ mod tests {
                 fig("12%", StatusItemColor::Neutral),
             ];
             let spans = chip_spans(&segments, 50);
-            let (_, icon_width_px, _) = render(&segments, false, 50, true);
+            let (_, icon_width_px, _) = render(&segments, 50, true);
             Scene {
                 segments,
                 spans,
@@ -1823,7 +1812,7 @@ mod tests {
 
     #[test]
     fn the_mark_always_reads_as_three_chevrons() {
-        let cov = glyph_coverage(GLYPH_PX, 0.0);
+        let cov = glyph_coverage(0.0);
         assert!(
             cov.spend.iter().any(|&a| a > 200),
             "the two spend chevrons are not a gauge and must draw solid at 0% used"
@@ -1836,8 +1825,8 @@ mod tests {
 
     #[test]
     fn the_spend_chevrons_never_move_with_the_gauge() {
-        let empty = glyph_coverage(GLYPH_PX, 0.0);
-        let full = glyph_coverage(GLYPH_PX, 1.0);
+        let empty = glyph_coverage(0.0);
+        let full = glyph_coverage(1.0);
         assert_eq!(
             empty.spend, full.spend,
             "spend is rising, not a gauge: its two chevrons are identical at either extreme"
@@ -1853,15 +1842,15 @@ mod tests {
         let lit = |cov: &GlyphCoverage| cov.limit_fill.iter().filter(|&&a| a > 32).count();
         let counts: Vec<usize> = [0.0, 0.25, 0.5, 0.75, 1.0]
             .iter()
-            .map(|&f| lit(&glyph_coverage(GLYPH_PX, f)))
+            .map(|&f| lit(&glyph_coverage(f)))
             .collect();
         assert!(
             counts.windows(2).all(|pair| pair[1] > pair[0]),
             "the bright pass must grow monotonically with used_fraction, got {counts:?}"
         );
 
-        let empty = glyph_coverage(GLYPH_PX, 0.0);
-        let full = glyph_coverage(GLYPH_PX, 1.0);
+        let empty = glyph_coverage(0.0);
+        let full = glyph_coverage(1.0);
         assert!(
             counts[0] > 0,
             "at 0% the chevron's own vertex is still the bright point"
@@ -1885,118 +1874,96 @@ mod tests {
 
     fn highest_lit_row(layer: &[u8]) -> u32 {
         (0..GLYPH_PX)
-            .find(|&y| (0..GLYPH_PX).any(|x| layer[(y * GLYPH_PX + x) as usize] > 32))
+            .find(|&y| (0..GLYPH_W_PX).any(|x| layer[(y * GLYPH_W_PX + x) as usize] > 32))
             .unwrap_or(GLYPH_PX)
     }
 
     fn lowest_lit_row(layer: &[u8]) -> u32 {
         (0..GLYPH_PX)
             .rev()
-            .find(|&y| (0..GLYPH_PX).any(|x| layer[(y * GLYPH_PX + x) as usize] > 32))
+            .find(|&y| (0..GLYPH_W_PX).any(|x| layer[(y * GLYPH_W_PX + x) as usize] > 32))
             .unwrap_or(GLYPH_PX)
     }
 
     #[test]
     fn the_gauge_sits_entirely_above_the_spend_chevrons() {
-        let cov = glyph_coverage(GLYPH_PX, 1.0);
+        let cov = glyph_coverage(1.0);
         assert!(
             lowest_lit_row(&cov.limit_fill) < highest_lit_row(&cov.spend),
             "the limit presses down from above; it must never overlap the spend chevrons"
         );
     }
 
-    #[test]
-    fn glyph_ink_bounding_box_is_in_the_target_band() {
-        let cov = glyph_coverage(GLYPH_PX, 1.0);
-        let ink = ink_pixels(&cov);
-        let mut min_x = GLYPH_PX;
-        let mut max_x = 0i64;
-        let mut min_y = GLYPH_PX;
-        let mut max_y = 0i64;
+    /// The mark's own drawn bounding box, in this buffer's pixels.
+    fn ink_box(cov: &GlyphCoverage) -> (u32, u32, u32, u32) {
+        let ink = ink_pixels(cov);
+        let (mut min_x, mut max_x, mut min_y, mut max_y) = (GLYPH_W_PX, 0, GLYPH_PX, 0);
         for y in 0..GLYPH_PX {
-            for x in 0..GLYPH_PX {
-                if ink[(y * GLYPH_PX + x) as usize] > 32 {
+            for x in 0..GLYPH_W_PX {
+                if ink[(y * GLYPH_W_PX + x) as usize] > 32 {
                     min_x = min_x.min(x);
-                    max_x = max_x.max(x as i64);
+                    max_x = max_x.max(x);
                     min_y = min_y.min(y);
-                    max_y = max_y.max(y as i64);
+                    max_y = max_y.max(y);
                 }
             }
         }
-        let width = max_x - min_x as i64 + 1;
-        let height = max_y - min_y as i64 + 1;
-        // The mark is tall and narrow, its own 12.6x24.1 grid box: the
-        // target is set on the height, and the width follows from it.
+        (min_x, min_y, max_x + 1 - min_x, max_y + 1 - min_y)
+    }
+
+    #[test]
+    fn the_mark_is_drawn_at_the_target_size_and_its_own_aspect() {
+        let (_, _, width, height) = ink_box(&glyph_coverage(1.0));
+        // Both are read off the constants rather than written out, so
+        // retuning the target size cannot leave this asserting the old
+        // one; only the mark's own proportions are fixed here.
         assert!(
-            (28..=32).contains(&height),
-            "ink height {height}px should be roughly 30px (15pt @2x)"
+            (height as f64 - GLYPH_INK_HEIGHT_PX).abs() <= 1.0,
+            "ink height {height}px should be TARGET_INK_HEIGHT_CSS_PX at this buffer's scale ({GLYPH_INK_HEIGHT_PX}px)"
         );
         assert!(
-            (14..=18).contains(&width),
-            "ink width {width}px should follow the mark's own aspect, roughly 16px"
+            (width as f64 - GLYPH_INK_WIDTH_PX).abs() <= 1.0,
+            "ink width {width}px should follow the mark's own 12.6-by-24.1 aspect ({GLYPH_INK_WIDTH_PX}px)"
+        );
+    }
+
+    /// The complaint this replaced: the mark stood in a square canvas
+    /// nearly twice its own width, so it read as a small icon inside an
+    /// oversized frame next to its neighbours in the menu bar.
+    #[test]
+    fn the_glyph_canvas_is_the_marks_own_width_and_not_a_square() {
+        let (min_x, _, width, _) = ink_box(&glyph_coverage(1.0));
+        let air_each_side = (GLYPH_W_PX - width) as f64 / 2.0;
+        assert!(
+            air_each_side <= GLYPH_BLEED_PX as f64 + 1.0,
+            "the canvas leaves {air_each_side}px of air either side of a {width}px mark; only the antialiased edge earns any"
+        );
+        assert!(
+            min_x >= 1 && min_x + width < GLYPH_W_PX,
+            "the mark's antialiased edge must not be clipped by its own canvas"
         );
     }
 
     #[test]
-    fn render_with_no_segments_is_the_glyph_square_plus_its_side_padding() {
-        let (buf, w, h) = render(&[], false, 0, false);
-        assert_eq!((w, h), (SIDE_PAD_PX * 2 + GLYPH_PX, GLYPH_PX));
+    fn render_with_no_segments_is_the_glyph_plus_its_side_padding() {
+        let (buf, w, h) = render(&[], 0, false);
+        assert_eq!((w, h), (SIDE_PAD_PX * 2 + GLYPH_W_PX, GLYPH_PX));
         assert_eq!(buf.len(), (w * h * 4) as usize);
     }
 
     #[test]
-    fn click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned() {
-        let segs = [
-            chip("FAB"),
-            fig("67%", StatusItemColor::Neutral),
-            fig("96%", StatusItemColor::Red),
-        ];
-        let unhighlighted = render(&segs, false, 96, false);
-        let highlighted = render(&segs, true, 96, false);
-        assert_eq!(
-            unhighlighted.1, highlighted.1,
-            "the image width driving the status item's length must not change when the panel-open pill is drawn"
-        );
-        assert_eq!(unhighlighted.2, highlighted.2);
-    }
-
-    #[test]
     fn icon_fill_percent_never_changes_the_bare_glyph_width() {
-        assert_eq!(
-            render(&[], false, 0, false).1,
-            render(&[], false, 100, false).1
-        );
-    }
-
-    #[test]
-    fn the_highlight_reaches_into_the_side_padding_where_the_glyph_never_draws() {
-        let (buf, w, h) = render(&[], true, 0, false);
-        let mid_row = h / 2;
-        assert!(
-            alpha_at(&buf, w, 2, mid_row) > 0,
-            "highlight must cover the left padding"
-        );
-        assert!(
-            alpha_at(&buf, w, w - 3, mid_row) > 0,
-            "highlight must cover the right padding"
-        );
-        let (bare, _, _) = render(&[], false, 0, false);
-        assert_eq!(
-            alpha_at(&bare, w, 2, mid_row),
-            0,
-            "unhighlighted padding stays fully transparent"
-        );
+        assert_eq!(render(&[], 0, false).1, render(&[], 100, false).1);
     }
 
     #[test]
     fn render_grows_width_per_segment_and_never_touches_height() {
-        let one = render(&[fig("2%", StatusItemColor::Neutral)], false, 0, false);
+        let one = render(&[fig("2%", StatusItemColor::Neutral)], 0, false);
         let two = render(
             &[
                 fig("2%", StatusItemColor::Neutral),
                 fig("78%", StatusItemColor::Amber),
             ],
-            false,
             0,
             false,
         );
@@ -2011,9 +1978,9 @@ mod tests {
 
     #[test]
     fn a_trailing_figures_width_now_tracks_its_own_digit_count() {
-        let one_digit = render(&[fig("9%", StatusItemColor::Neutral)], false, 0, false);
-        let two_digit = render(&[fig("42%", StatusItemColor::Neutral)], false, 0, false);
-        let three_digit = render(&[fig("100%", StatusItemColor::Neutral)], false, 0, false);
+        let one_digit = render(&[fig("9%", StatusItemColor::Neutral)], 0, false);
+        let two_digit = render(&[fig("42%", StatusItemColor::Neutral)], 0, false);
+        let three_digit = render(&[fig("100%", StatusItemColor::Neutral)], 0, false);
         assert!(
             one_digit.1 < two_digit.1,
             "a single (and so trailing) segment's own wider text should now widen the image"
@@ -2031,7 +1998,6 @@ mod tests {
                 fig("42%", StatusItemColor::Neutral),
                 fig("50%", StatusItemColor::Neutral),
             ],
-            false,
             0,
             false,
         );
@@ -2040,7 +2006,6 @@ mod tests {
                 fig("77%", StatusItemColor::Neutral),
                 fig("50%", StatusItemColor::Neutral),
             ],
-            false,
             0,
             false,
         );
@@ -2063,7 +2028,6 @@ mod tests {
                 fig("9%", StatusItemColor::Neutral),
                 fig("50%", StatusItemColor::Neutral),
             ],
-            false,
             0,
             false,
         );
@@ -2072,7 +2036,6 @@ mod tests {
                 fig("100%", StatusItemColor::Neutral),
                 fig("50%", StatusItemColor::Neutral),
             ],
-            false,
             0,
             false,
         );
@@ -2085,25 +2048,8 @@ mod tests {
     }
 
     #[test]
-    fn click_highlight_and_panel_open_share_one_frame_width_even_as_the_trailing_digit_count_varies()
-     {
-        for text in ["0%", "9%", "42%", "100%"] {
-            let segs = [
-                fig("51%", StatusItemColor::Neutral),
-                fig(text, StatusItemColor::Neutral),
-            ];
-            let unhighlighted = render(&segs, false, 50, false);
-            let highlighted = render(&segs, true, 50, false);
-            assert_eq!(
-                unhighlighted.1, highlighted.1,
-                "trailing text {text:?}: image width must not depend on `highlighted`"
-            );
-        }
-    }
-
-    #[test]
     fn a_digit_and_percent_segment_renders_some_exact_colored_pixels() {
-        let (buf, w, h) = render(&[fig("78%", StatusItemColor::Red)], false, 0, false);
+        let (buf, w, h) = render(&[fig("78%", StatusItemColor::Red)], 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .as_chunks::<4>()
@@ -2118,7 +2064,7 @@ mod tests {
 
     #[test]
     fn a_broken_mark_renders_some_red_pixels() {
-        let (buf, w, h) = render(&[fig("!", StatusItemColor::Red)], false, 0, false);
+        let (buf, w, h) = render(&[fig("!", StatusItemColor::Red)], 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .as_chunks::<4>()
@@ -2173,41 +2119,38 @@ mod tests {
         let _ = used_fallback_font();
     }
 
+    /// Nothing is painted but ink: the panel-open frame is AppKit's own
+    /// now, and a pill drawn in here would sit inside it as a second one.
     #[test]
-    fn highlighted_bare_glyph_paints_translucent_pixels_behind_the_ink() {
-        let (buf, w, h) = render(&[], true, 0, false);
-        let edge_alpha = alpha_at(&buf, w, 2, h / 2);
-        assert!(
-            edge_alpha > 0,
-            "expected the highlight to paint near the canvas edge, got alpha {edge_alpha}"
-        );
-        assert!(
-            edge_alpha < 255,
-            "highlight should be translucent, got fully opaque alpha {edge_alpha}"
-        );
-    }
-
-    #[test]
-    fn unhighlighted_bare_glyph_leaves_the_corner_fully_transparent() {
-        let (buf, _, _) = render(&[], false, 0, false);
+    fn the_buffer_carries_no_background_of_its_own() {
+        let (buf, w, h) = render(&[fig("78%", StatusItemColor::Red)], 0, false);
+        assert_eq!(buf[3], 0, "the corner must stay fully transparent");
+        let mid = h / 2;
         assert_eq!(
-            buf[3], 0,
-            "no highlight requested, corner should stay fully transparent"
+            alpha_at(&buf, w, 1, mid),
+            0,
+            "the side padding is air, not a drawn frame"
         );
+        assert_eq!(alpha_at(&buf, w, w - 2, mid), 0);
     }
 
+    /// `blend_pixel`'s multi-layer path, which the panel-open pill used
+    /// to be the only caller of: the gauge's bright pass composites over
+    /// the track's own translucent pixels.
     #[test]
-    fn highlighted_digits_still_render_their_own_color_on_top() {
-        let (buf, w, h) = render(&[fig("78%", StatusItemColor::Red)], true, 0, false);
-        let red = StatusItemColor::Red.rgba(true);
-        let found = buf
+    fn the_gauges_bright_pass_composites_over_the_track_beneath_it() {
+        let (buf, w, _) = render(&[], 100, true);
+        let (lr, lg, lb) = limit_rgb(true);
+        let full = buf
             .as_chunks::<4>()
             .0
             .iter()
-            .any(|px| (px[0], px[1], px[2], px[3]) == red);
+            .filter(|px| px[3] == 0xff)
+            .any(|px| (px[0], px[1], px[2]) == (lr, lg, lb));
         assert!(
-            found,
-            "expected an unmodified red digit pixel somewhere in a {w}x{h} highlighted buffer"
+            full,
+            "a fully-filled chevron must reach the limit colour at full opacity in a {w}px buffer, \
+             not a blend darkened by its own track"
         );
     }
 
@@ -2218,7 +2161,6 @@ mod tests {
                 fig("51%", StatusItemColor::Neutral),
                 fig("0%", StatusItemColor::Neutral),
             ],
-            false,
             0,
             false,
         );
@@ -2239,20 +2181,19 @@ mod tests {
 
     #[test]
     fn the_glyphs_own_ink_is_unaffected_by_whether_items_follow_it() {
-        let bare = render(&[], false, 50, false);
+        let bare = render(&[], 50, false);
         let with_items = render(
             &[
                 chip("FAB"),
                 fig("67%", StatusItemColor::Neutral),
                 fig("96%", StatusItemColor::Red),
             ],
-            false,
             50,
             false,
         );
         let glyph_region = |buf: &[u8], w: u32| -> Vec<u8> {
             (0..GLYPH_PX)
-                .flat_map(|y| (0..GLYPH_PX).map(move |x| (y, x)))
+                .flat_map(|y| (0..GLYPH_W_PX).map(move |x| (y, x)))
                 .map(|(y, x)| alpha_at(buf, w, SIDE_PAD_PX + x, y))
                 .collect()
         };

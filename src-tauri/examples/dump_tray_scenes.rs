@@ -63,7 +63,7 @@ fn main() {
     ];
 
     for (name, segments) in scenes {
-        let (rgba, w, h) = render(&segments, false, 55, dark);
+        let (rgba, w, h) = render(&segments, 55, dark);
         let path = format!("{out}/{name}.rgba");
         std::fs::write(&path, &rgba).expect("write the bitmap");
         println!("{name} {w}x{h} -> {path}");

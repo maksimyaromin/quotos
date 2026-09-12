@@ -1,6 +1,6 @@
 # Status item rendering
 
-<img src="images/menu-bar.png" width="360" alt="The composited status item: the capacity glyph, an opened group's chip and its two figures, a rolled-up group's chip on its own, and one standalone pin's figure">
+<img src="images/menu-bar.png" width="353" alt="The composited status item: the capacity glyph, an opened group's chip and its two figures, a rolled-up group's chip on its own, and one standalone pin's figure">
 
 `status_item_render.rs` composites the status item's glyph and colored
 percentage digits into a raw RGBA buffer. `tray-icon` 0.24.2's macOS
@@ -18,17 +18,20 @@ menu bar. Digits render as real system text through Core Text; see
 ## Layout padding
 
 Horizontal air on each side of the glyph and digits, inside the
-composited image, is not optional. The "panel open" highlight paints
-across the whole buffer, so without padding it hugs the ink and reads
-as a box drawn around the glyph rather than a pressed menu bar button,
-the way macOS fills a status item's own width for its own open items.
-The padding also applies unconditionally, highlighted or not, so the
-glyph's position inside the item cannot shift when the highlight
-toggles; a shift there would move the beak too.
+composited image, is not optional: `SIDE_PAD_PX` is what keeps the mark
+and the trailing figure off the item's own edges, and so off the icons
+either side of it in the menu bar.
+
+Nothing else is painted in this buffer. The frame behind an open panel
+is AppKit's own, which it draws around the item rather than inside the
+image; see "The panel-open highlight" in
+[platform-constraints.md](platform-constraints.md). A pill drawn in here
+would sit inside that frame as a second, smaller one.
 
 `geometry.rs`'s `glyph_center_offset_from_item_left_points` reads
-`GLYPH_LEFT_INSET_POINTS` rather than assuming the glyph sits at the
-image's leftmost 18pt.
+`GLYPH_LEFT_INSET_POINTS` and `GLYPH_WIDTH_POINTS` rather than
+assuming either, and the beak it derives follows the glyph's own box
+whatever that box is resized to.
 
 ## The capacity glyph
 
@@ -41,8 +44,30 @@ be too small or too soft, and the target ink size,
 `TARGET_INK_HEIGHT_CSS_PX`, is a direct, tunable parameter instead of
 whatever a fixed asset happened to contain. The mark's own ink box is
 tall and narrow, 12.6 by 24.1 units, so the target is set on its height
-and the width follows; `INK_CENTER_Y_SVG` is what centres it in the
-square canvas, since the mark's ink is not centred in its own grid.
+and the width follows; `INK_CENTER_Y_SVG` is what centres it
+vertically, since the mark's ink is not centred in its own grid.
+
+The canvas is that ink box and not a square. `GLYPH_W_PX` is the mark's
+own drawn width plus `GLYPH_BLEED_PX` of air on either side for the
+antialiased edge, where a square 18pt canvas — the shape the round
+capacity ring this replaced actually filled — stood a 8pt-wide mark in
+nearly twice its own width of dead air, on top of `SIDE_PAD_PX`. Next
+to Dropbox, 1Password, the battery and the wifi in a real menu bar,
+that read as a small icon inside an oversized frame, which is the
+complaint `the_glyph_canvas_is_the_marks_own_width_and_not_a_square`
+now holds the line on. `TARGET_INK_HEIGHT_CSS_PX` is set against those
+same neighbours: their own ink measures a little under half the bar's
+height, and the mark, being the narrow one, sits at the top of that
+band rather than the middle of it.
+
+`glyph_coverage`'s own `AA_HALF_WIDTH_PX` is half a pixel, the width a
+box filter covers, not the three-quarters it started at. At this size
+the difference is not softness but geometry: three quarters of a pixel
+of spill on either side of a stroke closes the 1.4-unit gap the mark
+leaves between its peach chevron and the grey one under it, and the
+three chevrons run together. Rasterising the source SVG at the size the
+status item actually draws at is how that was measured, and is how a
+change here gets checked against the mark rather than against taste.
 
 The mark says two things at once, and only one of them is a gauge. The
 two grey chevrons pointing up are spend rising: `SPEND_CHEVRONS`, drawn
@@ -51,7 +76,11 @@ one peach chevron pointing down is the limit pressing back, and it is
 the gauge. It is drawn twice, the way the ring it replaced was: once as
 a track at `LIMIT_TRACK_OPACITY`, at full extent, so the mark always
 reads as three chevrons even at 0%, and once fully saturated over the
-part `used_fraction` has reached.
+part `used_fraction` has reached. That opacity is set against this
+image's own ground rather than against a white page: the menu bar is
+dark and translucent, and a track much fainter than this one does not
+read as a faded chevron there, it reads as a missing one, which takes a
+third of the mark's height with it.
 
 That bright pass runs from the chevron's own vertex, the bottom of its
 wedge, up toward its two arm-tips, so at 0% only the vertex is lit and
@@ -93,6 +122,21 @@ Nothing is ever drawn *between* two items. An earlier version parted
 clusters with a vertical hairline; adjacent items are parted by spacing
 alone, and the `no_dividers` tests hold the gap between every pair of
 items empty so a divider cannot come back by accident.
+
+### Crossing the IPC boundary
+
+`shell.rs`'s `StatusItemSegmentDto` is the Rust side of that list, and
+every field in it answers to the camelCase name `types/entities.ts`
+sends, `groupId` included. Serde spells that with two attributes, not
+one: `rename_all` on an enum renames its *variants*, and
+`rename_all_fields` is what reaches the fields inside them. With only
+the first, a chip's `group_id` silently stops matching, `segments`
+fails to deserialize as a whole, and `set_status_item_state` is never
+entered — so the menu bar freezes on whatever it last drew, from the
+moment a person makes their first group, with nothing on screen to say
+why. `shell.rs`'s own tests deserialize the frontend's exact payload
+rather than one written in the Rust spelling, which is the only version
+of that test that would have caught it.
 
 ## Spacing the items evenly
 
@@ -257,15 +301,15 @@ over the menu bar's own ground, so it cannot fall behind the code.
 
 ## Compositing
 
-The buffer can carry two translucent layers, the "panel open" highlight
-and then the glyph or digits drawn over it, so a plain overwrite would
-discard whichever layer drew second wherever they overlap, losing the
-highlight everywhere the glyph or a digit covers it. `blend_pixel` does
+The buffer carries translucent layers over each other — the limit
+chevron's track, and then its own bright fill over that — so a plain
+overwrite would discard whichever drew second wherever they overlap,
+and the filled part of the gauge would come out darkened by the track
+beneath it rather than reaching the limit colour. `blend_pixel` does
 standard src-over alpha compositing instead. A fully-opaque source or a
 fully-transparent destination pixel reduces to a plain overwrite, so a
-single-layer caller, such as glyph ink or digit text onto a blank
-buffer, is unaffected; only a highlighted, multi-layer case exercises
-the blend math.
+single-layer caller, such as a chip's frame or digit text onto a blank
+buffer, is unaffected.
 
 ## Text rendering
 

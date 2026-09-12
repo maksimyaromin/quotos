@@ -590,11 +590,20 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
   )
 
   useEffect(() => {
-    renderStatusItem(
-      statusItemSegments,
-      iconFillPercent,
-      buildStatusItemTooltip(trackedSubscriptions, pinGroups),
-    )
+    // A rejected repaint leaves the menu bar frozen on whatever it
+    // last drew, with nothing on screen to say so; the preview logs
+    // its own failures for the same reason.
+    void (async () => {
+      try {
+        await renderStatusItem(
+          statusItemSegments,
+          iconFillPercent,
+          buildStatusItemTooltip(trackedSubscriptions, pinGroups),
+        )
+      } catch (error) {
+        console.error('Quotos: repainting the menu bar failed', error)
+      }
+    })()
   }, [statusItemSegments, iconFillPercent, trackedSubscriptions, pinGroups])
 
   const displayLabelFor = useCallback(
