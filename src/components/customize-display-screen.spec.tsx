@@ -1,5 +1,5 @@
 import type { DndContextProps, DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { type DragItem, groupDragId, pinDragId, UNGROUPED_DROP_ID } from '@/lib/customize-drag'
@@ -24,7 +24,9 @@ vi.mock('@dnd-kit/core', async (importOriginal) => {
       dnd.props = props
       return props.children
     },
-    DragOverlay: ({ children }: { children?: ReactNode }) => children ?? null,
+    DragOverlay: ({ children }: { children?: ReactNode }) => (
+      <div data-testid="drag-overlay">{children}</div>
+    ),
   }
 })
 
@@ -99,10 +101,37 @@ function drag(active: Target, over: Target | null) {
   act(() => context().onDragEnd?.({ active, over } as unknown as DragEndEvent))
 }
 
+// The row in the list, never the copy of it riding under the pointer,
+// and never the space being held open for it.
 function rowFor(label: string): HTMLElement {
-  const row = screen.getByText(label).parentElement
-  if (row === null) throw new Error(`no row around ${label}`)
+  const row = screen
+    .getAllByText(label)
+    .find(
+      (element) =>
+        element.closest('[data-testid="drag-overlay"]') === null &&
+        element.closest('[data-slot="true"]') === null,
+    )?.parentElement
+  if (row === null || row === undefined) throw new Error(`no row around ${label}`)
   return row
+}
+
+// True once the row has been taken out of the list and is riding under
+// the pointer instead.
+function carried(label: string): boolean {
+  return rowFor(label).parentElement?.getAttribute('data-carried') === 'true'
+}
+
+// Everything the list holds inside one group's box, in order: its
+// members by name, and the space being held open written as a slot.
+function rowsIn(groupName: string): string[] {
+  const box = screen.getByRole('group', { name: groupName })
+  return Array.from(box.querySelectorAll('[data-slot="true"], [aria-label^="Reorder "]'))
+    .map((element) =>
+      element.getAttribute('data-slot') === 'true'
+        ? 'a space for it'
+        : (element.getAttribute('aria-label') ?? '').replace('Reorder ', ''),
+    )
+    .filter((label) => label !== groupName)
 }
 
 describe('dragging a pin onto another', () => {
@@ -243,49 +272,56 @@ describe('dragging a group', () => {
 })
 
 describe('where a drop will land is shown while the drag is still in the air', () => {
-  test("joining a group lights that group's box and says so in its own name", () => {
+  test('joining a group opens a space for the row inside that box', () => {
     setup()
+    expect(rowsIn('Money')).toEqual(['Work — Weekly'])
 
     hover(pin('a::session'), group('g1'))
 
-    expect(screen.getByText('Money').closest('[data-joining="true"]')).toBeTruthy()
-    expect(screen.getByText('Drop to add to Money')).toBeTruthy()
+    expect(rowsIn('Money')).toEqual(['Work — Weekly', 'a space for it'])
+    expect(screen.getByRole('group', { name: 'Money' }).getAttribute('data-joining')).toBe('true')
   })
 
-  test('landing ahead of a member draws the line above that member, not the box', () => {
+  test('landing ahead of a member opens it ahead of that member, not at the end', () => {
     setup()
 
     hover(pin('a::session'), pin('a::weekly', 'g1'))
 
-    expect(rowFor('Work — Weekly').getAttribute('data-insert-before')).toBe('true')
-    expect(screen.queryByText('Drop to add to Money')).toBeNull()
+    expect(rowsIn('Money')).toEqual(['a space for it', 'Work — Weekly'])
   })
 
-  test('pairing two loose pins marks the one being dropped onto', () => {
+  test('the space holds the very row being carried, named', () => {
     setup()
 
-    hover(pin('b::session'), pin('a::session'))
+    hover(pin('a::session'), group('g1'))
 
-    expect(rowFor('Work — Session').getAttribute('data-paired')).toBe('true')
-    expect(screen.getByText('Drop to group these two')).toBeTruthy()
+    const slot = screen.getByRole('group', { name: 'Money' }).querySelector('[data-slot="true"]')
+    expect(slot?.textContent).toContain('Work — Session')
+    expect(slot?.textContent).toContain('99%')
   })
 
-  test('the way out of a group lights up only once it is what a release would do', () => {
+  test('the list closes up behind the row that was taken out of it', () => {
+    setup()
+    expect(carried('Work — Session')).toBe(false)
+
+    hover(pin('a::session'), group('g1'))
+
+    expect(carried('Work — Session')).toBe(true)
+  })
+
+  test('leaving a group opens the space among the loose rows instead', () => {
     setup()
 
-    hover(pin('a::weekly', 'g1'), null)
-    expect(screen.getByText('Drop here to leave the group').getAttribute('data-drop')).toBeNull()
+    hover(pin('a::weekly', 'g1'), LEAVE_ZONE)
 
-    act(() =>
-      context().onDragOver?.({
-        active: pin('a::weekly', 'g1'),
-        over: LEAVE_ZONE,
-      } as unknown as DragOverEvent),
-    )
-    expect(screen.getByText('Drop here to leave the group').getAttribute('data-drop')).toBe('true')
+    expect(rowsIn('Money')).toEqual(['Work — Weekly'])
+    expect(carried('Work — Weekly')).toBe(true)
+    const slot = document.querySelector('[data-slot="true"]')
+    expect(slot?.closest('[role="group"]')).toBeNull()
+    expect(slot?.textContent).toContain('Work — Weekly')
   })
 
-  test('reordering groups draws the line above the group being landed on', () => {
+  test('reordering groups opens the space above the box it would land in front of', () => {
     setup({
       groups: [
         { id: 'g1', name: 'Money', color: 'blue', members: [] },
@@ -295,18 +331,55 @@ describe('where a drop will land is shown while the drag is still in the air', (
 
     hover(group('g2'), group('g1'))
 
-    expect(screen.getByText('Money').closest('[data-insert-before="true"]')).toBeTruthy()
+    const slot = document.querySelector('[data-slot="true"]')
+    expect(slot?.textContent).toContain('Current limit')
+    const money = screen.getByRole('group', { name: 'Money' })
+    expect(
+      (slot?.compareDocumentPosition(money) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
-  test('an abandoned drag leaves nothing lit up behind it', () => {
+  test('pairing two loose pins marks the one being dropped onto, since no box exists yet', () => {
+    setup()
+
+    hover(pin('b::session'), pin('a::session'))
+
+    expect(rowFor('Work — Session').getAttribute('data-paired')).toBe('true')
+    expect(screen.getByText('Drop to group these two')).toBeTruthy()
+    expect(document.querySelector('[data-slot="true"]')).toBeNull()
+  })
+
+  test('the way out of a group lights up only once it is what a release would do', () => {
+    setup()
+
+    hover(pin('a::weekly', 'g1'), null)
+    expect(screen.getByText('Drop here to leave the group').closest('[data-drop]')).toBeNull()
+
+    act(() =>
+      context().onDragOver?.({
+        active: pin('a::weekly', 'g1'),
+        over: LEAVE_ZONE,
+      } as unknown as DragOverEvent),
+    )
+    expect(
+      screen.getByText('Drop here to leave the group').closest('[data-drop="true"]'),
+    ).toBeTruthy()
+  })
+
+  // The space closes on its way out rather than vanishing, so it is
+  // still on screen for as long as that takes.
+  test('an abandoned drag closes every space it had opened', async () => {
     setup()
 
     hover(pin('a::session'), group('g1'))
     act(() => context().onDragCancel?.({} as unknown as DragEndEvent))
 
-    expect(screen.queryByText('Drop to add to Money')).toBeNull()
-    expect(screen.queryByText('Drop here to leave the group')).toBeNull()
+    expect(carried('Work — Session')).toBe(false)
+    expect(screen.getByRole('group', { name: 'Money' }).getAttribute('data-joining')).toBeNull()
+    expect(screen.queryByText('Drop to group these two')).toBeNull()
     expect(HANDLERS.onAddToGroup).not.toHaveBeenCalled()
+    await waitFor(() => expect(document.querySelector('[data-slot="true"]')).toBeNull())
+    expect(rowsIn('Money')).toEqual(['Work — Weekly'])
   })
 })
 

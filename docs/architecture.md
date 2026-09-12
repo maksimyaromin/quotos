@@ -62,6 +62,7 @@ established, tool-recognized spelling this repository already keeps for
 | `lib/pin-groups.ts` | The composite member key, a group's derived slug, and how pinned windows resolve into groups and standalone pins. |
 | `lib/customize-drag.ts` | What a drag on the customize screen means: the library reports what the pointer is over, this says what dropping there would do. |
 | `components/customize-display-screen.tsx` | The screen groups are arranged on, built on `@dnd-kit`. See [customize-display.md](customize-display.md). |
+| `components/drag-motion.ts` | That screen's whole motion language: two springs, and what Reduce Motion answers instead. |
 | `lib/row-presentation.ts` | What a row shows besides its numbers: the badge, the one action offered, and the footer note. |
 | `lib/status-item-segments.ts` | Turns tracked subscriptions and pin groups into the status item's digit segments, tooltip, and worst-active-limit percentage. |
 | `types/entities.ts` | The provider-agnostic entities. Nothing above its own dividing line, and nothing that renders UI, references a specific provider by name. |

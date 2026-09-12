@@ -8,7 +8,6 @@ import {
   KeyboardSensor,
   PointerSensor,
   pointerWithin,
-  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
@@ -20,35 +19,30 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { QuotaGlyph } from '@/design-system'
 import {
   asDragItem,
   asDropZone,
+  type CustomizeGroup,
+  type CustomizePin,
   type DragItem,
   type DropAction,
   groupDragId,
+  type LandingSlot,
+  landingSlot,
   pinDragId,
   resolveDrop,
+  sameDrop,
   UNGROUPED_DROP_ID,
 } from '@/lib/customize-drag'
-import type { GroupColor, StatusItemSegment } from '@/types/entities'
+import type { StatusItemSegment } from '@/types/entities'
+import { dropSettle, grabTransition, pickedUp, reflowTransition } from './drag-motion'
 import { DragHandleGlyph, TrashIcon, UngroupIcon } from './icons'
 import styles from './customize-display-screen.module.css'
 
-export interface CustomizePin {
-  key: string
-  label: string
-  used: number | null
-}
-
-export interface CustomizeGroup {
-  id: string
-  name: string
-  color: GroupColor
-  members: CustomizePin[]
-}
+export type { CustomizeGroup, CustomizePin }
 
 export interface CustomizeDisplayScreenProps {
   // The real segment list the menu bar is drawn from, so the preview
@@ -70,91 +64,140 @@ function figureLabel(used: number | null): string {
   return typeof used === 'number' ? `${used}%` : '—'
 }
 
-// The pointer decides: whatever is under it is what a drop lands on,
-// and the innermost of those wins, so a member row is never shadowed by
-// the group box around it. Only a drag that has left every target at
-// once falls back to the boxes it overlaps.
-const collisionDetection: CollisionDetection = (args) => {
-  const underPointer = pointerWithin(args)
-  return underPointer.length > 0 ? underPointer : rectIntersection(args)
-}
+// A group's slot sits before one of its members, or, standing for no
+// member at all, after the last of them.
+const END_OF_GROUP = Symbol('end of group')
+
+// The pointer decides, and only the pointer: whatever is under it is
+// what a drop lands on, innermost first, so a member row is never
+// shadowed by the group box around it. A drag that is over nothing is
+// over nothing, rather than falling back to whichever box it happens to
+// overlap, which is how a drop target stops being something anyone can
+// aim at.
+const collisionDetection: CollisionDetection = pointerWithin
 
 interface RowProps {
   pin: CustomizePin
   groupId: string | null
   dropHint: string | null
-  insertBefore: boolean
+  carried: boolean
+  reduced: boolean
 }
 
-function PinRow({ pin, groupId, dropHint, insertBefore }: RowProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+// The row closes up behind a drag that has taken it: what is under the
+// pointer is the row itself, so leaving a copy of it in the list would
+// be showing it twice.
+function PinRow({ pin, groupId, dropHint, carried, reduced }: RowProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef } = useSortable({
     id: pinDragId(pin.key),
     data: { kind: 'pin', key: pin.key, groupId } satisfies DragItem,
   })
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      data-dragging={isDragging ? 'true' : undefined}
-      data-insert-before={insertBefore ? 'true' : undefined}
-      data-paired={dropHint === null ? undefined : 'true'}
-      className={groupId === null ? styles.standaloneRow : styles.memberRow}
+      layout
+      initial={false}
+      animate={{ height: carried ? 0 : 'auto', opacity: carried ? 0 : 1 }}
+      transition={reflowTransition(reduced)}
+      data-carried={carried ? 'true' : undefined}
+      className={styles.rowShell}
     >
-      <button
-        type="button"
-        ref={setActivatorNodeRef}
-        aria-label={`Reorder ${pin.label}`}
-        className={styles.dragHandle}
-        {...attributes}
-        {...listeners}
+      <div
+        data-paired={dropHint === null ? undefined : 'true'}
+        className={groupId === null ? styles.standaloneRow : styles.memberRow}
       >
-        <DragHandleGlyph />
-      </button>
-      <span className={styles.pinLabel}>{pin.label}</span>
-      {dropHint === null ? null : <span className={styles.dropHint}>{dropHint}</span>}
-      <span className={styles.pinValue}>{figureLabel(pin.used)}</span>
-    </div>
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          aria-label={`Reorder ${pin.label}`}
+          className={styles.dragHandle}
+          {...attributes}
+          {...listeners}
+        >
+          <DragHandleGlyph />
+        </button>
+        <span className={styles.pinLabel}>{pin.label}</span>
+        {dropHint === null ? null : <span className={styles.dropHint}>{dropHint}</span>}
+        <span className={styles.pinValue}>{figureLabel(pin.used)}</span>
+      </div>
+    </motion.div>
   )
 }
 
-// What is under the pointer while a drag is on: the row itself would
-// have to stay in the list to leave a gap behind, so this stands in for
-// it, carrying the same three things the row it came from carries.
+// The space a release would put the carried row in, opened where it
+// would land and closed again the moment that changes. It draws the row
+// it is holding the place for, so the list already reads as it will.
+function LandingRow({
+  pin,
+  member,
+  reduced,
+}: {
+  pin: CustomizePin
+  member: boolean
+  reduced: boolean
+}) {
+  return (
+    <motion.div
+      aria-hidden="true"
+      layout
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={reflowTransition(reduced)}
+      className={styles.rowShell}
+    >
+      <div className={member ? styles.memberRow : styles.standaloneRow} data-slot="true">
+        <span className={styles.handleSpacer} />
+        <span className={styles.pinLabel}>{pin.label}</span>
+        <span className={styles.pinValue}>{figureLabel(pin.used)}</span>
+      </div>
+    </motion.div>
+  )
+}
+
+// What is under the pointer while a drag is on: the row it came from
+// stays in the list, holding the place it is about to land in, so this
+// stands in for it and carries the same three things it carries.
 function DraggedRow({
   label,
   trailing,
   color,
+  reduced,
 }: {
   label: string
   trailing: string
-  color?: GroupColor
+  color?: CustomizeGroup['color']
+  reduced: boolean
 }) {
   return (
-    <div className={styles.overlayRow}>
+    <motion.div
+      // A copy of a row that is still in the list: announcing it again
+      // would say everything twice, and the library narrates the drag
+      // itself through its own live region.
+      aria-hidden="true"
+      initial={{ scale: 1, rotate: 0 }}
+      animate={pickedUp(reduced)}
+      transition={grabTransition(reduced)}
+      className={styles.overlayRow}
+    >
       <DragHandleGlyph />
       {color === undefined ? null : <span className={styles.colorDot} data-color={color} />}
       <span className={styles.pinLabel}>{label}</span>
       <span className={styles.pinValue}>{trailing}</span>
-    </div>
+    </motion.div>
   )
 }
 
 interface GroupBoxProps {
   group: CustomizeGroup
   joining: boolean
-  insertBefore: boolean
-  insertMemberBefore: string | null
+  carried: boolean
+  slot: LandingSlot
+  carriedPin: CustomizePin | undefined
   renaming: boolean
   draft: string
+  reduced: boolean
   nameInputRef: React.RefObject<HTMLInputElement | null>
   onDraftChange: (value: string) => void
   onStartRename: () => void
@@ -167,10 +210,12 @@ interface GroupBoxProps {
 function GroupBox({
   group,
   joining,
-  insertBefore,
-  insertMemberBefore,
+  carried,
+  slot,
+  carriedPin,
   renaming,
   draft,
+  reduced,
   nameInputRef,
   onDraftChange,
   onStartRename,
@@ -179,26 +224,22 @@ function GroupBox({
   onUngroup,
   onDelete,
 }: GroupBoxProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef } = useSortable({
     id: groupDragId(group.id),
     data: { kind: 'group', groupId: group.id } satisfies DragItem,
   })
+  const slotInside =
+    slot.kind === 'inGroup' && slot.groupId === group.id ? (slot.beforeKey ?? END_OF_GROUP) : null
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      data-dragging={isDragging ? 'true' : undefined}
+      layout
+      transition={reflowTransition(reduced)}
+      role="group"
+      aria-label={group.name}
+      data-carried={carried ? 'true' : undefined}
       data-joining={joining ? 'true' : undefined}
-      data-insert-before={insertBefore ? 'true' : undefined}
       className={styles.groupBox}
     >
       <div className={styles.groupHeader}>
@@ -259,33 +300,72 @@ function GroupBox({
         items={group.members.map((member) => pinDragId(member.key))}
         strategy={verticalListSortingStrategy}
       >
-        {group.members.length === 0 ? (
+        {group.members.length === 0 && slotInside === null ? (
           <div className={styles.emptyGroup}>Drag a pin in here.</div>
-        ) : (
-          group.members.map((member) => (
+        ) : null}
+        <AnimatePresence initial={false}>
+          {group.members.flatMap((member) => [
+            slotInside === member.key && carriedPin !== undefined ? (
+              <LandingRow key="slot" pin={carriedPin} member reduced={reduced} />
+            ) : null,
             <PinRow
               key={member.key}
               pin={member}
               groupId={group.id}
               dropHint={null}
-              insertBefore={insertMemberBefore === member.key}
-            />
-          ))
-        )}
+              carried={carriedPin?.key === member.key}
+              reduced={reduced}
+            />,
+          ])}
+          {slotInside === END_OF_GROUP && carriedPin !== undefined ? (
+            <LandingRow key="slot" pin={carriedPin} member reduced={reduced} />
+          ) : null}
+        </AnimatePresence>
       </SortableContext>
-      {joining && insertMemberBefore === null ? (
-        <div className={styles.joinHint}>Drop to add to {group.name}</div>
-      ) : null}
-    </div>
+    </motion.div>
   )
 }
 
-function LeaveGroupZone({ active }: { active: boolean }) {
+// Offered only while a grouped member is in the air, and it arrives at
+// its full height at once: the drag library measures a target the
+// moment it appears, and a strip still growing would be measured as the
+// sliver it was. What animates is what nothing is measured from.
+function LeaveGroupZone({ active, reduced }: { active: boolean; reduced: boolean }) {
   const { setNodeRef } = useDroppable({ id: UNGROUPED_DROP_ID })
   return (
-    <div ref={setNodeRef} data-drop={active ? 'true' : undefined} className={styles.ungroupedZone}>
-      Drop here to leave the group
-    </div>
+    <motion.div
+      ref={setNodeRef}
+      initial={{ opacity: 0, y: 6, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.99 }}
+      transition={reflowTransition(reduced)}
+      data-offered="true"
+      data-drop={active ? 'true' : undefined}
+      className={styles.ungroupedZone}
+    >
+      <span className={styles.ungroupedZoneLabel}>Drop here to leave the group</span>
+    </motion.div>
+  )
+}
+
+// The space a dragged group would drop into, above the box it was
+// carried over.
+function GroupSlot({ name, reduced }: { name: string; reduced: boolean }) {
+  return (
+    <motion.div
+      aria-hidden="true"
+      layout
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={reflowTransition(reduced)}
+      className={styles.rowShell}
+    >
+      <div className={styles.standaloneRow} data-slot="true">
+        <span className={styles.handleSpacer} />
+        <span className={styles.pinLabel}>{name}</span>
+      </div>
+    </motion.div>
   )
 }
 
@@ -308,6 +388,7 @@ export function CustomizeDisplayScreen({
   const [draft, setDraft] = useState('')
   const nameInputRef = useRef<HTMLInputElement>(null)
   const seededDraftFor = useRef<string | null>(null)
+  const reduced = useReducedMotion() ?? false
 
   // A group opened for renaming seeds the field from its own name,
   // including one created a moment ago that has yet to be rendered.
@@ -379,12 +460,13 @@ export function CustomizeDisplayScreen({
     setAction({ kind: 'nothing' })
   }
 
-  // What the drop would do is also what it looks like it will do: every
-  // highlight below is read off the same answer the release acts on.
+  // What a release would do decides everything the screen shows about
+  // it: where the space for it opens, which box lights up, which row is
+  // marked. The release then carries out that same answer, so the two
+  // can never disagree.
+  const slot = landingSlot(action)
   const joiningGroupId = action.kind === 'joinGroup' ? action.groupId : null
-  const insertMemberBefore = action.kind === 'joinGroup' ? action.beforeKey : null
   const pairingWithKey = action.kind === 'groupTogether' ? action.keys[0] : null
-  const movingBeforeGroupId = action.kind === 'moveGroup' ? action.beforeGroupId : null
 
   const draggedPin =
     dragging?.kind === 'pin'
@@ -430,53 +512,77 @@ export function CustomizeDisplayScreen({
         collisionDetection={collisionDetection}
         modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
         onDragStart={handleDragStart}
-        onDragOver={(event) => setAction(actionFor(event))}
+        onDragOver={(event) => {
+          const next = actionFor(event)
+          setAction((current) => (sameDrop(current, next) ? current : next))
+        }}
         onDragEnd={handleDragEnd}
         onDragCancel={cancelDrag}
       >
         <SortableContext items={outerItems} strategy={verticalListSortingStrategy}>
-          {groups.map((group) => (
-            <GroupBox
-              key={group.id}
-              group={group}
-              joining={joiningGroupId === group.id}
-              insertBefore={movingBeforeGroupId === group.id}
-              insertMemberBefore={joiningGroupId === group.id ? insertMemberBefore : null}
-              renaming={renamingId === group.id}
-              draft={draft}
-              nameInputRef={nameInputRef}
-              onDraftChange={setDraft}
-              onStartRename={() => setRenamingId(group.id)}
-              onCommitRename={commitRename}
-              onCancelRename={() => setRenamingId(null)}
-              onUngroup={() => onUngroup(group.id)}
-              onDelete={() => onDeleteGroup(group.id)}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {groups.flatMap((group) => [
+              slot.kind === 'beforeGroup' &&
+              slot.groupId === group.id &&
+              draggedGroup !== undefined ? (
+                <GroupSlot key="group-slot" name={draggedGroup.name} reduced={reduced} />
+              ) : null,
+              <GroupBox
+                key={group.id}
+                group={group}
+                joining={joiningGroupId === group.id}
+                carried={draggedGroup?.id === group.id}
+                slot={slot}
+                carriedPin={draggedPin}
+                renaming={renamingId === group.id}
+                draft={draft}
+                reduced={reduced}
+                nameInputRef={nameInputRef}
+                onDraftChange={setDraft}
+                onStartRename={() => setRenamingId(group.id)}
+                onCommitRename={commitRename}
+                onCancelRename={() => setRenamingId(null)}
+                onUngroup={() => onUngroup(group.id)}
+                onDelete={() => onDeleteGroup(group.id)}
+              />,
+            ])}
 
-          {standalone.map((pin) => (
-            <PinRow
-              key={pin.key}
-              pin={pin}
-              groupId={null}
-              dropHint={pairingWithKey === pin.key ? 'Drop to group these two' : null}
-              insertBefore={false}
-            />
-          ))}
+            {standalone.map((pin) => (
+              <PinRow
+                key={pin.key}
+                pin={pin}
+                groupId={null}
+                dropHint={pairingWithKey === pin.key ? 'Drop to group these two' : null}
+                carried={draggedPin?.key === pin.key}
+                reduced={reduced}
+              />
+            ))}
+
+            {slot.kind === 'loose' && draggedPin !== undefined ? (
+              <LandingRow key="loose-slot" pin={draggedPin} member={false} reduced={reduced} />
+            ) : null}
+          </AnimatePresence>
         </SortableContext>
 
-        {dragging?.kind === 'pin' && dragging.groupId !== null ? (
-          <LeaveGroupZone active={action.kind === 'leaveGroup'} />
-        ) : null}
+        <AnimatePresence>
+          {dragging?.kind === 'pin' && dragging.groupId !== null ? (
+            <LeaveGroupZone active={action.kind === 'leaveGroup'} reduced={reduced} />
+          ) : null}
+        </AnimatePresence>
 
-        <DragOverlay>
+        <DragOverlay dropAnimation={dropSettle(reduced)}>
           {draggedPin !== undefined ? (
-            <DraggedRow label={draggedPin.label} trailing={figureLabel(draggedPin.used)} />
+            <DraggedRow
+              label={draggedPin.label}
+              trailing={figureLabel(draggedPin.used)}
+              reduced={reduced}
+            />
           ) : draggedGroup !== undefined ? (
             <DraggedRow
               label={draggedGroup.name}
               trailing={`${draggedGroup.members.length}`}
               color={draggedGroup.color}
+              reduced={reduced}
             />
           ) : null}
         </DragOverlay>

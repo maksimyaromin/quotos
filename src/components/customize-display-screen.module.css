@@ -1,4 +1,13 @@
 .screen {
+  /* Every row in the list, group header or member, puts its handle in
+     one column: the row's own left padding. A member is indented by
+     moving its content, never its handle. */
+  --handle-size: 20px;
+  --row-inset: var(--space-2);
+  --member-indent: var(--space-3);
+  --member-label-inset: calc(
+    var(--row-inset) + var(--handle-size) + var(--space-2) + var(--member-indent)
+  );
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
@@ -66,26 +75,36 @@
   color: var(--text-tertiary);
 }
 
-/* Every row and box that a drag can land on carries the same insertion
-   line, drawn above it, so where a drop will go reads the same
-   wherever the pointer is. */
-.groupBox,
-.memberRow,
-.standaloneRow {
-  position: relative;
+/* Every row sits in a shell of its own that carries no padding, so the
+   row can close up behind a drag, and the space a drop would fill can
+   open in front of it, by animating one height and nothing else. */
+.rowShell {
+  overflow: hidden;
 }
 
-.groupBox[data-insert-before="true"]::before,
-.memberRow[data-insert-before="true"]::before,
-.standaloneRow[data-insert-before="true"]::before {
-  content: "";
-  position: absolute;
-  left: var(--space-1);
-  right: var(--space-1);
-  top: -1px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--teal-bright);
+/* The space a release would fill, holding the row it is standing in
+   for so the list already reads the way it will. */
+[data-slot="true"] {
+  border-radius: var(--radius-md);
+  outline: 1.5px dashed var(--teal-bright);
+  outline-offset: -2px;
+  background: color-mix(in oklch, var(--teal) 12%, transparent);
+  color: var(--text-accent);
+}
+
+[data-slot="true"] .pinLabel,
+[data-slot="true"] .pinValue {
+  color: var(--text-accent);
+  opacity: 0.75;
+}
+
+.handleSpacer {
+  width: var(--handle-size);
+  flex: 0 0 auto;
+}
+
+.groupBox[data-carried="true"] {
+  opacity: 0.4;
 }
 
 .groupBox {
@@ -98,22 +117,14 @@
 
 .groupBox[data-joining="true"] {
   border-color: var(--teal-bright);
-  background: var(--bg-selected);
-}
-
-/* The row left behind stays in place as a faint outline of itself; the
-   overlay under the pointer is the one that reads as the real thing. */
-.groupBox[data-dragging="true"],
-.memberRow[data-dragging="true"],
-.standaloneRow[data-dragging="true"] {
-  opacity: 0.4;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--teal) 45%, transparent);
 }
 
 .groupHeader {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1-5) var(--space-2);
+  padding: var(--space-1-5) var(--row-inset);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--bg-elevated);
   color: var(--text-quaternary);
@@ -123,8 +134,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: var(--handle-size);
+  height: var(--handle-size);
   flex: 0 0 auto;
   padding: 0;
   border: 0;
@@ -282,15 +293,17 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1-5) var(--space-2);
+  padding: var(--space-1-5) var(--row-inset);
   color: var(--text-quaternary);
   transition:
     background-color var(--dur-fast) var(--ease-standard),
     border-color var(--dur-fast) var(--ease-standard);
 }
 
-.memberRow {
-  padding-left: var(--space-4);
+/* A member is indented under its group by its own content moving, so
+   its handle stays in the one column every other row's handle is in. */
+.memberRow .pinLabel {
+  margin-left: var(--member-indent);
 }
 
 .memberRow:hover,
@@ -327,17 +340,12 @@
   color: var(--text-secondary);
 }
 
-.dropHint,
-.joinHint {
+.dropHint {
   font-family: var(--font-sans);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
   color: var(--text-accent);
   white-space: nowrap;
-}
-
-.joinHint {
-  padding: var(--space-1) var(--space-2) var(--space-1-5) var(--space-4);
 }
 
 /* The row under the pointer: lifted off the list, tilted the way a card
@@ -350,10 +358,9 @@
   border-radius: var(--radius-md);
   border: 0.5px solid var(--border-strong);
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--shadow-sheet);
   color: var(--text-quaternary);
   cursor: grabbing;
-  transform: scale(1.02) rotate(-1.5deg);
 }
 
 .emptyGroup {
@@ -364,7 +371,6 @@
 }
 
 .ungroupedZone {
-  padding: var(--space-2);
   border: 1px dashed var(--teal-dim);
   border-radius: var(--radius-md);
   font-family: var(--font-sans);
@@ -376,9 +382,15 @@
     border-color var(--dur-fast) var(--ease-standard);
 }
 
+.ungroupedZoneLabel {
+  display: block;
+  padding: var(--space-2);
+}
+
 .ungroupedZone[data-drop="true"] {
   border-color: var(--teal-bright);
   background: var(--bg-selected);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--teal) 45%, transparent);
 }
 
 .emptyState {

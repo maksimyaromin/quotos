@@ -12,23 +12,60 @@ for the context, sensors and drag overlay, `@dnd-kit/sortable` for the
 lists, `@dnd-kit/modifiers` to keep the drag on one axis. An earlier
 version hand-rolled the whole thing on `mousedown`/`mousemove`, which
 was correct and read as arbitrary: rows jumped rather than moved, a
-drop target had to be guessed at, and nothing animated. The library
-brings the parts that are hard to hand-roll — a lifted overlay that
-follows the pointer, the FLIP transition that slides other rows out of
-the way, a drop animation that settles rather than snaps, and keyboard
-dragging for free.
+drop target had to be guessed at, and nothing animated.
 
 Two levels of `SortableContext` mirror the two levels on screen: an
 outer one holding every group box and every standalone row, and one per
 group holding that group's members. A row is picked up by its own
 handle, never by its body, so clicking a group's name opens the rename
 and nothing else; the pointer sensor additionally needs four pixels of
-travel before a press becomes a drag.
+travel before a press becomes a drag. Every row in the list, group
+header and member alike, puts its handle in the same column: a member
+is indented by its own content moving, never its handle.
 
-Collision detection is `pointerWithin` with `rectIntersection` behind
-it: what is under the pointer is what a drop lands on, innermost first,
-so a member row is never shadowed by the group box around it. The
-fallback only matters for a drag that has left every target at once.
+Collision detection is `pointerWithin` and nothing else. What is under
+the pointer is what a drop lands on, innermost first, so a member row
+is never shadowed by the group box around it, and a drag that is over
+nothing is over nothing. The obvious-looking fallback, taking whichever
+box the dragged row happens to overlap, is what makes a drop target
+stop being something anyone can aim at.
+
+## Motion
+
+`drag-motion.ts` holds the whole of the screen's motion language, and
+there is only one: two springs, driven by
+[`framer-motion`](https://motion.dev). Picking a row up springs it to
+`PICKED_UP`, a small scale and tilt, on the stiffer `GRAB_SPRING`; the
+rows that move aside for it, and the space that opens where it will
+land, travel on the heavier `REFLOW_SPRING`; the drop settles on the
+same overshoot expressed as a bezier, since that one moment is animated
+by the drag library rather than by us. Nothing on the screen eases and
+nothing jumps.
+
+macOS's Reduce Motion setting reaches the stylesheet through the
+`--dur-*` tokens, which a spring driven in JavaScript never reads, so
+every one of those transitions is asked for through
+`grabTransition`/`reflowTransition`/`dropSettle`, which answer with no
+motion at all when `useReducedMotion` says so.
+
+### What the list does while a row is in the air
+
+The row that was picked up closes up behind it: what is under the
+pointer is the row itself, and leaving a copy of it in the list would
+show it twice. Where it would land, a space opens holding that same
+row's name and figure, so the list already reads the way it will once
+the pointer is released. Both are one height animating on the reflow
+spring, which is also the whole of the "make room" feel.
+
+The space is drawn, never actually moved into: the rows themselves stay
+where the drag started. Rearranging them for real mid-drag feeds the
+library its own output — the row changes which list it belongs to, the
+targets re-register, the answer changes, and the screen loops until
+React gives up. A drawn space costs nothing in the drag library's own
+bookkeeping, which is also why the way out of a group arrives at its
+full height at once rather than growing into it: a target is measured
+the moment it appears, and a strip still growing would be measured as
+the sliver it was.
 
 ## What a drop means
 
@@ -37,12 +74,18 @@ the library that reports the drag. `resolveDrop` takes what is being
 dragged and what it is over, and returns one of: group two loose pins
 together, join a group (at the end, or ahead of the member dropped
 onto), leave a group, reorder two groups, or nothing at all.
+`landingSlot` turns that answer into where the space opens.
 
-The screen asks it twice: once per pointer move, to light up what a
-release would do, and once on release, to do it. That is why the
-highlight can never disagree with the outcome — the insertion line, the
-lit group box, the paired row and the way-out strip are all read off
-the same answer the drop acts on.
+The screen asks it on every pointer move, to show what a release would
+do, and again on release, to do it. That is why the highlight can never
+disagree with the outcome — the space, the lit group box, the paired
+row and the way-out strip are all read off the same answer the drop
+acts on. `sameDrop` keeps the screen from redrawing when the answer has
+not actually changed.
+
+Pairing two loose pins is the one drop that opens no space: the group
+it would make does not exist yet, so the row it would pair with is
+marked instead.
 
 ## Testing it
 
@@ -51,9 +94,12 @@ from: its collision detection would resolve every drop to whichever
 droppable happened to be measured first. `customize-display-screen.spec.tsx`
 and `app.spec.tsx` therefore stand in for `DndContext` itself and hand
 the screen the answers a real drag would reach, which exercises every
-id and every payload the screen attaches and everything it does with a
-drop. `customize-drag.spec.ts` covers the decision on its own. What the
-library does between those two points — measuring, animating, settling
-— is the library's own and is verified by hand in the browser harness,
-the way [contributing.md](contributing.md#testing) requires of anything
-that depends on real on-screen geometry.
+id and every payload the screen attaches, everything it draws while a
+drag is in the air, and everything it does with a drop.
+`customize-drag.spec.ts` covers the decision on its own, and
+`drag-motion.spec.ts` the motion language.
+
+What the library does between those two points — measuring, animating,
+settling — is the library's own and is verified by hand in the browser
+harness, the way [contributing.md](contributing.md#testing) requires of
+anything that depends on real on-screen geometry.
