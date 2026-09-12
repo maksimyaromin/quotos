@@ -517,14 +517,20 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     [trackedSubscriptions, pinGroups],
   )
 
+  // How full the capacity glyph is drawn, in the live tray and in the
+  // customize screen's preview of it alike.
+  const worstUsedPercent = useMemo(
+    () => computeWorstActiveLimitPercent(trackedSubscriptions),
+    [trackedSubscriptions],
+  )
+
   useEffect(() => {
-    const worstUsedPercent = computeWorstActiveLimitPercent(trackedSubscriptions)
     renderStatusItem(
       statusItemSegments,
       worstUsedPercent,
       buildStatusItemTooltip(trackedSubscriptions, pinGroups),
     )
-  }, [statusItemSegments, trackedSubscriptions, pinGroups])
+  }, [statusItemSegments, worstUsedPercent, trackedSubscriptions, pinGroups])
 
   const displayLabelFor = useCallback(
     (account: AccountDescriptor) => knownLabels[account.id] ?? deriveAccountLabel(account),
@@ -535,6 +541,7 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     subscriptions,
     trackedSubscriptions,
     statusItemSegments,
+    worstUsedPercent,
     saveError,
     refreshAll,
     refreshAccountById,

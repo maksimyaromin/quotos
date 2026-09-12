@@ -1,0 +1,17 @@
+.strip {
+  display: flex;
+  align-items: center;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--border-default);
+  background: var(--bg-sunken);
+  min-height: 30px;
+}
+
+/* The bitmap arrives at two pixels per point and is shown at one, so
+   it has to land on the device's own pixel grid rather than be resampled
+   to the nearest CSS pixel. */
+.image {
+  display: block;
+  image-rendering: -webkit-optimize-contrast;
+}

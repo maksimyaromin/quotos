@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Deserialize;
 use tauri::image::Image;
 use tauri::{Emitter, Manager};
@@ -18,22 +20,59 @@ pub(crate) fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {
     clear_docked_target(&app);
 }
 
+/// One item in the menu bar, as the frontend describes it. Mirrors
+/// `StatusItemSegment` in `types/entities.ts`.
 #[derive(Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StatusItemSegmentDto {
-    text: String,
-    color: String,
-    group_start: bool,
-    /// Set when the figure stands for a pin group, or for one member of
-    /// an opened-out group; `group_at_click` reads it to name the group
-    /// whose slug was clicked.
-    #[serde(default)]
-    group_id: Option<String>,
-    /// The group's slug, derived by `lib/pin-groups.ts` from its name
-    /// and carried only by the first figure of that group's cluster.
-    /// It is the one thing in the menu bar a click can fold a group by.
-    #[serde(default)]
-    slug: Option<String>,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum StatusItemSegmentDto {
+    /// The group's slug, derived by `lib/pin-groups.ts` from its name.
+    /// The one thing a click can fold a group by, which `group_id`
+    /// names.
+    Chip {
+        slug: String,
+        color: String,
+        group_id: String,
+    },
+    Figure {
+        text: String,
+        color: String,
+    },
+}
+
+impl StatusItemSegmentDto {
+    fn to_segment(&self) -> status_item_render::StatusItemSegment {
+        match self {
+            StatusItemSegmentDto::Chip { slug, color, .. } => {
+                status_item_render::StatusItemSegment::Chip {
+                    slug: slug.clone(),
+                    color: status_item_render::GroupColor::parse(color),
+                }
+            }
+            StatusItemSegmentDto::Figure { text, color } => {
+                status_item_render::StatusItemSegment::Figure {
+                    text: text.clone(),
+                    color: match color.as_str() {
+                        "amber" => status_item_render::StatusItemColor::Amber,
+                        "red" => status_item_render::StatusItemColor::Red,
+                        _ => status_item_render::StatusItemColor::Neutral,
+                    },
+                }
+            }
+        }
+    }
+
+    fn group_id(&self) -> Option<&str> {
+        match self {
+            StatusItemSegmentDto::Chip { group_id, .. } => Some(group_id),
+            StatusItemSegmentDto::Figure { .. } => None,
+        }
+    }
+}
+
+pub(crate) fn to_segments(
+    dtos: &[StatusItemSegmentDto],
+) -> Vec<status_item_render::StatusItemSegment> {
+    dtos.iter().map(StatusItemSegmentDto::to_segment).collect()
 }
 
 #[tauri::command]
@@ -50,6 +89,37 @@ pub(crate) fn set_status_item_state(
         return Ok(());
     }
     repaint_status_item(&app, &status_item)
+}
+
+/// The Customize display screen's preview, drawn by the compositor the
+/// live tray is drawn by; see "One renderer, two surfaces" in
+/// docs/status-item-rendering.md.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StatusItemImage {
+    width: u32,
+    height: u32,
+    /// The raw RGBA bytes, base64 so they cross the IPC boundary as one
+    /// string rather than as tens of thousands of JSON numbers.
+    rgba_base64: String,
+}
+
+#[tauri::command]
+pub(crate) fn render_status_item_preview(
+    segments: Vec<StatusItemSegmentDto>,
+    worst_used_percent: u8,
+) -> StatusItemImage {
+    let (rgba, width, height) = status_item_render::render(
+        &to_segments(&segments),
+        false,
+        worst_used_percent,
+        status_item_render::is_dark_mode(),
+    );
+    StatusItemImage {
+        width,
+        height,
+        rgba_base64: BASE64.encode(&rgba),
+    }
 }
 
 fn record_if_changed(
@@ -80,8 +150,8 @@ fn record_if_changed(
     true
 }
 
-/// Which pin group's slug a left click landed on, if any; see
-/// "Clicking a group's slug in the menu bar" in docs/architecture.md
+/// Which pin group's chip a left click landed on, if any; see
+/// "Clicking a group's chip in the menu bar" in docs/architecture.md
 /// for the units the click and the item's box arrive in.
 pub(crate) fn group_at_click(
     app: &tauri::AppHandle,
@@ -99,9 +169,9 @@ pub(crate) fn group_at_click(
     let scale = displays[index].scale;
     let state = app.state::<AppState>();
     let spans = state
-        .last_status_item_slug_spans
+        .last_status_item_chip_spans
         .lock()
-        .expect("last_status_item_slug_spans mutex poisoned")
+        .expect("last_status_item_chip_spans mutex poisoned")
         .clone();
     let icon_width_px = *state
         .last_icon_width_px
@@ -113,13 +183,13 @@ pub(crate) fn group_at_click(
         Some(item_width / scale),
         icon_width_px as f64,
     );
-    let index = status_item_render::slug_at(&spans, icon_width_px, click_in_icon_px)?;
+    let index = status_item_render::chip_at(&spans, icon_width_px, click_in_icon_px)?;
     state
         .last_status_item_segments
         .lock()
         .expect("last_status_item_segments mutex poisoned")
         .get(index)
-        .and_then(|segment| segment.group_id.clone())
+        .and_then(|segment| segment.group_id().map(str::to_owned))
 }
 
 pub(crate) fn set_status_item_highlighted(app: &tauri::AppHandle, highlighted: bool) {
@@ -163,27 +233,15 @@ fn repaint_status_item(
         .set_tooltip(Some(&tooltip))
         .map_err(|e| e.to_string())?;
 
-    let segs: Vec<status_item_render::StatusItemSegment> = segments
-        .iter()
-        .map(|s| status_item_render::StatusItemSegment {
-            text: s.text.clone(),
-            color: match s.color.as_str() {
-                "amber" => status_item_render::StatusItemColor::Amber,
-                "red" => status_item_render::StatusItemColor::Red,
-                _ => status_item_render::StatusItemColor::Neutral,
-            },
-            group_start: s.group_start,
-            slug: s.slug.clone(),
-        })
-        .collect();
+    let segs = to_segments(&segments);
 
-    // Cached from the same layout the slugs were drawn at, so a click
+    // Cached from the same layout the chips were drawn at, so a click
     // resolves against where they really landed.
     *state
-        .last_status_item_slug_spans
+        .last_status_item_chip_spans
         .lock()
-        .expect("last_status_item_slug_spans mutex poisoned") =
-        status_item_render::slug_spans(&segs, worst_used_percent);
+        .expect("last_status_item_chip_spans mutex poisoned") =
+        status_item_render::chip_spans(&segs, worst_used_percent);
 
     let icon_width_px = if segments.is_empty() && !highlighted {
         let (rgba, w, h) = status_item_render::plain_glyph_rgba(worst_used_percent);
@@ -225,7 +283,7 @@ fn repaint_status_item(
 
 /// Sets the item's own width, then re-fits the view that catches its
 /// clicks, which `tray-icon` re-fits only while setting an icon. See
-/// "Clicking a group's slug in the menu bar" in docs/architecture.md.
+/// "Clicking a group's chip in the menu bar" in docs/architecture.md.
 #[cfg(target_os = "macos")]
 pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_width_px: u32) {
     use objc2_foundation::MainThreadMarker;

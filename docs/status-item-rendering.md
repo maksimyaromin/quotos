@@ -1,6 +1,6 @@
 # Status item rendering
 
-<img src="images/menu-bar.png" alt="The composited status item in the menu bar: the capacity glyph followed by two accounts' percentage figures, separated by a hairline">
+<img src="images/menu-bar.png" width="360" alt="The composited status item: the capacity glyph, an opened group's chip and its two figures, a rolled-up group's chip on its own, and one standalone pin's figure">
 
 `status_item_render.rs` composites the status item's glyph and colored
 percentage digits into a raw RGBA buffer. `tray-icon` 0.24.2's macOS
@@ -64,21 +64,40 @@ constant 100%. It starts right where the gap ends, sweeps forward by
 `used_fraction` of the maximum possible sweep, `TAU` minus the gap's
 own width, and lands exactly on the gap's other edge at 100%.
 
-## Spacing the figures evenly
+## What the item is made of
+
+The item is the capacity glyph, then a row of items, left to right. An
+item is one of two things, and there is no third: a pin group's **chip**,
+its slug in a small rounded rectangle of the group's own colour, or one
+pinned limit window's **figure**, a bare percentage. A group rolled up
+is its chip and nothing else — no rolled-up number; opened out, the same
+chip stays exactly where it was and its members' own figures follow it.
+A standalone pin is a bare figure and is not a click target. With no
+groups at all the row is nothing but figures, which is what the item was
+before groups existed.
+
+Nothing is ever drawn *between* two items. An earlier version parted
+clusters with a vertical hairline; adjacent items are parted by spacing
+alone, and the `no_dividers` tests hold the gap between every pair of
+items empty so a divider cannot come back by accident.
+
+## Spacing the items evenly
 
 The rule: every horizontal gap in the item is a fixed distance from one
-shape's own rendered ink to the next shape's own rendered ink, never
-from either shape's wider advance box or reserved cell. `GLYPH_GAP_PX`
-is that distance from the glyph to the first figure, `FIGURE_GAP_PX`
-from one figure to the next, and `GROUP_GUTTER_PRE_PX`/
-`GROUP_GUTTER_POST_PX` from a figure to the hairline marking a cluster
-boundary, a pin group or one subscription's standalone pins, in place of
-the plain figure gap that boundary would otherwise have gotten.
-`SLUG_GAP_PX` is that distance from a group's slug to the first figure
-it leads, deliberately tighter than `FIGURE_GAP_PX` so the slug reads as
-belonging to the figures after it rather than standing between two of
-them. `layout_segments` computes every position by this one rule;
-nothing downstream hand-adjusts a value it produces.
+shape's own rendered edge to the next shape's own rendered edge, never
+from either shape's wider advance box or reserved cell. An edge is a
+figure's own ink, and a chip's own filled rectangle rather than the
+letters inside it. `GLYPH_GAP_PX` is that distance from the glyph to the
+first item; `ITEM_GAP_PX` is that distance between any two adjacent
+items, whichever kinds they are — chip to chip, chip to figure, figure
+to figure. There is one such constant and the spacing is uniform, which
+is what makes the rhythm read as deliberate rather than as three
+different rules meeting. `layout_segments` computes every position by
+this one rule; nothing downstream hand-adjusts a value it produces.
+
+An item with no text to draw — a group whose name yields no slug — is
+placed nowhere and costs no gap, so an empty item cannot open a hole in
+an otherwise even row.
 
 An earlier design measured a figure's own advance box, the space
 `CTLineGetTypographicBounds` reports a run occupies, and stepped a
@@ -103,10 +122,9 @@ painted procedurally rather than laid out as text, so its own ink right
 edge is scanned directly from its rendered coverage buffer: the
 rightmost pixel whose coverage crosses half, matching where
 antialiasing places the visible edge to the eye. `layout_segments`
-threads an ink cursor through the glyph, then each cluster's slug and
-figures in order, each
-one's origin computed from the previous shape's own ink edge plus that
-boundary's constant minus the new shape's own leading bearing, so the
+threads a cursor through the glyph and then every item in order, each
+one's origin computed from the previous shape's own drawn edge plus the
+gap constant minus the new shape's own leading bearing, so the
 canvas width the buffer is sized to is exactly where the last figure's
 own ink actually ends, not a reserved slot that may not agree with it.
 Because that final origin is rarely a whole pixel, `TextOrigin` carries
@@ -136,54 +154,93 @@ draws it at a fixed offset before the ink cursor exists, so
 `geometry.rs`'s `glyph_center_offset_from_item_left_points` and the
 beak it derives are unaffected by anything happening to its right.
 
-A boundary between two different subscriptions' figure groups draws a
-hairline between the two gutters: 5-CSS-px, a 1-CSS-px hairline, then
-another 5-CSS-px, doubled for this buffer's 2x convention. `render`
-never draws a hairline before the very first segment overall,
-regardless of what the frontend sets on it, since there is no prior
-group for the first segment to part from.
+## Resolving a click back to a chip
 
-## Resolving a click back to a slug
-
-A click on a pin group's slug folds that group in place instead of
-opening the panel, so a click has to be resolved back to the slug
+A click on a pin group's chip folds that group in place instead of
+opening the panel, so a click has to be resolved back to the chip
 underneath it. A click on a figure resolves to nothing and opens the
 panel like any other click on the item: the figure reports a number,
-the slug is the button. `slug_spans` reports the horizontal span each
-slug's ink occupies, sharing `layout_segments` with `render` rather
+the chip is the button. `chip_spans` reports the horizontal span each
+chip's frame occupies, sharing `layout_segments` with `render` rather
 than re-deriving the geometry, so the spans a click is tested against
-are the ones the slugs were drawn at. `shell.rs` computes them once per
+are the ones the chips were drawn at. `shell.rs` computes them once per
 repaint and caches them; nothing measures anything at click time.
 
-`slug_at` takes the click as a coordinate in this buffer's own pixels,
+`chip_at` takes the click as a coordinate in this buffer's own pixels,
 which is the space the spans are reported in; `geometry.rs`'s
 `click_x_in_icon_px` is what puts a click there, and "Clicking a
-group's slug in the menu bar" in
-[architecture.md](architecture.md#clicking-a-groups-slug-in-the-menu-bar)
+group's chip in the menu bar" in
+[architecture.md](architecture.md#clicking-a-groups-chip-in-the-menu-bar)
 covers why the item's own width cannot stand in for the image's.
 
 `HIT_PADDING_PX` widens every span a little before the test, because a
-slug's ink is only as wide as its three letters and a click a point or
-two shy of them clearly still means that group. A compile-time
-assertion keeps the padding narrower than `GROUP_GUTTER_PRE_PX`, so a
-forgiving edge never reaches back across a cluster boundary onto the
-figure before it.
+click a point or two shy of a chip clearly still means that group. A
+compile-time assertion keeps two padded spans from meeting in the gap
+between them, so a forgiving edge never claims the chip beside it.
 
-## The group slug
+Opening a group must not move its chip. The chip is the click target,
+and a target that jumped out from under the pointer on its own click is
+one nobody could hit twice; the layout puts every item after the chip,
+never before it, so opening a group only ever appends.
+
+## The group chip
 
 A group is named in the menu bar rather than tinted there: the first
-three characters of its name, uppercased, drawn just before the figures
-it leads. The slug is derived wherever it is drawn or hit-tested, never
-stored; `lib/pin-groups.ts`'s `groupSlug` is the one derivation, and the
-segment list carries its result down. Only the first figure of a group's
-cluster carries a slug, so an opened-out group is named once rather than
-once per member, and a standalone pin has none at all.
+three characters of its name, uppercased, in a chip of its own colour.
+The slug is derived wherever it is drawn or hit-tested, never stored;
+`lib/pin-groups.ts`'s `groupSlug` is the one derivation, and the segment
+list carries its result down.
 
-The slug is drawn in the same face as the figures at `SLUG_FONT_SIZE_PT`
-and at `SLUG_INK_FRACTION` of the neutral figure's own alpha, so it
-names its group without competing with the number beside it. A colour
-bar under each grouped figure did this job before and was dropped: a
-name says which group without a legend, a colour does not.
+The chip follows the badge language the panel already has, in
+`design-system/components/indicators/badge.module.css`: a muted tint of
+the colour as the fill, the fully-saturated colour as the letters, in a
+small rounded rectangle. `CHIP_RADIUS_PX` is that file's `--radius-xs`
+read as points at this buffer's 2x; `CHIP_HEIGHT_PX` and
+`CHIP_PAD_X_PX` keep the badge's own proportions against a 22pt menu bar
+rather than against a 13px panel row, which is a chip a little over half
+the bar's height with horizontal padding of about a third of that.
+
+`CHIP_FILL_ALPHA` computes the tint from the colour rather than reading
+a `--*-muted` token, because this image composites over the menu bar's
+own translucent backdrop: there is no fixed ground an opaque muted hex
+could have been mixed against ahead of time. `GroupColor::rgb` mirrors
+the `--teal/blue/violet/amber/red` tokens, whose light-appearance values
+differ from their dark ones.
+
+The letters are set at `SLUG_FONT_SIZE_PT` in the interface face, not
+the tabular one the digits need: three letters are a name, not a column
+of numbers to line up. `text::load_ui_font` is that face. A colour bar
+under each grouped figure, and then a bare slug beside a rolled-up
+figure, each did this job before: a named chip says which group without
+a legend, and says it without spending a number's worth of width.
+
+## One renderer, two surfaces
+
+The Customize display screen shows a preview of the menu bar. That
+preview is not a second drawing of the same idea — it is this
+compositor's own output. `shell.rs`'s `render_status_item_preview`
+command takes a *candidate* segment list, the arrangement the screen is
+currently showing, runs it through the same `render` the live tray runs
+through, and hands back the raw RGBA. The screen paints that bitmap into
+a canvas at half size, `RENDER_SCALE`, which is the size the menu bar
+presents the image at.
+
+The command reads and writes none of the status item's own state, so
+previewing an arrangement never disturbs the tray. Nothing else is
+allowed to draw this preview: the CSS strip that stood here before
+re-described a chip, a figure and a gap in a second place, and two
+separately-authored renderers drift — which is what it did. Outside
+Tauri there is no compositor to ask and the preview is simply absent,
+rather than approximated.
+
+## Looking at the result
+
+`cargo run --example dump_tray_scenes -- <dir>` writes the raw RGBA of
+the no-groups, collapsed-chip and opened-chip scenes, which is how a
+change to any of the above gets looked at rather than only asserted
+about. Set `QUOTOS_DUMP_LIGHT` for the light-appearance palette. The
+image at the top of this page is its `doc-menu-bar` scene composited
+over the menu bar's own ground, so it cannot fall behind the code.
 
 ## Compositing
 

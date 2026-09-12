@@ -5,6 +5,15 @@ window is a row, grouped rows boxed under their group's header,
 standalone rows loose below them. Nothing on this screen ever unpins
 anything, and nothing here is decided at the moment of pinning.
 
+## The preview
+
+The strip at the top is the menu bar, drawn by the menu bar's own
+compositor: the screen hands the segment list it is currently showing
+to the `render_status_item_preview` command and paints the bitmap that
+comes back. It re-describes nothing, which is the point; see "One
+renderer, two surfaces" in
+[status-item-rendering.md](status-item-rendering.md#one-renderer-two-surfaces).
+
 ## The drag
 
 The gesture runs on [`@dnd-kit`](https://dndkit.com): `@dnd-kit/core`
@@ -42,6 +51,21 @@ same overshoot expressed as a bezier, since that one moment is animated
 by the drag library rather than by us. Nothing on the screen eases and
 nothing jumps.
 
+### Nothing changes width while a drag is on
+
+Every drag-relevant box states its own width rather than taking one
+from its content, and every layout animation is `layout="position"`:
+framer-motion animates a size change by scaling the box, which squeezes
+the text inside it, so only position is ever animated and only heights
+are ever set. The drop hint that appears on a paired row is out of the
+row's flow entirely and stands over the figure, which keeps its place
+hidden beneath it.
+
+Together those are why nothing shakes under a stationary pointer. A row
+that sized itself to its content answered every mid-drag change — a
+hint appearing, a space opening, a box taking one more member — with a
+width change, and a width change is a reflow of everything beside it.
+
 macOS's Reduce Motion setting reaches the stylesheet through the
 `--dur-*` tokens, which a spring driven in JavaScript never reads, so
 every one of those transitions is asked for through
@@ -71,10 +95,21 @@ the sliver it was.
 
 `lib/customize-drag.ts` is the whole of that decision, kept apart from
 the library that reports the drag. `resolveDrop` takes what is being
-dragged and what it is over, and returns one of: group two loose pins
-together, join a group (at the end, or ahead of the member dropped
-onto), leave a group, reorder two groups, or nothing at all.
-`landingSlot` turns that answer into where the space opens.
+dragged, what it is over, and the order the members are in, and returns
+one of: group two loose pins together, join a group, leave a group,
+reorder two groups, or nothing at all. `landingSlot` turns that answer
+into where the space opens.
+
+Joining a group lands the pin ahead of the member it was dropped onto,
+with one exception: a pin already in that group, dropped onto a member
+*below* itself, lands after that member instead. The order matters
+because the list closes up behind a drag before the drop is applied, so
+"ahead of it" would be exactly where the row already was — the space
+would open under the pointer and the release would then move nothing.
+That is why `resolveDrop` needs the arrangement and not just the two
+ends of the gesture: the same answer decides both the space shown and
+the move carried out, so a space that opens is always a move that
+happens.
 
 The screen asks it on every pointer move, to show what a release would
 do, and again on release, to do it. That is why the highlight can never

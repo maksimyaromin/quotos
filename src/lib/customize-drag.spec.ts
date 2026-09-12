@@ -5,6 +5,7 @@ import {
   type DragItem,
   groupDragId,
   landingSlot,
+  memberOrder,
   pinDragId,
   resolveDrop,
   sameDrop,
@@ -111,6 +112,81 @@ describe('dropping a group', () => {
 
   test('on the way out of a group does nothing: only pins leave groups', () => {
     expect(resolveDrop(groupOne, { kind: 'ungrouped' })).toEqual({ kind: 'nothing' })
+  })
+})
+
+// The bug this reproduces: the list closes up behind a drag before the
+// drop is applied, so "land ahead of the member below me" is where the
+// row already was. The slot opened under the pointer and the release
+// then moved nothing.
+describe('dropping a pin among the members of its own group', () => {
+  const order = memberOrder([
+    {
+      id: 'g1',
+      name: 'Money',
+      color: 'teal',
+      members: [
+        { key: 'one', label: 'One', used: 1 },
+        { key: 'two', label: 'Two', used: 2 },
+        { key: 'three', label: 'Three', used: 3 },
+      ],
+    },
+  ])
+  const member = (key: string): DragItem => ({ kind: 'pin', key, groupId: 'g1' })
+
+  test('onto the member below it lands after that member, which is a real move', () => {
+    expect(resolveDrop(member('one'), zone(member('two')), order)).toEqual({
+      kind: 'joinGroup',
+      key: 'one',
+      groupId: 'g1',
+      beforeKey: 'three',
+    })
+  })
+
+  test('onto the last member lands at the end', () => {
+    expect(resolveDrop(member('one'), zone(member('three')), order)).toEqual({
+      kind: 'joinGroup',
+      key: 'one',
+      groupId: 'g1',
+      beforeKey: null,
+    })
+  })
+
+  test('onto a member above it lands ahead of that member', () => {
+    expect(resolveDrop(member('three'), zone(member('one')), order)).toEqual({
+      kind: 'joinGroup',
+      key: 'three',
+      groupId: 'g1',
+      beforeKey: 'one',
+    })
+  })
+
+  test('a pin from outside the group lands ahead of whatever it was dropped on', () => {
+    expect(resolveDrop(looseA, zone(member('two')), order)).toEqual({
+      kind: 'joinGroup',
+      key: 'a::session',
+      groupId: 'g1',
+      beforeKey: 'two',
+    })
+  })
+
+  test('every one of those drops opens its space exactly where it lands', () => {
+    for (const [active, over] of [
+      [member('one'), member('two')],
+      [member('one'), member('three')],
+      [member('three'), member('one')],
+    ] as const) {
+      const action = resolveDrop(active, zone(over), order)
+      expect(landingSlot(action)).toEqual({
+        kind: 'inGroup',
+        groupId: 'g1',
+        beforeKey: (action as { beforeKey: string | null }).beforeKey,
+      })
+    }
+  })
+
+  test('without the order to read, it falls back to landing ahead of the member', () => {
+    expect(resolveDrop(member('one'), zone(member('two')))).toMatchObject({ beforeKey: 'two' })
   })
 })
 

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { basename } from 'node:path'
 
 const KEBAB_CASE = /^\.?[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)*$/
-const RUST_MODULE_FILE = /^[a-z0-9]+(_[a-z0-9]+)*\.rs$/
+const RUST_SOURCE_FILE = /^[a-z0-9]+(_[a-z0-9]+)*\.rs$/
 
 const EXACT_EXCEPTIONS = new Set([
   'README.md',
@@ -32,8 +32,12 @@ for (const file of trackedFiles) {
   const name = basename(file)
   if (EXACT_EXCEPTIONS.has(name)) continue
   if (EXEMPT_PREFIXES.some((prefix) => file.startsWith(prefix))) continue
-  if (file.startsWith('src-tauri/src/') && name.endsWith('.rs')) {
-    if (!RUST_MODULE_FILE.test(name)) findings.push(file)
+  // Every Rust file in the crate, not just the modules under `src/`:
+  // examples, build script, and anything Cargo adds later all follow
+  // the one snake_case convention. See "Rust source file names" in
+  // docs/architecture.md.
+  if (file.startsWith('src-tauri/') && name.endsWith('.rs')) {
+    if (!RUST_SOURCE_FILE.test(name)) findings.push(file)
     continue
   }
   if (!KEBAB_CASE.test(name)) findings.push(file)

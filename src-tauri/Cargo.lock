@@ -2756,6 +2756,7 @@ dependencies = [
 name = "quotos-app"
 version = "0.5.4"
 dependencies = [
+ "base64 0.22.1",
  "block2",
  "chrono",
  "notify",

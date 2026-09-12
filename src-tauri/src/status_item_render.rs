@@ -8,33 +8,73 @@ const SIDE_PAD_PX: u32 = 10;
 pub const RENDER_SCALE: f64 = 2.0;
 pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / RENDER_SCALE;
 const GLYPH_GAP_PX: u32 = 19;
-const FIGURE_GAP_PX: u32 = 11;
-const GROUP_GUTTER_PRE_PX: u32 = 10;
-const HAIRLINE_WIDTH_PX: u32 = 2;
-const GROUP_GUTTER_POST_PX: u32 = 10;
-const HAIRLINE_HEIGHT_PX: u32 = 22;
-/// Between a group's slug and the first figure it leads. Tighter than
-/// the gap between two figures, so the slug reads as belonging to the
-/// figures after it rather than standing between two of them.
-const SLUG_GAP_PX: u32 = 7;
+/// Between any two adjacent items, whichever kinds they are; see
+/// "Spacing the items evenly" in docs/status-item-rendering.md.
+const ITEM_GAP_PX: u32 = 11;
 
 const _: () = assert!(
-    GLYPH_GAP_PX > FIGURE_GAP_PX,
-    "the glyph must read as a separate shape from the figures via a wider gap than sits between two figures"
+    GLYPH_GAP_PX > ITEM_GAP_PX,
+    "the glyph must read as a separate shape from the items via a wider gap than sits between two of them"
 );
 
+/// A chip's frame and the alpha its fill tints the colour to, both
+/// following the panel's own badge; see "The group chip" in
+/// docs/status-item-rendering.md.
+const CHIP_HEIGHT_PX: u32 = 26;
+const CHIP_RADIUS_PX: f64 = 6.0;
+const CHIP_PAD_X_PX: f64 = 10.0;
+const CHIP_FILL_ALPHA: f64 = 0.18;
+
 const _: () = assert!(
-    FIGURE_GAP_PX > SLUG_GAP_PX,
-    "a slug must sit closer to the figures it leads than those figures sit to each other"
+    CHIP_HEIGHT_PX < GLYPH_PX,
+    "a chip must leave air above and below it inside the image"
 );
 
 #[cfg(target_os = "macos")]
 const TEXT_FONT_SIZE_PT: f64 = 12.0 * 2.0;
-/// A slug names its group; it never reports a number. Drawn smaller and
-/// lighter than the digits so it leads them instead of competing.
+/// A chip names its group; it never reports a number. Set smaller than
+/// the digits, and in the interface face; see "The group chip" in
+/// docs/status-item-rendering.md.
 #[cfg(target_os = "macos")]
 const SLUG_FONT_SIZE_PT: f64 = 10.0 * 2.0;
-const SLUG_INK_FRACTION: f64 = 0.62;
+
+/// The palette a pin group is drawn in, mirroring `GROUP_COLORS` in
+/// `types/entities.ts` and the colour tokens the panel uses.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GroupColor {
+    Teal,
+    Blue,
+    Violet,
+    Amber,
+    Red,
+}
+
+impl GroupColor {
+    pub fn parse(name: &str) -> GroupColor {
+        match name {
+            "blue" => GroupColor::Blue,
+            "violet" => GroupColor::Violet,
+            "amber" => GroupColor::Amber,
+            "red" => GroupColor::Red,
+            _ => GroupColor::Teal,
+        }
+    }
+
+    fn rgb(self, dark_mode: bool) -> (u8, u8, u8) {
+        match (self, dark_mode) {
+            (GroupColor::Teal, true) => (0x4e, 0x9c, 0x8d),
+            (GroupColor::Teal, false) => (0x18, 0x5f, 0x55),
+            (GroupColor::Blue, true) => (0x5b, 0x8d, 0xef),
+            (GroupColor::Blue, false) => (0x3a, 0x6f, 0xd8),
+            (GroupColor::Violet, true) => (0x8b, 0x7a, 0xd8),
+            (GroupColor::Violet, false) => (0x5f, 0x4b, 0xbd),
+            (GroupColor::Amber, true) => (0xe0, 0xa9, 0x2b),
+            (GroupColor::Amber, false) => (0xb9, 0x79, 0x1a),
+            (GroupColor::Red, true) => (0xe5, 0x64, 0x6a),
+            (GroupColor::Red, false) => (0xd3, 0x3a, 0x41),
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StatusItemColor {
@@ -54,14 +94,28 @@ impl StatusItemColor {
     }
 }
 
-pub struct StatusItemSegment {
-    pub text: String,
-    pub color: StatusItemColor,
-    pub group_start: bool,
-    /// The group's short name, drawn just before this figure and the
-    /// only thing a click folds that group by. Carried by the first
-    /// figure of a group's cluster and by nothing else.
-    pub slug: Option<String>,
+/// One item in the status item, left to right; see "What the item is
+/// made of" in docs/status-item-rendering.md.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StatusItemSegment {
+    /// A pin group's chip: the only thing a click folds a group by,
+    /// and, collapsed, the whole of what that group draws.
+    Chip { slug: String, color: GroupColor },
+    /// One pinned limit window's percentage.
+    Figure {
+        text: String,
+        color: StatusItemColor,
+    },
+}
+
+impl StatusItemSegment {
+    /// The text this item draws, whichever kind it is.
+    fn text(&self) -> &str {
+        match self {
+            StatusItemSegment::Chip { slug, .. } => slug,
+            StatusItemSegment::Figure { text, .. } => text,
+        }
+    }
 }
 
 fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
@@ -244,25 +298,41 @@ fn draw_highlight_background(buf: &mut [u8], w: u32, h: u32, dark: bool) {
     }
 }
 
-fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
-    let rgba = if dark {
-        (0xffu8, 0xffu8, 0xffu8, (0.34f64 * 255.0).round() as u8)
-    } else {
-        (0x00u8, 0x00u8, 0x00u8, (0.28f64 * 255.0).round() as u8)
-    };
-    let top = h.saturating_sub(HAIRLINE_HEIGHT_PX) / 2;
-    for y in top..(top + HAIRLINE_HEIGHT_PX).min(h) {
-        for x in x0..(x0 + HAIRLINE_WIDTH_PX).min(w) {
-            blend_pixel(buf, w, h, x, y, rgba);
+/// A chip's rounded rectangle, filled with a muted tint of the group's
+/// colour, over the same signed-distance field the highlight uses.
+fn draw_chip(buf: &mut [u8], w: u32, h: u32, rect: ChipRect, rgb: (u8, u8, u8)) {
+    const AA_HALF_WIDTH_PX: f64 = 0.75;
+    let half_height = CHIP_HEIGHT_PX as f64 / 2.0;
+    let half_width = (rect.x1 - rect.x0) / 2.0;
+    if half_width <= 0.0 {
+        return;
+    }
+    let radius = CHIP_RADIUS_PX.min(half_width).min(half_height);
+    let center_x = (rect.x0 + rect.x1) / 2.0;
+    let center_y = h as f64 / 2.0;
+    let first_x = (rect.x0 - 1.0).floor().max(0.0) as u32;
+    let last_x = (rect.x1 + 1.0).ceil().clamp(0.0, w as f64) as u32;
+    let first_y = (center_y - half_height - 1.0).floor().max(0.0) as u32;
+    let last_y = (center_y + half_height + 1.0).ceil().clamp(0.0, h as f64) as u32;
+
+    for y in first_y..last_y {
+        for x in first_x..last_x {
+            let px = x as f64 + 0.5 - center_x;
+            let py = y as f64 + 0.5 - center_y;
+            let qx = px.abs() - (half_width - radius);
+            let qy = py.abs() - (half_height - radius);
+            let outside_len = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
+            let signed_dist = outside_len + qx.max(qy).min(0.0) - radius;
+            let coverage = (0.5 - signed_dist / AA_HALF_WIDTH_PX).clamp(0.0, 1.0);
+            if coverage <= 0.0 {
+                continue;
+            }
+            let alpha = (255.0 * CHIP_FILL_ALPHA * coverage)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            blend_pixel(buf, w, h, x, y, (rgb.0, rgb.1, rgb.2, alpha));
         }
     }
-}
-
-/// The slug's ink: the neutral figure colour, thinned so the group's
-/// name stays legible without reading as loudly as a number.
-fn slug_rgba(dark: bool) -> (u8, u8, u8, u8) {
-    let (r, g, b, a) = StatusItemColor::Neutral.rgba(dark);
-    (r, g, b, (a as f64 * SLUG_INK_FRACTION).round() as u8)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -396,6 +466,16 @@ mod text {
         LoadedFont {
             handle: FontHandle::Fallback(font),
             used_fallback: true,
+        }
+    }
+
+    /// The interface face, for a chip's letters. A slug is a name, so
+    /// it is set the way the panel sets a badge: the UI font at medium
+    /// weight, never the tabular one the digits need.
+    pub fn load_ui_font(size_pt: f64) -> LoadedFont {
+        LoadedFont {
+            handle: FontHandle::Fallback(NSFont::systemFontOfSize_weight(size_pt, medium_weight())),
+            used_fallback: false,
         }
     }
 
@@ -578,6 +658,12 @@ mod text {
         LoadedFont
     }
 
+    /// The bitmap fallback has one face, which letters and digits alike
+    /// are drawn in.
+    pub fn load_ui_font(size_pt: f64) -> LoadedFont {
+        load_font(size_pt)
+    }
+
     pub fn used_fallback() -> bool {
         true
     }
@@ -733,12 +819,35 @@ pub fn used_fallback_font() -> bool {
     }
 }
 
-/// Where one segment's text runs are drawn: the figure always, the
-/// group's slug ahead of it when this figure leads a group's cluster.
-struct SegmentPlacement {
-    slug: Option<TextPlacement>,
-    figure: TextPlacement,
-    hairline_x0: Option<u32>,
+/// Where one item is drawn: a figure's text run, or a chip's frame
+/// with its letters centred inside it.
+enum SegmentPlacement {
+    Chip {
+        rect: ChipRect,
+        letters: TextPlacement,
+    },
+    Figure(TextPlacement),
+}
+
+impl SegmentPlacement {
+    /// The item's own drawn edges: a chip's frame, a figure's ink.
+    fn span(&self) -> InkSpan {
+        match self {
+            SegmentPlacement::Chip { rect, .. } => InkSpan {
+                x0: rect.x0.floor().max(0.0) as u32,
+                x1: rect.x1.ceil().max(0.0) as u32,
+            },
+            SegmentPlacement::Figure(text) => text.span,
+        }
+    }
+}
+
+/// A chip's filled rectangle, horizontally; it is always centred
+/// vertically and `CHIP_HEIGHT_PX` tall.
+#[derive(Clone, Copy, Debug)]
+struct ChipRect {
+    x0: f64,
+    x1: f64,
 }
 
 struct TextPlacement {
@@ -746,107 +855,100 @@ struct TextPlacement {
     span: InkSpan,
 }
 
-/// The horizontal span one text run's ink occupies in the bitmap
-/// `render` draws, so a click in the menu bar can be resolved back to
-/// what sits underneath it.
+/// The horizontal span one item occupies in the bitmap `render` draws,
+/// so a click in the menu bar can be resolved back to what sits
+/// underneath it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InkSpan {
     pub x0: u32,
     pub x1: u32,
 }
 
-/// One group slug's ink, and which segment carries it.
+/// One group chip's frame, and which segment carries it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SlugSpan {
+pub struct ChipSpan {
     pub segment: usize,
     pub span: InkSpan,
 }
 
-/// A slug's ink is only as wide as its three letters, so a click a hair
-/// off one still folds that group rather than falling through to the
-/// panel.
+/// A click a hair off a chip's frame still folds that group rather
+/// than falling through to the panel.
 const HIT_PADDING_PX: u32 = 4;
 
 const _: () = assert!(
-    HIT_PADDING_PX < GROUP_GUTTER_PRE_PX,
-    "a slug's forgiving edge must stay inside its own cluster's gutter, never reaching the figure before it"
+    2 * HIT_PADDING_PX < ITEM_GAP_PX,
+    "two adjacent chips' forgiving edges must not meet in the gap between them"
 );
 
-struct SegmentInk {
-    slug: Option<(f64, f64)>,
-    figure: (f64, f64),
-}
+/// The ink bounds of the text one item draws, in its own font.
+type SegmentInk = (f64, f64);
 
 fn measure_segments(segments: &[StatusItemSegment]) -> Vec<SegmentInk> {
     let figure_font = text::load_font(text_font_size_pt());
-    let slug_font = text::load_font(slug_font_size_pt());
+    let slug_font = text::load_ui_font(slug_font_size_pt());
     segments
         .iter()
-        .map(|seg| SegmentInk {
-            slug: seg
-                .slug
-                .as_deref()
-                .filter(|slug| !slug.is_empty())
-                .map(|slug| text::ink_bounds(&slug_font, slug)),
-            figure: text::ink_bounds(&figure_font, &seg.text),
+        .map(|seg| match seg {
+            StatusItemSegment::Chip { slug, .. } => text::ink_bounds(&slug_font, slug),
+            StatusItemSegment::Figure { text, .. } => text::ink_bounds(&figure_font, text),
         })
         .collect()
 }
 
-/// Places the glyph, then every cluster's slug and figures a fixed
-/// ink-to-ink gap apart; see "Spacing the figures evenly" in
-/// docs/status-item-rendering.md. Also returns where that ink ends.
+/// Places the glyph, then every item one fixed gap after the last, and
+/// returns where the ink ends; see "Spacing the items evenly" in
+/// docs/status-item-rendering.md.
 fn layout_segments(
     segments: &[StatusItemSegment],
     ink: &[SegmentInk],
     glyph_ink_right_edge: f64,
-) -> (Vec<SegmentPlacement>, f64) {
+) -> (Vec<Option<SegmentPlacement>>, f64) {
     let mut placements = Vec::with_capacity(segments.len());
-    let mut ink_cursor = glyph_ink_right_edge;
-    let place = |gap: f64, (ink_min_x, ink_max_x): (f64, f64), cursor: &mut f64| {
-        let origin = *cursor + gap - ink_min_x;
-        *cursor = origin + ink_max_x;
-        let x0 = origin.floor();
-        TextPlacement {
-            origin: TextOrigin {
-                x0: x0 as u32,
-                local_offset: origin - x0,
-            },
-            span: InkSpan {
-                x0: (origin + ink_min_x).floor().max(0.0) as u32,
-                x1: cursor.ceil().max(0.0) as u32,
-            },
+    let mut cursor = glyph_ink_right_edge;
+    let mut any_placed = false;
+
+    for (seg, &(ink_min_x, ink_max_x)) in segments.iter().zip(ink) {
+        if seg.text().is_empty() {
+            placements.push(None);
+            continue;
         }
-    };
-    for (i, seg) in segments.iter().enumerate() {
-        let (lead_gap, hairline_x0) = if i == 0 {
-            (GLYPH_GAP_PX as f64, None)
-        } else if seg.group_start {
-            let hairline_left = ink_cursor + GROUP_GUTTER_PRE_PX as f64;
-            ink_cursor = hairline_left + HAIRLINE_WIDTH_PX as f64;
-            (
-                GROUP_GUTTER_POST_PX as f64,
-                Some(hairline_left.round() as u32),
-            )
+        let gap = if any_placed {
+            ITEM_GAP_PX as f64
         } else {
-            (FIGURE_GAP_PX as f64, None)
+            GLYPH_GAP_PX as f64
         };
-        let slug = ink[i]
-            .slug
-            .map(|bounds| place(lead_gap, bounds, &mut ink_cursor));
-        let figure_gap = if slug.is_some() {
-            SLUG_GAP_PX as f64
-        } else {
-            lead_gap
+        let place_text = |origin: f64| {
+            let x0 = origin.floor();
+            TextPlacement {
+                origin: TextOrigin {
+                    x0: x0 as u32,
+                    local_offset: origin - x0,
+                },
+                span: InkSpan {
+                    x0: (origin + ink_min_x).floor().max(0.0) as u32,
+                    x1: (origin + ink_max_x).ceil().max(0.0) as u32,
+                },
+            }
         };
-        let figure = place(figure_gap, ink[i].figure, &mut ink_cursor);
-        placements.push(SegmentPlacement {
-            slug,
-            figure,
-            hairline_x0,
-        });
+        placements.push(Some(match seg {
+            StatusItemSegment::Chip { .. } => {
+                let rect = ChipRect {
+                    x0: cursor + gap,
+                    x1: cursor + gap + (ink_max_x - ink_min_x) + CHIP_PAD_X_PX * 2.0,
+                };
+                cursor = rect.x1;
+                let letters = place_text(rect.x0 + CHIP_PAD_X_PX - ink_min_x);
+                SegmentPlacement::Chip { rect, letters }
+            }
+            StatusItemSegment::Figure { .. } => {
+                let origin = cursor + gap - ink_min_x;
+                cursor = origin + ink_max_x;
+                SegmentPlacement::Figure(place_text(origin))
+            }
+        }));
+        any_placed = true;
     }
-    (placements, ink_cursor)
+    (placements, cursor)
 }
 
 fn glyph_ink_right_edge_for(worst_used_percent: u8) -> f64 {
@@ -855,8 +957,8 @@ fn glyph_ink_right_edge_for(worst_used_percent: u8) -> f64 {
 }
 
 /// Shares `layout_segments` with `render`, so the spans a click is
-/// tested against are the ones the slugs were actually drawn at.
-pub fn slug_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec<SlugSpan> {
+/// tested against are the frames the chips were actually drawn at.
+pub fn chip_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec<ChipSpan> {
     if segments.is_empty() {
         return Vec::new();
     }
@@ -866,29 +968,30 @@ pub fn slug_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec
     placements
         .into_iter()
         .enumerate()
-        .filter_map(|(segment, placement)| {
-            placement.slug.map(|slug| SlugSpan {
+        .filter_map(|(segment, placement)| match placement {
+            Some(placement @ SegmentPlacement::Chip { .. }) => Some(ChipSpan {
                 segment,
-                span: slug.span,
-            })
+                span: placement.span(),
+            }),
+            _ => None,
         })
         .collect()
 }
 
-/// Which segment's slug a click landed on, in the image's own pixel
+/// Which segment's chip a click landed on, in the image's own pixel
 /// grid, which `geometry.rs`'s `click_x_in_icon_px` puts a click into.
-/// A click on a bare figure lands on no slug and so folds nothing.
-pub fn slug_at(spans: &[SlugSpan], icon_width_px: u32, x: f64) -> Option<usize> {
+/// A click on a bare figure lands on no chip and so folds nothing.
+pub fn chip_at(spans: &[ChipSpan], icon_width_px: u32, x: f64) -> Option<usize> {
     if !(0.0..=icon_width_px as f64).contains(&x) {
         return None;
     }
     spans
         .iter()
-        .find(|slug| {
-            x >= slug.span.x0.saturating_sub(HIT_PADDING_PX) as f64
-                && x <= (slug.span.x1 + HIT_PADDING_PX) as f64
+        .find(|chip| {
+            x >= chip.span.x0.saturating_sub(HIT_PADDING_PX) as f64
+                && x <= (chip.span.x1 + HIT_PADDING_PX) as f64
         })
-        .map(|slug| slug.segment)
+        .map(|chip| chip.segment)
 }
 
 pub fn render(
@@ -900,16 +1003,17 @@ pub fn render(
     let used_fraction = worst_used_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     let figure_font = text::load_font(text_font_size_pt());
-    let slug_font = text::load_font(slug_font_size_pt());
+    let slug_font = text::load_ui_font(slug_font_size_pt());
 
     let ink = measure_segments(segments);
     let (placements, content_ink_right) =
         layout_segments(segments, &ink, glyph_ink_right_edge_for(worst_used_percent));
 
-    let total_w = if segments.is_empty() {
-        SIDE_PAD_PX * 2 + GLYPH_PX
-    } else {
+    let placed_anything = placements.iter().any(Option::is_some);
+    let total_w = if placed_anything {
         (content_ink_right + SIDE_PAD_PX as f64).ceil() as u32
+    } else {
+        SIDE_PAD_PX * 2 + GLYPH_PX
     };
     let total_h = GLYPH_PX;
     let mut buf = vec![0u8; (total_w * total_h * 4) as usize];
@@ -938,29 +1042,34 @@ pub fn render(
     }
 
     for (seg, placement) in segments.iter().zip(placements.iter()) {
-        if let Some(hairline_x0) = placement.hairline_x0 {
-            draw_hairline(&mut buf, total_w, total_h, hairline_x0, dark);
+        let Some(placement) = placement else { continue };
+        match (seg, placement) {
+            (StatusItemSegment::Chip { slug, color }, SegmentPlacement::Chip { rect, letters }) => {
+                let (r, g, b) = color.rgb(dark);
+                draw_chip(&mut buf, total_w, total_h, *rect, (r, g, b));
+                text::draw_text(
+                    &mut buf,
+                    total_w,
+                    total_h,
+                    letters.origin,
+                    &slug_font,
+                    slug,
+                    (r, g, b, 0xff),
+                );
+            }
+            (StatusItemSegment::Figure { text, color }, SegmentPlacement::Figure(placed)) => {
+                text::draw_text(
+                    &mut buf,
+                    total_w,
+                    total_h,
+                    placed.origin,
+                    &figure_font,
+                    text,
+                    color.rgba(dark),
+                );
+            }
+            _ => {}
         }
-        if let (Some(slug), Some(text)) = (&placement.slug, seg.slug.as_deref()) {
-            text::draw_text(
-                &mut buf,
-                total_w,
-                total_h,
-                slug.origin,
-                &slug_font,
-                text,
-                slug_rgba(dark),
-            );
-        }
-        text::draw_text(
-            &mut buf,
-            total_w,
-            total_h,
-            placement.figure.origin,
-            &figure_font,
-            &seg.text,
-            seg.color.rgba(dark),
-        );
     }
 
     (buf, total_w, total_h)
@@ -988,19 +1097,17 @@ pub fn plain_glyph_rgba(worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
 mod tests {
     use super::*;
 
-    fn seg(text: &str, color: StatusItemColor) -> StatusItemSegment {
-        StatusItemSegment {
+    fn fig(text: &str, color: StatusItemColor) -> StatusItemSegment {
+        StatusItemSegment::Figure {
             text: text.into(),
             color,
-            group_start: false,
-            slug: None,
         }
     }
 
-    fn led(slug: &str, text: &str) -> StatusItemSegment {
-        StatusItemSegment {
-            slug: Some(slug.into()),
-            ..seg(text, StatusItemColor::Neutral)
+    fn chip(slug: &str) -> StatusItemSegment {
+        StatusItemSegment::Chip {
+            slug: slug.into(),
+            color: GroupColor::Blue,
         }
     }
 
@@ -1010,48 +1117,64 @@ mod tests {
         segs: &[StatusItemSegment],
     ) -> Vec<SegmentInk> {
         segs.iter()
-            .map(|s| SegmentInk {
-                slug: s
-                    .slug
-                    .as_deref()
-                    .map(|slug| text::ink_bounds(slug_font, slug)),
-                figure: text::ink_bounds(figure_font, &s.text),
+            .map(|s| match s {
+                StatusItemSegment::Chip { slug, .. } => text::ink_bounds(slug_font, slug),
+                StatusItemSegment::Figure { text, .. } => text::ink_bounds(figure_font, text),
             })
             .collect()
     }
 
-    /// Every segment's own absolute figure ink edges, computed the same
-    /// way `render` places them; see "Spacing the figures evenly" in
-    /// docs/status-item-rendering.md.
-    fn figure_ink_edges(font: &text::LoadedFont, segs: &[StatusItemSegment]) -> Vec<(f64, f64)> {
-        let slug_font = text::load_font(slug_font_size_pt());
+    /// Every item's own absolute drawn edges, computed the same way
+    /// `render` places them: a figure's ink, a chip's frame. See
+    /// "Spacing the items evenly" in docs/status-item-rendering.md.
+    fn drawn_edges(font: &text::LoadedFont, segs: &[StatusItemSegment]) -> Vec<(f64, f64)> {
+        let slug_font = text::load_ui_font(slug_font_size_pt());
         let ink = ink_with(font, &slug_font, segs);
         let (placements, _) = layout_segments(segs, &ink, glyph_ink_right_edge_for(0));
         placements
             .iter()
             .zip(&ink)
-            .map(|(p, i)| {
-                let origin = p.figure.origin.x0 as f64 + p.figure.origin.local_offset;
-                (origin + i.figure.0, origin + i.figure.1)
+            .filter_map(|(placement, ink)| match placement.as_ref()? {
+                SegmentPlacement::Chip { rect, .. } => Some((rect.x0, rect.x1)),
+                SegmentPlacement::Figure(text) => {
+                    let origin = text.origin.x0 as f64 + text.origin.local_offset;
+                    Some((origin + ink.0, origin + ink.1))
+                }
             })
             .collect()
     }
 
-    fn figure_spans(segs: &[StatusItemSegment], worst_used_percent: u8) -> Vec<InkSpan> {
+    fn spans(segs: &[StatusItemSegment], worst_used_percent: u8) -> Vec<Option<InkSpan>> {
         let ink = measure_segments(segs);
         let (placements, _) =
             layout_segments(segs, &ink, glyph_ink_right_edge_for(worst_used_percent));
-        placements.into_iter().map(|p| p.figure.span).collect()
+        placements
+            .into_iter()
+            .map(|p| p.map(|p| p.span()))
+            .collect()
+    }
+
+    fn figure_spans(segs: &[StatusItemSegment], worst_used_percent: u8) -> Vec<InkSpan> {
+        spans(segs, worst_used_percent)
+            .into_iter()
+            .zip(segs)
+            .filter(|(_, seg)| matches!(seg, StatusItemSegment::Figure { .. }))
+            .filter_map(|(span, _)| span)
+            .collect()
+    }
+
+    fn alpha_at(buf: &[u8], w: u32, x: u32, y: u32) -> u8 {
+        buf[(((y * w) + x) * 4 + 3) as usize]
     }
 
     #[test]
     fn figure_spans_land_on_the_ink_the_figures_are_drawn_with() {
         let segs = [
-            seg("18%", StatusItemColor::Neutral),
-            seg("84%", StatusItemColor::Amber),
+            fig("18%", StatusItemColor::Neutral),
+            fig("84%", StatusItemColor::Amber),
         ];
         let font = text::load_font(text_font_size_pt());
-        let edges = figure_ink_edges(&font, &segs);
+        let edges = drawn_edges(&font, &segs);
         let spans = figure_spans(&segs, 0);
 
         assert_eq!(spans.len(), 2);
@@ -1067,112 +1190,368 @@ mod tests {
         }
     }
 
-    mod slugs {
+    /// Adjacent items are parted by spacing and nothing else, so
+    /// nothing is ever painted in the gap between two of them.
+    mod no_dividers {
         use super::*;
 
-        #[test]
-        fn a_slug_is_drawn_just_before_the_figure_it_leads() {
-            let segs = [led("FAB", "55%")];
-            let slugs = slug_spans(&segs, 0);
-            let figures = figure_spans(&segs, 0);
-
-            assert_eq!(slugs.len(), 1);
-            assert_eq!(slugs[0].segment, 0);
-            assert!(
-                slugs[0].span.x1 <= figures[0].x0,
-                "the slug leads its figure: {:?} then {:?}",
-                slugs[0].span,
-                figures[0]
-            );
-            assert!(
-                (figures[0].x0 - slugs[0].span.x1).abs_diff(SLUG_GAP_PX) <= 1,
-                "a slug sits SLUG_GAP_PX ({SLUG_GAP_PX}px) from the figure it leads, give or take how each edge rounds, got {}px",
-                figures[0].x0 - slugs[0].span.x1
-            );
+        fn painted_columns(buf: &[u8], w: u32, h: u32) -> Vec<bool> {
+            (0..w)
+                .map(|x| (0..h).any(|y| alpha_at(buf, w, x, y) > 0))
+                .collect()
         }
 
         #[test]
-        fn a_slug_span_lands_on_the_ink_the_slug_is_drawn_with() {
-            let segs = [led("CUR", "99%")];
-            let slug_font = text::load_font(slug_font_size_pt());
-            let ink = measure_segments(&segs);
-            let (placements, _) = layout_segments(&segs, &ink, glyph_ink_right_edge_for(0));
-            let placed = placements[0].slug.as_ref().expect("the slug is placed");
-            let origin = placed.origin.x0 as f64 + placed.origin.local_offset;
-            let (ink_min, ink_max) = text::ink_bounds(&slug_font, "CUR");
-            let span = slug_spans(&segs, 0)[0].span;
-
-            assert!((span.x0 as f64 - (origin + ink_min)).abs() <= 1.0);
-            assert!((span.x1 as f64 - (origin + ink_max)).abs() <= 1.0);
+        fn the_gap_between_two_items_is_empty_whatever_kinds_they_are() {
+            for segs in [
+                vec![
+                    fig("18%", StatusItemColor::Neutral),
+                    fig("55%", StatusItemColor::Neutral),
+                ],
+                vec![chip("FAB"), chip("CUR")],
+                vec![chip("FAB"), fig("12%", StatusItemColor::Neutral)],
+                vec![
+                    chip("FAB"),
+                    fig("18%", StatusItemColor::Neutral),
+                    fig("55%", StatusItemColor::Neutral),
+                    chip("CUR"),
+                    fig("12%", StatusItemColor::Neutral),
+                ],
+            ] {
+                let (buf, w, h) = render(&segs, false, 0, true);
+                let columns = painted_columns(&buf, w, h);
+                let edges: Vec<InkSpan> = spans(&segs, 0).into_iter().flatten().collect();
+                for pair in edges.windows(2) {
+                    // A span is the item's own edges, and antialiasing
+                    // puts a soft pixel just outside them; a divider was
+                    // two pixels wide in the middle of the gap.
+                    for x in pair[0].x1 + 2..pair[1].x0 - 1 {
+                        assert!(
+                            !columns[x as usize],
+                            "column {x} sits in the gap between {:?} and {:?} and must stay empty",
+                            pair[0], pair[1]
+                        );
+                    }
+                }
+            }
         }
+    }
 
+    mod chips {
+        use super::*;
+
+        /// The whole of the captain's second complaint: a collapsed
+        /// group used to draw its slug and then a rolled-up figure.
+        /// Collapsed, a group is one chip and nothing else.
         #[test]
-        fn only_the_figures_given_a_slug_report_one() {
-            let segs = [
-                led("FAB", "55%"),
-                seg("18%", StatusItemColor::Neutral),
-                StatusItemSegment {
-                    group_start: true,
-                    ..led("CUR", "99%")
-                },
-                StatusItemSegment {
-                    group_start: true,
-                    ..seg("12%", StatusItemColor::Neutral)
-                },
-            ];
+        fn a_collapsed_group_draws_its_chip_and_no_figure_at_all() {
+            let segs = [chip("FAB")];
+            let placed: Vec<Option<InkSpan>> = spans(&segs, 0);
+            assert_eq!(placed.len(), 1, "a collapsed group is exactly one item");
             assert_eq!(
-                slug_spans(&segs, 0)
-                    .iter()
-                    .map(|s| s.segment)
-                    .collect::<Vec<_>>(),
-                vec![0, 2],
-                "an opened group's later members and a standalone pin carry no slug"
+                chip_spans(&segs, 0).len(),
+                1,
+                "and that one item is its chip"
+            );
+            assert!(
+                figure_spans(&segs, 0).is_empty(),
+                "a collapsed group must draw no figure"
             );
         }
 
         #[test]
-        fn an_empty_slug_is_drawn_and_hit_tested_as_no_slug_at_all() {
-            let segs = [StatusItemSegment {
-                slug: Some(String::new()),
-                ..seg("55%", StatusItemColor::Neutral)
+        fn an_opened_group_keeps_its_chip_and_lays_its_members_out_after_it() {
+            let segs = [
+                chip("FAB"),
+                fig("18%", StatusItemColor::Neutral),
+                fig("55%", StatusItemColor::Neutral),
+            ];
+            let placed: Vec<InkSpan> = spans(&segs, 0).into_iter().flatten().collect();
+            let chips = chip_spans(&segs, 0);
+
+            assert_eq!(chips.len(), 1);
+            assert_eq!(chips[0].segment, 0, "the chip still leads its members");
+            assert_eq!(chips[0].span, placed[0]);
+            assert!(
+                placed[0].x1 < placed[1].x0 && placed[1].x1 < placed[2].x0,
+                "the members follow the chip in order: {placed:?}"
+            );
+        }
+
+        /// Opening a group must not move its chip: the chip is the click
+        /// target, and a target that jumps out from under the pointer on
+        /// its own click is a target nobody can hit twice.
+        #[test]
+        fn opening_a_group_leaves_its_chip_exactly_where_it_was() {
+            let collapsed = [chip("FAB")];
+            let opened = [chip("FAB"), fig("18%", StatusItemColor::Neutral)];
+            assert_eq!(
+                chip_spans(&collapsed, 0)[0].span,
+                chip_spans(&opened, 0)[0].span
+            );
+        }
+
+        #[test]
+        fn a_chip_is_a_frame_around_its_letters_not_bare_text() {
+            let segs = [chip("FAB")];
+            let (buf, w, h) = render(&segs, false, 0, true);
+            let frame = chip_spans(&segs, 0)[0].span;
+            let letters = {
+                let ink = measure_segments(&segs);
+                let (placements, _) = layout_segments(&segs, &ink, glyph_ink_right_edge_for(0));
+                match placements[0].as_ref().expect("the chip is placed") {
+                    SegmentPlacement::Chip { letters, .. } => letters.span,
+                    SegmentPlacement::Figure(_) => unreachable!("a chip is not a figure"),
+                }
+            };
+
+            assert!(
+                frame.x0 < letters.x0 && letters.x1 < frame.x1,
+                "the frame has to surround the letters: {frame:?} around {letters:?}"
+            );
+            // A column inside the frame but clear of every letter: the
+            // fill has to be painted there, which bare text never would.
+            let padding_column = frame.x0 + (CHIP_PAD_X_PX / 2.0) as u32;
+            assert!(
+                alpha_at(&buf, w, padding_column, h / 2) > 0,
+                "column {padding_column} is the chip's own padding and must carry its fill"
+            );
+        }
+
+        #[test]
+        fn a_chips_fill_is_a_muted_tint_and_its_letters_the_saturated_colour() {
+            let segs = [StatusItemSegment::Chip {
+                slug: "FAB".into(),
+                color: GroupColor::Blue,
             }];
-            assert!(slug_spans(&segs, 0).is_empty());
-            assert_eq!(
-                render(&segs, false, 0, true).1,
-                render(&[seg("55%", StatusItemColor::Neutral)], false, 0, true).1,
-                "an empty slug reserves no width"
+            let (buf, w, h) = render(&segs, false, 0, true);
+            let (r, g, b) = GroupColor::Blue.rgb(true);
+            let frame = chip_spans(&segs, 0)[0].span;
+
+            let fill_alpha = alpha_at(&buf, w, frame.x0 + (CHIP_PAD_X_PX / 2.0) as u32, h / 2);
+            assert!(
+                fill_alpha > 0 && fill_alpha < 128,
+                "the fill is a muted tint of the colour, got alpha {fill_alpha}"
+            );
+            let letters_painted = buf
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|px| (px[0], px[1], px[2], px[3]) == (r, g, b, 0xff));
+            assert!(
+                letters_painted,
+                "the letters are the fully-saturated colour, unmixed"
             );
         }
 
         #[test]
-        fn slug_at_folds_the_group_whose_slug_was_clicked() {
-            let segs = [
-                led("FAB", "55%"),
-                StatusItemSegment {
-                    group_start: true,
-                    ..led("CUR", "99%")
-                },
-            ];
-            let spans = slug_spans(&segs, 0);
-            let (_, width, _) = render(&segs, false, 0, false);
-
-            for slug in &spans {
-                let middle = (slug.span.x0 + slug.span.x1) as f64 / 2.0;
+        fn a_chip_stands_clear_of_the_top_and_bottom_of_the_image() {
+            let segs = [chip("FAB")];
+            let (buf, w, h) = render(&segs, false, 0, true);
+            let frame = chip_spans(&segs, 0)[0].span;
+            for x in frame.x0..frame.x1.min(w) {
                 assert_eq!(
-                    slug_at(&spans, width, middle),
-                    Some(slug.segment),
-                    "the middle of a slug folds its own group"
+                    alpha_at(&buf, w, x, 0),
+                    0,
+                    "column {x} touches the top edge"
+                );
+                assert_eq!(
+                    alpha_at(&buf, w, x, h - 1),
+                    0,
+                    "column {x} touches the bottom edge"
                 );
             }
         }
 
-        /// The whole point of moving the click target: the figure is no
-        /// longer a button, so a click on the digits opens the panel
-        /// like any other click on the item.
         #[test]
-        fn a_click_on_the_bare_figure_folds_nothing() {
-            let segs = [led("FAB", "55%")];
-            let slugs = slug_spans(&segs, 0);
+        fn each_group_colour_draws_in_its_own_ink_and_differs_by_appearance() {
+            let all = [
+                GroupColor::Teal,
+                GroupColor::Blue,
+                GroupColor::Violet,
+                GroupColor::Amber,
+                GroupColor::Red,
+            ];
+            for (i, a) in all.iter().enumerate() {
+                assert_ne!(a.rgb(true), a.rgb(false), "{a:?} must answer to appearance");
+                for b in &all[i + 1..] {
+                    assert_ne!(a.rgb(true), b.rgb(true), "{a:?} and {b:?} must differ");
+                }
+            }
+        }
+
+        #[test]
+        fn an_unknown_colour_name_falls_back_to_the_first_of_the_palette() {
+            assert_eq!(GroupColor::parse("chartreuse"), GroupColor::Teal);
+            assert_eq!(GroupColor::parse("violet"), GroupColor::Violet);
+        }
+
+        #[test]
+        fn an_empty_slug_is_drawn_and_hit_tested_as_no_chip_at_all() {
+            let segs = [chip(""), fig("55%", StatusItemColor::Neutral)];
+            assert!(chip_spans(&segs, 0).is_empty());
+            assert_eq!(
+                render(&segs, false, 0, true).1,
+                render(&[fig("55%", StatusItemColor::Neutral)], false, 0, true).1,
+                "an empty slug reserves no width and costs no gap"
+            );
+        }
+
+        #[test]
+        fn a_chip_widens_the_image_by_its_own_frame_plus_one_gap() {
+            let bare = render(&[fig("55%", StatusItemColor::Neutral)], false, 0, false);
+            let with_chip = render(
+                &[chip("FAB"), fig("55%", StatusItemColor::Neutral)],
+                false,
+                0,
+                false,
+            );
+            let slug_font = text::load_ui_font(slug_font_size_pt());
+            let (ink_min, ink_max) = text::ink_bounds(&slug_font, "FAB");
+            let frame = (ink_max - ink_min + CHIP_PAD_X_PX * 2.0).round() as u32;
+
+            assert!(with_chip.1 > bare.1, "a chip has to cost width");
+            assert_eq!(with_chip.2, bare.2, "and no height");
+            assert!(
+                (with_chip.1 - bare.1).abs_diff(frame + ITEM_GAP_PX) <= 2,
+                "the chip should cost its own frame plus one gap: {} vs {}",
+                with_chip.1 - bare.1,
+                frame + ITEM_GAP_PX
+            );
+        }
+    }
+
+    mod spacing {
+        use super::*;
+
+        #[test]
+        fn every_gap_between_two_adjacent_items_is_the_same_one_constant() {
+            for font in [
+                text::load_font(text_font_size_pt()),
+                text::load_font_forcing_fallback(text_font_size_pt()),
+            ] {
+                for segs in [
+                    vec![
+                        fig("2%", StatusItemColor::Neutral),
+                        fig("74%", StatusItemColor::Neutral),
+                        fig("100%", StatusItemColor::Neutral),
+                    ],
+                    vec![chip("FAB"), chip("CUR"), chip("MON")],
+                    vec![
+                        chip("FAB"),
+                        fig("18%", StatusItemColor::Neutral),
+                        fig("55%", StatusItemColor::Neutral),
+                        chip("CUR"),
+                        fig("9%", StatusItemColor::Neutral),
+                    ],
+                ] {
+                    let edges = drawn_edges(&font, &segs);
+                    let gaps: Vec<f64> = edges.windows(2).map(|w| w[1].0 - w[0].1).collect();
+                    for gap in &gaps {
+                        assert!(
+                            (gap - ITEM_GAP_PX as f64).abs() < 1e-6,
+                            "every item-to-item gap must equal ITEM_GAP_PX ({ITEM_GAP_PX}px), got {gaps:?}"
+                        );
+                    }
+                }
+            }
+        }
+
+        /// With no groups the tray is the row it was before groups
+        /// existed: figures, one gap apart, nothing else.
+        #[test]
+        fn with_no_groups_the_row_is_plain_figures_one_gap_apart() {
+            let segs = [
+                fig("18%", StatusItemColor::Neutral),
+                fig("55%", StatusItemColor::Neutral),
+                fig("99%", StatusItemColor::Red),
+                fig("47%", StatusItemColor::Neutral),
+            ];
+            assert!(chip_spans(&segs, 0).is_empty(), "no groups, no chips");
+            let font = text::load_font(text_font_size_pt());
+            let edges = drawn_edges(&font, &segs);
+            for pair in edges.windows(2) {
+                assert!((pair[1].0 - pair[0].1 - ITEM_GAP_PX as f64).abs() < 1e-6);
+            }
+        }
+
+        #[test]
+        fn the_glyph_to_first_item_gap_is_its_own_larger_constant() {
+            for font in [
+                text::load_font(text_font_size_pt()),
+                text::load_font_forcing_fallback(text_font_size_pt()),
+            ] {
+                for segs in [
+                    vec![fig("42%", StatusItemColor::Neutral)],
+                    vec![chip("FAB")],
+                ] {
+                    let glyph_ink_right_edge = SIDE_PAD_PX as f64
+                        + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
+                    let glyph_gap = drawn_edges(&font, &segs)[0].0 - glyph_ink_right_edge;
+                    assert!(
+                        (glyph_gap - GLYPH_GAP_PX as f64).abs() < 1e-6,
+                        "the glyph-to-item gap must equal GLYPH_GAP_PX ({GLYPH_GAP_PX}px), got {glyph_gap}"
+                    );
+                }
+            }
+        }
+
+        /// An item that draws nothing must not leave a gap behind it,
+        /// which is what would put a hole in an otherwise even row.
+        #[test]
+        fn an_undrawable_item_leaves_the_rhythm_alone() {
+            let with_hole = [
+                fig("18%", StatusItemColor::Neutral),
+                chip(""),
+                fig("55%", StatusItemColor::Neutral),
+            ];
+            let without = [
+                fig("18%", StatusItemColor::Neutral),
+                fig("55%", StatusItemColor::Neutral),
+            ];
+            assert_eq!(
+                render(&with_hole, false, 0, true).1,
+                render(&without, false, 0, true).1
+            );
+        }
+    }
+
+    mod clicks {
+        use super::*;
+
+        #[test]
+        fn chip_at_folds_the_group_whose_chip_was_clicked() {
+            let segs = [
+                chip("FAB"),
+                fig("18%", StatusItemColor::Neutral),
+                chip("CUR"),
+            ];
+            let spans = chip_spans(&segs, 0);
+            let (_, width, _) = render(&segs, false, 0, false);
+
+            assert_eq!(spans.len(), 2);
+            for chip in &spans {
+                for x in [
+                    chip.span.x0 as f64,
+                    (chip.span.x0 + chip.span.x1) as f64 / 2.0,
+                    chip.span.x1 as f64,
+                ] {
+                    assert_eq!(
+                        chip_at(&spans, width, x),
+                        Some(chip.segment),
+                        "pixel {x} is chip {}'s own frame",
+                        chip.segment
+                    );
+                }
+            }
+        }
+
+        /// The figure is not a button: a click on the digits opens the
+        /// panel like any other click on the item.
+        #[test]
+        fn a_click_on_a_bare_figure_folds_nothing() {
+            let segs = [chip("FAB"), fig("55%", StatusItemColor::Neutral)];
+            let chips = chip_spans(&segs, 0);
             let figure = figure_spans(&segs, 0)[0];
             let (_, width, _) = render(&segs, false, 0, false);
 
@@ -1181,148 +1560,51 @@ mod tests {
                 (figure.x0 + figure.x1) as f64 / 2.0,
                 figure.x1 as f64,
             ] {
-                assert_eq!(
-                    slug_at(&slugs, width, x),
-                    None,
-                    "icon pixel {x} is the figure's own ink, which folds nothing"
-                );
+                assert_eq!(chip_at(&chips, width, x), None);
             }
         }
 
         #[test]
         fn a_click_on_the_glyph_or_past_either_end_folds_nothing() {
-            let segs = [led("FAB", "55%")];
-            let spans = slug_spans(&segs, 0);
+            let segs = [chip("FAB")];
+            let spans = chip_spans(&segs, 0);
             let (_, width, _) = render(&segs, false, 0, false);
 
             assert_eq!(
-                slug_at(&spans, width, (SIDE_PAD_PX + GLYPH_PX / 2) as f64),
+                chip_at(&spans, width, (SIDE_PAD_PX + GLYPH_PX / 2) as f64),
                 None
             );
-            assert_eq!(slug_at(&spans, width, -0.1), None);
-            assert_eq!(slug_at(&spans, width, width as f64 + 0.1), None);
-            assert_eq!(slug_at(&spans, width, width as f64), None);
+            assert_eq!(chip_at(&spans, width, -0.1), None);
+            assert_eq!(chip_at(&spans, width, width as f64 + 0.1), None);
         }
 
         #[test]
-        fn a_click_just_off_a_slug_still_folds_its_group() {
-            let segs = [led("FAB", "55%")];
-            let spans = slug_spans(&segs, 0);
+        fn a_click_just_off_a_chip_still_folds_its_group() {
+            let segs = [chip("FAB")];
+            let spans = chip_spans(&segs, 0);
             let (_, width, _) = render(&segs, false, 0, false);
             for off in 1..HIT_PADDING_PX {
                 assert_eq!(
-                    slug_at(&spans, width, spans[0].span.x0 as f64 - off as f64),
-                    Some(0),
-                    "a click {off}px shy of the letters still folds the group"
+                    chip_at(&spans, width, spans[0].span.x0 as f64 - off as f64),
+                    Some(0)
                 );
             }
         }
 
         #[test]
-        fn slug_at_finds_nothing_when_nothing_is_drawn() {
+        fn chip_at_finds_nothing_when_nothing_is_drawn() {
             let width = SIDE_PAD_PX * 2 + GLYPH_PX;
-            assert_eq!(slug_at(&[], width, width as f64 / 2.0), None);
-            assert!(slug_spans(&[], 0).is_empty());
+            assert_eq!(chip_at(&[], width, width as f64 / 2.0), None);
+            assert!(chip_spans(&[], 0).is_empty());
         }
 
         #[test]
-        fn two_slugs_never_claim_the_same_pixel_even_padded() {
-            let segs = [
-                led("FAB", "55%"),
-                StatusItemSegment {
-                    group_start: true,
-                    ..led("CUR", "99%")
-                },
-            ];
-            let spans = slug_spans(&segs, 0);
+        fn two_chips_never_claim_the_same_pixel_even_padded() {
+            let segs = [chip("FAB"), chip("CUR")];
+            let spans = chip_spans(&segs, 0);
             assert!(
                 spans[0].span.x1 + HIT_PADDING_PX < spans[1].span.x0.saturating_sub(HIT_PADDING_PX),
-                "padded slug spans must stay disjoint: {spans:?}"
-            );
-        }
-
-        #[test]
-        fn a_slug_widens_the_image_by_its_own_ink_plus_its_gap() {
-            let bare = render(&[seg("55%", StatusItemColor::Neutral)], false, 0, false);
-            let with_slug = render(&[led("FAB", "55%")], false, 0, false);
-            let slug_font = text::load_font(slug_font_size_pt());
-            let (ink_min, ink_max) = text::ink_bounds(&slug_font, "FAB");
-            let slug_ink = (ink_max - ink_min).round() as u32;
-
-            assert!(with_slug.1 > bare.1, "a slug has to cost width");
-            assert_eq!(with_slug.2, bare.2, "and no height");
-            assert!(
-                (with_slug.1 - bare.1).abs_diff(slug_ink + SLUG_GAP_PX) <= 2,
-                "the slug should cost its own ink plus its gap: {} vs {}",
-                with_slug.1 - bare.1,
-                slug_ink + SLUG_GAP_PX
-            );
-        }
-
-        #[test]
-        fn a_slug_paints_ink_of_its_own_lighter_than_the_digits_beside_it() {
-            let segs = [led("FAB", "55%")];
-            let (buf, w, _) = render(&segs, false, 0, true);
-            let span = slug_spans(&segs, 0)[0].span;
-            let alpha_at = |x: u32, y: u32| buf[(((y * w) + x) * 4 + 3) as usize];
-            let column_ink = |x: u32| (0..GLYPH_PX).map(|y| alpha_at(x, y)).max().unwrap_or(0);
-
-            let slug_ink = (span.x0..span.x1).map(column_ink).max().unwrap_or(0);
-            assert!(slug_ink > 0, "the slug's letters have to be drawn");
-            assert!(
-                slug_ink < StatusItemColor::Neutral.rgba(true).3,
-                "the slug is drawn lighter than a figure's own ink"
-            );
-        }
-
-        /// The colour bar that used to sit under a grouped figure is
-        /// gone: a group is named in the menu bar, never tinted there.
-        #[test]
-        fn nothing_is_painted_under_a_grouped_figure_any_more() {
-            let segs = [led("FAB", "55%")];
-            let (buf, w, h) = render(&segs, false, 0, true);
-            let figure = figure_spans(&segs, 0)[0];
-            // The band the bar used to occupy: the bottom few rows
-            // under the digits' own ink.
-            for y in (h - 6)..h {
-                for x in figure.x0..figure.x1.min(w) {
-                    assert_eq!(
-                        buf[(((y * w) + x) * 4 + 3) as usize],
-                        0,
-                        "pixel ({x}, {y}) under the figure must stay clear"
-                    );
-                }
-            }
-        }
-
-        #[test]
-        fn a_slug_does_not_disturb_the_figures_own_ink() {
-            let bare_segs = [seg("55%", StatusItemColor::Neutral)];
-            let led_segs = [led("FAB", "55%")];
-            let bare = render(&bare_segs, false, 0, true);
-            let with_slug = render(&led_segs, false, 0, true);
-            let bare_span = figure_spans(&bare_segs, 0)[0];
-            let led_span = figure_spans(&led_segs, 0)[0];
-
-            // The slug shifts the digits into a different sub-pixel
-            // phase, so their antialiasing differs column by column;
-            // what must not change is how much ink they are drawn with.
-            let ink_mass = |buf: &[u8], w: u32, span: InkSpan| -> u64 {
-                (0..GLYPH_PX)
-                    .flat_map(|y| (span.x0..span.x1).map(move |x| (y, x)))
-                    .map(|(y, x)| buf[(((y * w) + x) * 4 + 3) as usize] as u64)
-                    .sum()
-            };
-            let before = ink_mass(&bare.0, bare.1, bare_span);
-            let after = ink_mass(&with_slug.0, with_slug.1, led_span);
-
-            assert!(
-                (bare_span.x1 - bare_span.x0).abs_diff(led_span.x1 - led_span.x0) <= 1,
-                "the digits keep their own width, give or take how each edge rounds"
-            );
-            assert!(
-                before.abs_diff(after) * 100 < before * 3,
-                "the digits keep their own weight: {before} then {after}"
+                "padded chip spans must stay disjoint: {spans:?}"
             );
         }
     }
@@ -1342,28 +1624,21 @@ mod tests {
 
         struct Scene {
             segments: Vec<StatusItemSegment>,
-            spans: Vec<SlugSpan>,
+            spans: Vec<ChipSpan>,
             icon_width_px: u32,
             item_width_points: f64,
         }
 
         fn scene() -> Scene {
             let segments = vec![
-                led("FAB", "55%"),
-                StatusItemSegment {
-                    group_start: true,
-                    ..led("CUR", "99%")
-                },
-                StatusItemSegment {
-                    group_start: true,
-                    ..led("MON", "84%")
-                },
-                StatusItemSegment {
-                    group_start: true,
-                    ..seg("12%", StatusItemColor::Neutral)
-                },
+                chip("FAB"),
+                fig("18%", StatusItemColor::Neutral),
+                fig("55%", StatusItemColor::Neutral),
+                chip("CUR"),
+                chip("MON"),
+                fig("12%", StatusItemColor::Neutral),
             ];
-            let spans = slug_spans(&segments, 50);
+            let spans = chip_spans(&segments, 50);
             let (_, icon_width_px, _) = render(&segments, false, 50, true);
             Scene {
                 segments,
@@ -1380,7 +1655,7 @@ mod tests {
         }
 
         fn resolve(scene: &Scene, click_x_points: f64) -> Option<usize> {
-            slug_at(
+            chip_at(
                 &scene.spans,
                 scene.icon_width_px,
                 click_x_in_icon_px(
@@ -1397,7 +1672,7 @@ mod tests {
         /// image's own width.
         fn resolve_by_bare_fraction(scene: &Scene, click_x_points: f64) -> Option<usize> {
             let fraction = (click_x_points - ITEM_LEFT_POINTS) / scene.item_width_points;
-            slug_at(
+            chip_at(
                 &scene.spans,
                 scene.icon_width_px,
                 fraction * scene.icon_width_px as f64,
@@ -1405,37 +1680,37 @@ mod tests {
         }
 
         #[test]
-        fn a_click_anywhere_on_a_slug_folds_that_slugs_own_group() {
+        fn a_click_anywhere_on_a_chip_folds_that_chips_own_group() {
             let scene = scene();
-            for slug in &scene.spans {
+            for chip in &scene.spans {
                 for icon_px in [
-                    slug.span.x0 as f64,
-                    (slug.span.x0 + slug.span.x1) as f64 / 2.0,
-                    slug.span.x1 as f64,
+                    chip.span.x0 as f64,
+                    (chip.span.x0 + chip.span.x1) as f64 / 2.0,
+                    chip.span.x1 as f64,
                 ] {
                     assert_eq!(
                         resolve(&scene, click_landing_on(icon_px)),
-                        Some(slug.segment),
-                        "icon pixel {icon_px} is slug {}'s own ink",
-                        slug.segment
+                        Some(chip.segment),
+                        "icon pixel {icon_px} is chip {}'s own frame",
+                        chip.segment
                     );
                 }
             }
         }
 
         #[test]
-        fn the_bare_fraction_of_the_buttons_width_misses_the_slug_clicked() {
+        fn the_bare_fraction_of_the_buttons_width_misses_the_chip_clicked() {
             let scene = scene();
-            let goes_astray = scene.spans.iter().any(|slug| {
-                (slug.span.x0..=slug.span.x1).any(|icon_px| {
+            let goes_astray = scene.spans.iter().any(|chip| {
+                (chip.span.x0..=chip.span.x1).any(|icon_px| {
                     let click = click_landing_on(icon_px as f64);
-                    resolve(&scene, click) == Some(slug.segment)
-                        && resolve_by_bare_fraction(&scene, click) != Some(slug.segment)
+                    resolve(&scene, click) == Some(chip.segment)
+                        && resolve_by_bare_fraction(&scene, click) != Some(chip.segment)
                 })
             });
             assert!(
                 goes_astray,
-                "the margin-blind arithmetic has to send at least one click on a slug's own letters somewhere else; that is the bug it caused"
+                "the margin-blind arithmetic has to send at least one click on a chip's own frame somewhere else; that is the bug it caused"
             );
         }
 
@@ -1455,7 +1730,7 @@ mod tests {
             );
         }
 
-        /// Through the same coordinate space the slugs are resolved in:
+        /// Through the same coordinate space the chips are resolved in:
         /// a click on the digits themselves opens the panel.
         #[test]
         fn a_click_on_a_figure_across_the_margin_folds_nothing_either() {
@@ -1551,9 +1826,9 @@ mod tests {
     #[test]
     fn click_highlight_and_panel_open_share_one_frame_width_with_segments_pinned() {
         let segs = [
-            seg("51%", StatusItemColor::Neutral),
-            seg("67%", StatusItemColor::Neutral),
-            seg("96%", StatusItemColor::Red),
+            chip("FAB"),
+            fig("67%", StatusItemColor::Neutral),
+            fig("96%", StatusItemColor::Red),
         ];
         let unhighlighted = render(&segs, false, 96, false);
         let highlighted = render(&segs, true, 96, false);
@@ -1577,15 +1852,17 @@ mod tests {
     fn the_highlight_reaches_into_the_side_padding_where_the_glyph_never_draws() {
         let (buf, w, h) = render(&[], true, 0, false);
         let mid_row = h / 2;
-        let alpha_at = |x: u32| buf[(((mid_row * w) + x) * 4 + 3) as usize];
-        assert!(alpha_at(2) > 0, "highlight must cover the left padding");
         assert!(
-            alpha_at(w - 3) > 0,
+            alpha_at(&buf, w, 2, mid_row) > 0,
+            "highlight must cover the left padding"
+        );
+        assert!(
+            alpha_at(&buf, w, w - 3, mid_row) > 0,
             "highlight must cover the right padding"
         );
         let (bare, _, _) = render(&[], false, 0, false);
         assert_eq!(
-            bare[(((mid_row * w) + 2) * 4 + 3) as usize],
+            alpha_at(&bare, w, 2, mid_row),
             0,
             "unhighlighted padding stays fully transparent"
         );
@@ -1593,11 +1870,11 @@ mod tests {
 
     #[test]
     fn render_grows_width_per_segment_and_never_touches_height() {
-        let one = render(&[seg("2%", StatusItemColor::Neutral)], false, 0, false);
+        let one = render(&[fig("2%", StatusItemColor::Neutral)], false, 0, false);
         let two = render(
             &[
-                seg("2%", StatusItemColor::Neutral),
-                seg("78%", StatusItemColor::Amber),
+                fig("2%", StatusItemColor::Neutral),
+                fig("78%", StatusItemColor::Amber),
             ],
             false,
             0,
@@ -1614,9 +1891,9 @@ mod tests {
 
     #[test]
     fn a_trailing_figures_width_now_tracks_its_own_digit_count() {
-        let one_digit = render(&[seg("9%", StatusItemColor::Neutral)], false, 0, false);
-        let two_digit = render(&[seg("42%", StatusItemColor::Neutral)], false, 0, false);
-        let three_digit = render(&[seg("100%", StatusItemColor::Neutral)], false, 0, false);
+        let one_digit = render(&[fig("9%", StatusItemColor::Neutral)], false, 0, false);
+        let two_digit = render(&[fig("42%", StatusItemColor::Neutral)], false, 0, false);
+        let three_digit = render(&[fig("100%", StatusItemColor::Neutral)], false, 0, false);
         assert!(
             one_digit.1 < two_digit.1,
             "a single (and so trailing) segment's own wider text should now widen the image"
@@ -1631,8 +1908,8 @@ mod tests {
     fn a_non_trailing_figures_same_digit_count_barely_moves_what_follows_it() {
         let a = render(
             &[
-                seg("42%", StatusItemColor::Neutral),
-                seg("50%", StatusItemColor::Neutral),
+                fig("42%", StatusItemColor::Neutral),
+                fig("50%", StatusItemColor::Neutral),
             ],
             false,
             0,
@@ -1640,8 +1917,8 @@ mod tests {
         );
         let b = render(
             &[
-                seg("77%", StatusItemColor::Neutral),
-                seg("50%", StatusItemColor::Neutral),
+                fig("77%", StatusItemColor::Neutral),
+                fig("50%", StatusItemColor::Neutral),
             ],
             false,
             0,
@@ -1663,8 +1940,8 @@ mod tests {
 
         let narrow_first = render(
             &[
-                seg("9%", StatusItemColor::Neutral),
-                seg("50%", StatusItemColor::Neutral),
+                fig("9%", StatusItemColor::Neutral),
+                fig("50%", StatusItemColor::Neutral),
             ],
             false,
             0,
@@ -1672,8 +1949,8 @@ mod tests {
         );
         let wide_first = render(
             &[
-                seg("100%", StatusItemColor::Neutral),
-                seg("50%", StatusItemColor::Neutral),
+                fig("100%", StatusItemColor::Neutral),
+                fig("50%", StatusItemColor::Neutral),
             ],
             false,
             0,
@@ -1692,8 +1969,8 @@ mod tests {
      {
         for text in ["0%", "9%", "42%", "100%"] {
             let segs = [
-                seg("51%", StatusItemColor::Neutral),
-                seg(text, StatusItemColor::Neutral),
+                fig("51%", StatusItemColor::Neutral),
+                fig(text, StatusItemColor::Neutral),
             ];
             let unhighlighted = render(&segs, false, 50, false);
             let highlighted = render(&segs, true, 50, false);
@@ -1706,7 +1983,7 @@ mod tests {
 
     #[test]
     fn a_digit_and_percent_segment_renders_some_exact_colored_pixels() {
-        let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], false, 0, false);
+        let (buf, w, h) = render(&[fig("78%", StatusItemColor::Red)], false, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .as_chunks::<4>()
@@ -1721,7 +1998,7 @@ mod tests {
 
     #[test]
     fn a_broken_mark_renders_some_red_pixels() {
-        let (buf, w, h) = render(&[seg("!", StatusItemColor::Red)], false, 0, false);
+        let (buf, w, h) = render(&[fig("!", StatusItemColor::Red)], false, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .as_chunks::<4>()
@@ -1731,63 +2008,6 @@ mod tests {
         assert!(
             found,
             "expected at least one pixel painted in the red channel across a {w}x{h} buffer"
-        );
-    }
-
-    #[test]
-    fn a_group_start_segment_widens_the_image_by_the_hairline_gutter() {
-        let same_group = render(
-            &[
-                seg("9%", StatusItemColor::Neutral),
-                seg("9%", StatusItemColor::Neutral),
-            ],
-            false,
-            0,
-            false,
-        );
-        let mut second_group = seg("9%", StatusItemColor::Neutral);
-        second_group.group_start = true;
-        let two_groups = render(
-            &[seg("9%", StatusItemColor::Neutral), second_group],
-            false,
-            0,
-            false,
-        );
-        assert_eq!(
-            two_groups.1 - same_group.1,
-            GROUP_GUTTER_PRE_PX + HAIRLINE_WIDTH_PX + GROUP_GUTTER_POST_PX - FIGURE_GAP_PX,
-            "a group boundary must replace the plain figure gap it displaces with the gutter+hairline width"
-        );
-
-        let (buf, w, h) = two_groups;
-        let segs = [seg("9%", StatusItemColor::Neutral), {
-            let mut s = seg("9%", StatusItemColor::Neutral);
-            s.group_start = true;
-            s
-        }];
-        let ink = measure_segments(&segs);
-        let (placements, _) = layout_segments(&segs, &ink, glyph_ink_right_edge_for(0));
-        let gutter_x = placements[1]
-            .hairline_x0
-            .expect("the second group's leading segment must carry the hairline");
-        let mid_row = h / 2;
-        let painted = (gutter_x..gutter_x + HAIRLINE_WIDTH_PX)
-            .any(|x| buf[(((mid_row * w) + x) * 4 + 3) as usize] > 0);
-        assert!(
-            painted,
-            "expected hairline pixels at the layout's own computed gutter position {gutter_x}"
-        );
-    }
-
-    #[test]
-    fn a_group_start_first_segment_draws_no_leading_hairline() {
-        let mut first = seg("9%", StatusItemColor::Neutral);
-        first.group_start = true;
-        let with_flag = render(&[first], false, 0, false);
-        let without_flag = render(&[seg("9%", StatusItemColor::Neutral)], false, 0, false);
-        assert_eq!(
-            with_flag.1, without_flag.1,
-            "group_start on the first segment must not add a gutter"
         );
     }
 
@@ -1836,9 +2056,7 @@ mod tests {
     #[test]
     fn highlighted_bare_glyph_paints_translucent_pixels_behind_the_ink() {
         let (buf, w, h) = render(&[], true, 0, false);
-        let (x, y) = (2u32, h / 2);
-        let idx = ((y * w + x) * 4) as usize;
-        let edge_alpha = buf[idx + 3];
+        let edge_alpha = alpha_at(&buf, w, 2, h / 2);
         assert!(
             edge_alpha > 0,
             "expected the highlight to paint near the canvas edge, got alpha {edge_alpha}"
@@ -1860,7 +2078,7 @@ mod tests {
 
     #[test]
     fn highlighted_digits_still_render_their_own_color_on_top() {
-        let (buf, w, h) = render(&[seg("78%", StatusItemColor::Red)], true, 0, false);
+        let (buf, w, h) = render(&[fig("78%", StatusItemColor::Red)], true, 0, false);
         let red = StatusItemColor::Red.rgba(true);
         let found = buf
             .as_chunks::<4>()
@@ -1877,8 +2095,8 @@ mod tests {
     fn nothing_but_the_side_pad_survives_after_the_trailing_segments_own_ink() {
         let (buf, w, h) = render(
             &[
-                seg("51%", StatusItemColor::Neutral),
-                seg("0%", StatusItemColor::Neutral),
+                fig("51%", StatusItemColor::Neutral),
+                fig("0%", StatusItemColor::Neutral),
             ],
             false,
             0,
@@ -1887,8 +2105,7 @@ mod tests {
         let mut last_ink_x = 0u32;
         for y in 0..h {
             for x in 0..w {
-                let a = buf[(((y * w) + x) * 4 + 3) as usize];
-                if a > 0 {
+                if alpha_at(&buf, w, x, y) > 0 {
                     last_ink_x = last_ink_x.max(x);
                 }
             }
@@ -1901,54 +2118,13 @@ mod tests {
     }
 
     #[test]
-    fn every_figure_to_figure_ink_gap_is_equal_across_digit_count_mixes() {
-        for font in [
-            text::load_font(text_font_size_pt()),
-            text::load_font_forcing_fallback(text_font_size_pt()),
-        ] {
-            for figures in [
-                ["2%", "74%", "100%"],
-                ["9%", "9%", "9%"],
-                ["100%", "1%", "50%"],
-            ] {
-                let segs = figures.map(|t| seg(t, StatusItemColor::Neutral));
-                let edges = figure_ink_edges(&font, &segs);
-                let gaps: Vec<f64> = edges.windows(2).map(|w| w[1].0 - w[0].1).collect();
-                for gap in &gaps {
-                    assert!(
-                        (gap - FIGURE_GAP_PX as f64).abs() < 1e-6,
-                        "{figures:?}: every figure-to-figure ink gap must equal FIGURE_GAP_PX ({FIGURE_GAP_PX}px), got {gaps:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn the_glyph_to_first_figure_gap_is_its_own_larger_constant() {
-        for font in [
-            text::load_font(text_font_size_pt()),
-            text::load_font_forcing_fallback(text_font_size_pt()),
-        ] {
-            let segs = [seg("42%", StatusItemColor::Neutral)];
-            let glyph_ink_right_edge = SIDE_PAD_PX as f64
-                + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
-            let glyph_gap = figure_ink_edges(&font, &segs)[0].0 - glyph_ink_right_edge;
-            assert!(
-                (glyph_gap - GLYPH_GAP_PX as f64).abs() < 1e-6,
-                "the glyph-to-figure gap must equal GLYPH_GAP_PX ({GLYPH_GAP_PX}px), got {glyph_gap}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_glyphs_own_ink_is_unaffected_by_whether_figures_follow_it() {
+    fn the_glyphs_own_ink_is_unaffected_by_whether_items_follow_it() {
         let bare = render(&[], false, 50, false);
-        let with_figures = render(
+        let with_items = render(
             &[
-                seg("9%", StatusItemColor::Neutral),
-                seg("67%", StatusItemColor::Neutral),
-                seg("96%", StatusItemColor::Red),
+                chip("FAB"),
+                fig("67%", StatusItemColor::Neutral),
+                fig("96%", StatusItemColor::Red),
             ],
             false,
             50,
@@ -1957,13 +2133,13 @@ mod tests {
         let glyph_region = |buf: &[u8], w: u32| -> Vec<u8> {
             (0..GLYPH_PX)
                 .flat_map(|y| (0..GLYPH_PX).map(move |x| (y, x)))
-                .map(|(y, x)| buf[(((y * w) + SIDE_PAD_PX + x) * 4 + 3) as usize])
+                .map(|(y, x)| alpha_at(buf, w, SIDE_PAD_PX + x, y))
                 .collect()
         };
         assert_eq!(
             glyph_region(&bare.0, bare.1),
-            glyph_region(&with_figures.0, with_figures.1),
-            "the glyph's own drawn pixels must not change when figures are appended after it"
+            glyph_region(&with_items.0, with_items.1),
+            "the glyph's own drawn pixels must not change when items are appended after it"
         );
     }
 }

@@ -1,4 +1,4 @@
-import type { ScheduledRefreshEvent, StatusItemSegment } from '@/types/entities'
+import type { ScheduledRefreshEvent, StatusItemImage, StatusItemSegment } from '@/types/entities'
 import * as live from './live-client'
 import * as mock from './mock-client'
 
@@ -19,6 +19,14 @@ export const renderStatusItem: (
   worstUsedPercent: number,
   tooltip: string,
 ) => Promise<void> = isTauri ? live.renderStatusItem : async () => {}
+// Outside Tauri there is no compositor to ask, and nothing else may
+// draw this preview: a second renderer is exactly the drift this
+// command exists to remove. See "One renderer, two surfaces" in
+// docs/status-item-rendering.md.
+export const renderStatusItemPreview: (
+  segments: StatusItemSegment[],
+  worstUsedPercent: number,
+) => Promise<StatusItemImage | null> = isTauri ? live.renderStatusItemPreview : async () => null
 export const onQuotaRefresh: (
   callback: (event: ScheduledRefreshEvent) => void,
 ) => Promise<() => void> = isTauri ? live.onQuotaRefresh : async () => () => {}

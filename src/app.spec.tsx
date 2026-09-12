@@ -1,5 +1,5 @@
 import type { DndContextProps, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type DragItem, pinDragId, UNGROUPED_DROP_ID } from '@/lib/customize-drag'
@@ -34,6 +34,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 const hidePanel = vi.fn()
 const fetchSnapshotSpy = vi.fn()
 const renderStatusItem = vi.fn()
+const renderStatusItemPreview = vi.fn()
 let trayGroupClick: ((groupId: string) => void) | null = null
 
 const ONE_LIMIT = [{ kind: 'session', percent: 10, is_active: true, resets_at: null, scope: null }]
@@ -69,6 +70,10 @@ vi.mock('./lib/tauri-client', () => ({
   renderStatusItem: (...args: unknown[]) => {
     renderStatusItem(...args)
     return Promise.resolve()
+  },
+  renderStatusItemPreview: (...args: unknown[]) => {
+    renderStatusItemPreview(...args)
+    return Promise.resolve({ width: 120, height: 36, rgbaBase64: '' })
   },
   onQuotaRefresh: () => Promise.resolve(() => {}),
   kickScheduler: () => Promise.resolve(),
@@ -299,9 +304,7 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
 
     expect(screen.queryByText('Pin standalone')).toBeNull()
     expect(screen.queryByText('New group…')).toBeNull()
-    expect(lastSegments()).toEqual([
-      { text: '10%', color: 'neutral', groupStart: false, groupId: null, slug: null },
-    ])
+    expect(lastSegments()).toEqual([{ kind: 'figure', text: '10%', color: 'neutral' }])
   })
 
   test('the way in is offered only once something is pinned', async () => {
@@ -313,30 +316,34 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
     expect(screen.getByRole('button', { name: 'Customize display' })).toBeTruthy()
   })
 
-  test('the preview strip is the very segment list the menu bar is drawn from', async () => {
+  // Not "the preview looks like the tray": the preview is drawn by the
+  // tray's own compositor, from the very list the tray was last set to.
+  test('the preview is drawn from the very segment list the menu bar was set to', async () => {
     await openCustomizeScreen()
 
-    const strip = screen.getByLabelText('Menu bar preview')
     expect(lastSegments().map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
-    for (const segment of lastSegments()) expect(strip.textContent).toContain(segment.text)
+    await waitFor(() =>
+      expect(renderStatusItemPreview).toHaveBeenLastCalledWith(lastSegments(), expect.any(Number)),
+    )
   })
 
-  test('dragging one pin onto the other collects them into one rolled-up figure, led by its slug', async () => {
+  test('dragging one pin onto the other rolls them up into one chip and no figure', async () => {
     await groupTheTwoPins()
 
-    const segments = lastSegments()
-    expect(segments).toHaveLength(1)
-    expect(segments[0]).toMatchObject({ text: '20%', groupId: expect.any(String) })
-    expect(segments[0].slug).toBe('GRO')
+    expect(lastSegments()).toEqual([
+      { kind: 'chip', slug: 'GRO', color: expect.any(String), groupId: expect.any(String) },
+    ])
   })
 
   test('the preview follows the arrangement without leaving the screen', async () => {
     await groupTheTwoPins()
 
-    expect(screen.getByLabelText('Menu bar preview').textContent).toBe('GRO20%')
+    await waitFor(() =>
+      expect(renderStatusItemPreview).toHaveBeenLastCalledWith(lastSegments(), expect.any(Number)),
+    )
   })
 
-  test("a click on the group's slug in the menu bar opens it out to its members", async () => {
+  test("a click on the group's chip in the menu bar opens it out to its members", async () => {
     await groupTheTwoPins()
 
     const groupId = lastSegments()[0].groupId
@@ -344,9 +351,11 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
       trayGroupClick?.(groupId)
     })
 
-    const segments = lastSegments()
-    expect(segments.map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
-    expect(segments.every((s: { groupId: string }) => s.groupId === groupId)).toBe(true)
+    expect(lastSegments()).toEqual([
+      { kind: 'chip', slug: 'GRO', color: expect.any(String), groupId },
+      { kind: 'figure', text: '10%', color: 'neutral' },
+      { kind: 'figure', text: '20%', color: 'neutral' },
+    ])
   })
 
   test('taking a member back out leaves it pinned, standing on its own', async () => {
@@ -355,9 +364,10 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
 
     await dragOnto(pin(WEEKLY, groupId), LEAVE_ZONE)
 
-    const segments = lastSegments()
-    expect(segments.map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
-    expect(segments.map((s: { slug: string | null }) => s.slug)).toEqual(['GRO', null])
+    expect(lastSegments()).toEqual([
+      { kind: 'chip', slug: 'GRO', color: expect.any(String), groupId },
+      { kind: 'figure', text: '20%', color: 'neutral' },
+    ])
   })
 
   test('deleting the group leaves both windows pinned, each on its own figure', async () => {
@@ -380,7 +390,11 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
       fireEvent.click(screen.getAllByLabelText('Remove from menu bar')[1])
     })
 
-    expect(lastSegments().map((s: { text: string }) => s.text)).toEqual(['10%'])
+    // The group keeps the member that is still pinned, so it still
+    // draws its chip, and the unpinned one is gone from behind it.
+    expect(lastSegments()).toEqual([
+      { kind: 'chip', slug: 'GRO', color: expect.any(String), groupId: expect.any(String) },
+    ])
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Customize display' }))

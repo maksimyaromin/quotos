@@ -23,49 +23,9 @@
   color: var(--text-quaternary);
 }
 
-.previewStrip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-0-5);
-  padding: var(--space-1-5) var(--space-2-5);
-  border-radius: var(--radius-sm);
-  border: 0.5px solid var(--border-default);
-  background: var(--bg-sunken);
-  color: var(--text-secondary);
-  min-height: 30px;
-}
 
-.previewSlug {
-  padding-left: var(--space-1);
-  font-family: var(--font-sans);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-caps);
-  color: var(--text-tertiary);
-}
 
-.previewFigure {
-  padding: 0 var(--space-1);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-}
 
-.previewFigure[data-color="amber"] {
-  color: var(--amber);
-}
-
-.previewFigure[data-color="red"] {
-  color: var(--red);
-}
-
-.previewDivider {
-  width: 1px;
-  height: 12px;
-  margin: 0 var(--space-1);
-  background: var(--border-strong);
-}
 
 .description {
   margin: 0 0 var(--space-0-5);
@@ -77,8 +37,18 @@
 
 /* Every row sits in a shell of its own that carries no padding, so the
    row can close up behind a drag, and the space a drop would fill can
-   open in front of it, by animating one height and nothing else. */
+   open in front of it, by animating one height and nothing else.
+
+   Every drag-relevant box below states its own width rather than taking
+   one from its content. A drag changes what a row holds — a hint
+   appears, a slot opens, a box takes one more member — and a box sized
+   by its content answers each of those with a width change, which is a
+   reflow of everything beside it under a pointer that has not moved.
+   Width is settled before a drag starts and stays put through it; only
+   heights animate, and everything that moves, moves by transform. */
 .rowShell {
+  box-sizing: border-box;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -108,6 +78,8 @@
 }
 
 .groupBox {
+  box-sizing: border-box;
+  width: 100%;
   border-radius: var(--radius-md);
   border: 0.5px solid var(--border-default);
   transition:
@@ -290,6 +262,9 @@
 
 .memberRow,
 .standaloneRow {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -340,12 +315,23 @@
   color: var(--text-secondary);
 }
 
+/* Out of the row's flow entirely: it appears mid-drag, and a row that
+   made space for it would narrow its own label under the pointer. It
+   sits over the value instead, which it stands in for while it shows. */
 .dropHint {
+  position: absolute;
+  right: var(--row-inset);
   font-family: var(--font-sans);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
   color: var(--text-accent);
   white-space: nowrap;
+}
+
+/* The figure keeps its place in the row while the hint stands in for
+   it, so nothing either side of it shifts by a pixel. */
+[data-paired="true"] .pinValue {
+  visibility: hidden;
 }
 
 /* The row under the pointer: lifted off the list, tilted the way a card

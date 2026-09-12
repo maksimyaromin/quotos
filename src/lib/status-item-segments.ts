@@ -4,16 +4,17 @@ import {
   groupSlug,
   layoutPinnedEntries,
   type PinnedEntry,
-  rollUpUsed,
 } from './pin-groups'
 
-function pickBaseFigureColor(used: number): StatusItemSegment['color'] {
+type FigureColor = Extract<StatusItemSegment, { kind: 'figure' }>['color']
+
+function pickBaseFigureColor(used: number): FigureColor {
   if (used >= 90) return 'red'
   if (used >= 75) return 'amber'
   return 'neutral'
 }
 
-function pickFigureColor(used: number, anyContributingStale: boolean): StatusItemSegment['color'] {
+function pickFigureColor(used: number, anyContributingStale: boolean): FigureColor {
   return anyContributingStale ? 'amber' : pickBaseFigureColor(used)
 }
 
@@ -30,15 +31,6 @@ function windowLabel(entry: PinnedEntry): string {
   return `${entry.window.name}${scope} ${entry.window.used}%`
 }
 
-interface Figure {
-  used: number
-  groupId: string | null
-  // Set on the figure that leads its group's cluster and on no other,
-  // so an opened group is named once rather than once per member.
-  slug: string | null
-  cluster: string
-}
-
 export function buildStatusItemSegments(
   subscriptions: Subscription[],
   groups: PinGroup[] = [],
@@ -48,50 +40,35 @@ export function buildStatusItemSegments(
     (entry) => entry.subscription.state === 'behind',
   )
 
-  // A rolled-up group spends one figure's width for however many members
-  // it holds; opened out, it spends each member's own. Either way the
-  // group is one cluster, led by its slug, so a break falls between
-  // groups and again before the standalone pins.
-  const figures: Figure[] = []
+  const segments: StatusItemSegment[] = []
+  // A group is its chip: rolled up, that chip is the whole of what it
+  // draws, and the numbers live in the tooltip until it is opened. A
+  // group with nothing to report draws nothing at all, chip included,
+  // since there would be no figures behind it to open out to.
   for (const { group, members } of layout.groups) {
-    const cluster = `group:${group.id}`
-    const slug = groupSlug(group.name) || null
-    if (group.collapsed) {
-      const used = rollUpUsed(members)
-      if (used === null) continue
-      figures.push({ used, groupId: group.id, slug, cluster })
-      continue
+    const contributing = withFigure(members)
+    const slug = groupSlug(group.name)
+    if (contributing.length === 0 || slug.length === 0) continue
+    segments.push({ kind: 'chip', slug, color: group.color, groupId: group.id })
+    if (group.collapsed) continue
+    for (const entry of contributing) {
+      segments.push(figureSegment(entry.window.used as number, anyContributingStale))
     }
-    for (const [index, entry] of withFigure(members).entries()) {
-      figures.push({
-        used: entry.window.used as number,
-        groupId: group.id,
-        slug: index === 0 ? slug : null,
-        cluster,
-      })
-    }
-  }
-  for (const entry of withFigure(layout.standalone)) {
-    figures.push({
-      used: entry.window.used as number,
-      groupId: null,
-      slug: null,
-      cluster: `subscription:${entry.subscription.id}`,
-    })
   }
 
-  let lastCluster: string | null = null
-  return figures.map(({ used, groupId, slug, cluster }) => {
-    const segment: StatusItemSegment = {
-      text: `${used}%`,
-      color: pickFigureColor(used, anyContributingStale),
-      groupStart: lastCluster !== null && lastCluster !== cluster,
-      groupId,
-      slug,
-    }
-    lastCluster = cluster
-    return segment
-  })
+  for (const entry of withFigure(layout.standalone)) {
+    segments.push(figureSegment(entry.window.used as number, anyContributingStale))
+  }
+
+  return segments
+}
+
+function figureSegment(used: number, anyContributingStale: boolean): StatusItemSegment {
+  return {
+    kind: 'figure',
+    text: `${used}%`,
+    color: pickFigureColor(used, anyContributingStale),
+  }
 }
 
 export function buildStatusItemTooltip(

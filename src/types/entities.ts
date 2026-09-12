@@ -144,16 +144,21 @@ export interface SignInFinishedEvent {
   success: boolean
 }
 
-export interface StatusItemSegment {
-  text: string
-  color: 'neutral' | 'amber' | 'red'
-  groupStart: boolean
-  // Set when this figure stands for a pin group, or for one member of an
-  // expanded one. Null for a standalone pin.
-  groupId: string | null
-  // That group's slug, from `lib/pin-groups.ts`'s `groupSlug`, drawn
-  // just before this figure. Only the first figure of a group's cluster
-  // carries one, and it is the only thing a click in the menu bar folds
-  // a group by; a standalone pin has none.
-  slug: string | null
+// One item in the menu bar, left to right. A pin group is its chip
+// and, opened out, the figures of its members after it; a standalone
+// pin is a bare figure. Mirrors `StatusItemSegmentDto` in
+// `src-tauri/src/shell.rs`.
+export type StatusItemSegment =
+  // A group's chip: its slug, from `lib/pin-groups.ts`'s `groupSlug`,
+  // in the group's own colour. It is the only thing a click in the
+  // menu bar folds a group by, which is what `groupId` names.
+  | { kind: 'chip'; slug: string; color: GroupColor; groupId: string }
+  | { kind: 'figure'; text: string; color: 'neutral' | 'amber' | 'red' }
+
+// The status item as the tray's own compositor draws it: raw RGBA at
+// `RENDER_SCALE` pixels per point, base64 across the IPC boundary.
+export interface StatusItemImage {
+  width: number
+  height: number
+  rgbaBase64: string
 }
