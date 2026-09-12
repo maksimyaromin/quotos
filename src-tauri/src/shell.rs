@@ -5,8 +5,8 @@ use tauri::image::Image;
 use tauri::{Emitter, Manager};
 
 use crate::geometry::{
-    DockedLayout, DragAnchor, displays_in_points, docked_layout_in_points, drag_target_from_anchor,
-    resolve_status_item_point,
+    DockedLayout, DragAnchor, click_x_in_icon_px, displays_in_points, docked_layout_in_points,
+    drag_target_from_anchor, resolve_status_item_point,
 };
 use crate::{AppState, panel_window, status_item_render};
 
@@ -29,6 +29,11 @@ pub(crate) struct StatusItemSegmentDto {
     /// a group apart from one that should open the panel.
     #[serde(default)]
     group_id: Option<String>,
+    /// That group's own colour, drawn as a bar under the figure. A name
+    /// from the palette in `lib/pin-groups.ts`; anything else, and a
+    /// standalone figure, draws no bar.
+    #[serde(default)]
+    group_color: Option<String>,
 }
 
 #[tauri::command]
@@ -75,18 +80,23 @@ fn record_if_changed(
     true
 }
 
-/// Which pin group's figure a left click landed on, if any. `click_x`
-/// and the item's own `rect` arrive in the same units from the same
-/// event, so their ratio is all this needs.
+/// Which pin group's figure a left click landed on, if any; see
+/// "Clicking a figure in the menu bar" in docs/architecture.md for the
+/// units the click and the item's box arrive in.
 pub(crate) fn group_at_click(
     app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
     click_x: f64,
     item_x: f64,
+    item_y: f64,
     item_width: f64,
 ) -> Option<String> {
     if item_width <= 0.0 {
         return None;
     }
+    let displays = displays_in_points(window);
+    let (index, item_left_points, _) = resolve_status_item_point(&displays, item_x, item_y)?;
+    let scale = displays[index].scale;
     let state = app.state::<AppState>();
     let spans = state
         .last_status_item_figure_spans
@@ -97,8 +107,13 @@ pub(crate) fn group_at_click(
         .last_icon_width_px
         .lock()
         .expect("last_icon_width_px mutex poisoned");
-    let index =
-        status_item_render::figure_at(&spans, icon_width_px, (click_x - item_x) / item_width)?;
+    let click_in_icon_px = click_x_in_icon_px(
+        click_x / scale,
+        item_left_points,
+        Some(item_width / scale),
+        icon_width_px as f64,
+    );
+    let index = status_item_render::figure_at(&spans, icon_width_px, click_in_icon_px)?;
     state
         .last_status_item_segments
         .lock()
@@ -158,6 +173,10 @@ fn repaint_status_item(
                 _ => status_item_render::StatusItemColor::Neutral,
             },
             group_start: s.group_start,
+            group_color: s
+                .group_color
+                .as_deref()
+                .and_then(status_item_render::GroupColor::from_name),
         })
         .collect();
 
@@ -209,7 +228,7 @@ fn repaint_status_item(
 
 #[cfg(target_os = "macos")]
 pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_width_px: u32) {
-    let width_points = icon_width_px as f64 / 2.0;
+    let width_points = icon_width_px as f64 / status_item_render::RENDER_SCALE;
     let _ = status_item.with_inner_tray_icon(move |inner| {
         if let Some(ns_status_item) = inner.ns_status_item() {
             ns_status_item.setLength(width_points);

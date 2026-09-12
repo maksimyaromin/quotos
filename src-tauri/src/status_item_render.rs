@@ -2,13 +2,21 @@ use std::process::Command;
 
 const GLYPH_PX: u32 = 36;
 const SIDE_PAD_PX: u32 = 10;
-pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / 2.0;
+/// Every buffer here is drawn at two pixels per point, which is also
+/// the size the status item's image is presented at, so a length in
+/// this module's pixels halves into points and vice versa.
+pub const RENDER_SCALE: f64 = 2.0;
+pub const GLYPH_LEFT_INSET_POINTS: f64 = SIDE_PAD_PX as f64 / RENDER_SCALE;
 const GLYPH_GAP_PX: u32 = 19;
 const FIGURE_GAP_PX: u32 = 11;
 const GROUP_GUTTER_PRE_PX: u32 = 10;
 const HAIRLINE_WIDTH_PX: u32 = 2;
 const GROUP_GUTTER_POST_PX: u32 = 10;
 const HAIRLINE_HEIGHT_PX: u32 = 22;
+/// A grouped figure carries its group's colour as a bar under its own
+/// digits, so which figures belong together reads without a click.
+const GROUP_UNDERLINE_HEIGHT_PX: u32 = 4;
+const GROUP_UNDERLINE_BOTTOM_INSET_PX: u32 = 2;
 
 const _: () = assert!(
     GLYPH_GAP_PX > FIGURE_GAP_PX,
@@ -36,10 +44,49 @@ impl StatusItemColor {
     }
 }
 
+/// A pin group's own colour. The palette is small and fixed:
+/// `lib/pin-groups.ts` holds the same names, `tokens/colors.css` the
+/// same values for the panel's side of it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GroupColor {
+    Teal,
+    Blue,
+    Violet,
+    Amber,
+    Red,
+}
+
+impl GroupColor {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "teal" => Some(GroupColor::Teal),
+            "blue" => Some(GroupColor::Blue),
+            "violet" => Some(GroupColor::Violet),
+            "amber" => Some(GroupColor::Amber),
+            "red" => Some(GroupColor::Red),
+            _ => None,
+        }
+    }
+
+    fn rgba(self) -> (u8, u8, u8, u8) {
+        match self {
+            GroupColor::Teal => (0x4e, 0x9c, 0x8d, 0xff),
+            GroupColor::Blue => (0x5b, 0x8d, 0xef, 0xff),
+            GroupColor::Violet => (0x8b, 0x7a, 0xd8, 0xff),
+            GroupColor::Amber => (0xe0, 0xa9, 0x2b, 0xff),
+            GroupColor::Red => (0xe5, 0x64, 0x6a, 0xff),
+        }
+    }
+}
+
 pub struct StatusItemSegment {
     pub text: String,
     pub color: StatusItemColor,
     pub group_start: bool,
+    /// Set on a figure that belongs to a pin group, whether it stands
+    /// for the whole rolled-up group or for one opened-out member; a
+    /// standalone pin's figure carries none and gets no bar.
+    pub group_color: Option<GroupColor>,
 }
 
 fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
@@ -231,6 +278,20 @@ fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
     let top = h.saturating_sub(HAIRLINE_HEIGHT_PX) / 2;
     for y in top..(top + HAIRLINE_HEIGHT_PX).min(h) {
         for x in x0..(x0 + HAIRLINE_WIDTH_PX).min(w) {
+            blend_pixel(buf, w, h, x, y, rgba);
+        }
+    }
+}
+
+/// Spans exactly the figure's own ink, so the bar belongs to those
+/// digits and to no neighbour, and is measured from the buffer's bottom
+/// edge so it sits below them rather than through them.
+fn draw_group_underline(buf: &mut [u8], w: u32, h: u32, span: FigureSpan, color: GroupColor) {
+    let rgba = color.rgba();
+    let bottom = h.saturating_sub(GROUP_UNDERLINE_BOTTOM_INSET_PX);
+    let top = bottom.saturating_sub(GROUP_UNDERLINE_HEIGHT_PX);
+    for y in top..bottom {
+        for x in span.x0..span.x1.min(w) {
             blend_pixel(buf, w, h, x, y, rgba);
         }
     }
@@ -753,14 +814,13 @@ pub fn figure_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> V
     placements.into_iter().map(|p| p.span).collect()
 }
 
-/// Which figure a click landed on, given where it fell across the item's
-/// own width. Taking a fraction rather than a coordinate keeps points,
-/// pixels and display scale out of this entirely.
-pub fn figure_at(spans: &[FigureSpan], icon_width_px: u32, fraction: f64) -> Option<usize> {
-    if !(0.0..=1.0).contains(&fraction) {
+/// Which figure a click landed on, given where it fell in the image's
+/// own pixel grid. `geometry.rs`'s `click_x_in_icon_px` puts a click
+/// into that space; one in the button's margin falls outside it.
+pub fn figure_at(spans: &[FigureSpan], icon_width_px: u32, x: f64) -> Option<usize> {
+    if !(0.0..=icon_width_px as f64).contains(&x) {
         return None;
     }
-    let x = fraction * icon_width_px as f64;
     spans.iter().position(|span| {
         x >= span.x0.saturating_sub(HIT_PADDING_PX) as f64 && x <= (span.x1 + HIT_PADDING_PX) as f64
     })
@@ -819,6 +879,9 @@ pub fn render(
         if let Some(hairline_x0) = placement.hairline_x0 {
             draw_hairline(&mut buf, total_w, total_h, hairline_x0, dark);
         }
+        if let Some(group_color) = seg.group_color {
+            draw_group_underline(&mut buf, total_w, total_h, placement.span, group_color);
+        }
         text::draw_text(
             &mut buf,
             total_w,
@@ -860,6 +923,7 @@ mod tests {
             text: text.into(),
             color,
             group_start: false,
+            group_color: None,
         }
     }
 
@@ -889,13 +953,8 @@ mod tests {
             text: text.into(),
             color: StatusItemColor::Neutral,
             group_start: true,
+            group_color: None,
         }
-    }
-
-    /// The fraction of the item's width a given icon pixel sits at, the
-    /// shape `figure_at` takes its clicks in.
-    fn at_pixel(icon_width_px: u32, x: f64) -> f64 {
-        x / icon_width_px as f64
     }
 
     #[test]
@@ -955,7 +1014,7 @@ mod tests {
         for (index, span) in spans.iter().enumerate() {
             let middle = (span.x0 + span.x1) as f64 / 2.0;
             assert_eq!(
-                figure_at(&spans, width, at_pixel(width, middle)),
+                figure_at(&spans, width, middle),
                 Some(index),
                 "the middle of figure {index} should resolve to it"
             );
@@ -969,10 +1028,7 @@ mod tests {
         let (_, width, _) = render(&segs, false, 0, false);
 
         let glyph_middle = (SIDE_PAD_PX + GLYPH_PX / 2) as f64;
-        assert_eq!(
-            figure_at(&spans, width, at_pixel(width, glyph_middle)),
-            None
-        );
+        assert_eq!(figure_at(&spans, width, glyph_middle), None);
     }
 
     #[test]
@@ -982,8 +1038,12 @@ mod tests {
         let (_, width, _) = render(&segs, false, 0, false);
 
         assert_eq!(figure_at(&spans, width, -0.1), None);
-        assert_eq!(figure_at(&spans, width, 1.1), None);
-        assert_eq!(figure_at(&spans, width, 1.0), None, "the right pad is ink");
+        assert_eq!(figure_at(&spans, width, width as f64 + 0.1), None);
+        assert_eq!(
+            figure_at(&spans, width, width as f64),
+            None,
+            "the right pad is not ink"
+        );
     }
 
     #[test]
@@ -995,12 +1055,12 @@ mod tests {
             let left = spans[0].x0 as f64 - off as f64;
             let right = spans[0].x1 as f64 + off as f64;
             assert_eq!(
-                figure_at(&spans, width, at_pixel(width, left)),
+                figure_at(&spans, width, left),
                 Some(0),
                 "a click {off}px shy of the digits is still that figure"
             );
             assert_eq!(
-                figure_at(&spans, width, at_pixel(width, right)),
+                figure_at(&spans, width, right),
                 Some(0),
                 "a click {off}px past the digits is still that figure"
             );
@@ -1009,7 +1069,210 @@ mod tests {
 
     #[test]
     fn figure_at_finds_nothing_when_nothing_is_drawn() {
-        assert_eq!(figure_at(&[], SIDE_PAD_PX * 2 + GLYPH_PX, 0.5), None);
+        let width = SIDE_PAD_PX * 2 + GLYPH_PX;
+        assert_eq!(figure_at(&[], width, width as f64 / 2.0), None);
+    }
+
+    /// The click geometry the first pin-groups version got wrong: a
+    /// bare fraction of the button's width does not map onto the image
+    /// the button centres inside itself.
+    mod clicks_through_the_buttons_margin {
+        use super::*;
+        use crate::geometry::click_x_in_icon_px;
+
+        /// What AppKit hands back around a status item of this shape:
+        /// eight points of button either side of the image, the same
+        /// measurement the beak's own offset is derived from.
+        const MARGIN_POINTS: f64 = 8.0;
+        const ITEM_LEFT_POINTS: f64 = 1183.0;
+
+        struct Scene {
+            spans: Vec<FigureSpan>,
+            icon_width_px: u32,
+            item_width_points: f64,
+        }
+
+        fn scene() -> Scene {
+            let segs = [
+                seg("55%", StatusItemColor::Neutral),
+                group_seg("99%"),
+                group_seg("12%"),
+            ];
+            let spans = figure_spans(&segs, 50);
+            let (_, icon_width_px, _) = render(&segs, false, 50, true);
+            Scene {
+                spans,
+                icon_width_px,
+                item_width_points: icon_width_px as f64 / RENDER_SCALE + MARGIN_POINTS * 2.0,
+            }
+        }
+
+        /// Where a click has to land, in points across the display, to
+        /// sit on a given pixel of the composited image.
+        fn click_landing_on(icon_px: f64) -> f64 {
+            ITEM_LEFT_POINTS + MARGIN_POINTS + icon_px / RENDER_SCALE
+        }
+
+        fn resolve(scene: &Scene, click_x_points: f64) -> Option<usize> {
+            figure_at(
+                &scene.spans,
+                scene.icon_width_px,
+                click_x_in_icon_px(
+                    click_x_points,
+                    ITEM_LEFT_POINTS,
+                    Some(scene.item_width_points),
+                    scene.icon_width_px as f64,
+                ),
+            )
+        }
+
+        /// The arithmetic this replaced: the click's offset as a plain
+        /// fraction of the button's width, multiplied back out by the
+        /// image's own width.
+        fn resolve_by_bare_fraction(scene: &Scene, click_x_points: f64) -> Option<usize> {
+            let fraction = (click_x_points - ITEM_LEFT_POINTS) / scene.item_width_points;
+            figure_at(
+                &scene.spans,
+                scene.icon_width_px,
+                fraction * scene.icon_width_px as f64,
+            )
+        }
+
+        #[test]
+        fn a_click_anywhere_on_a_figure_resolves_to_that_figure() {
+            let scene = scene();
+            for (index, span) in scene.spans.iter().enumerate() {
+                for icon_px in [
+                    span.x0 as f64,
+                    (span.x0 + span.x1) as f64 / 2.0,
+                    span.x1 as f64,
+                ] {
+                    assert_eq!(
+                        resolve(&scene, click_landing_on(icon_px)),
+                        Some(index),
+                        "icon pixel {icon_px} is figure {index}'s own ink"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn the_bare_fraction_of_the_buttons_width_misses_the_figure_clicked() {
+            let scene = scene();
+            let last = scene.spans.last().copied().expect("three figures drawn");
+            let click = click_landing_on(last.x0 as f64);
+
+            assert_eq!(resolve(&scene, click), Some(scene.spans.len() - 1));
+            assert_ne!(
+                resolve_by_bare_fraction(&scene, click),
+                Some(scene.spans.len() - 1),
+                "this click is exactly what the margin-blind arithmetic got wrong"
+            );
+        }
+
+        #[test]
+        fn a_click_in_the_buttons_own_margin_belongs_to_no_figure() {
+            let scene = scene();
+            assert_eq!(
+                resolve(&scene, ITEM_LEFT_POINTS + MARGIN_POINTS / 2.0),
+                None
+            );
+            assert_eq!(
+                resolve(
+                    &scene,
+                    ITEM_LEFT_POINTS + scene.item_width_points - MARGIN_POINTS / 2.0
+                ),
+                None
+            );
+        }
+
+        #[test]
+        fn without_the_buttons_width_the_image_is_taken_as_flush_left() {
+            let scene = scene();
+            let click = ITEM_LEFT_POINTS + 30.0;
+            assert_eq!(
+                click_x_in_icon_px(click, ITEM_LEFT_POINTS, None, scene.icon_width_px as f64),
+                30.0 * RENDER_SCALE
+            );
+        }
+    }
+
+    mod group_underline {
+        use super::*;
+
+        fn band_pixel(buf: &[u8], w: u32, h: u32, x: u32) -> (u8, u8, u8, u8) {
+            let y = h - GROUP_UNDERLINE_BOTTOM_INSET_PX - GROUP_UNDERLINE_HEIGHT_PX / 2;
+            let i = ((y * w + x) * 4) as usize;
+            (buf[i], buf[i + 1], buf[i + 2], buf[i + 3])
+        }
+
+        fn grouped(text: &str, color: GroupColor) -> StatusItemSegment {
+            StatusItemSegment {
+                text: text.into(),
+                color: StatusItemColor::Neutral,
+                group_start: false,
+                group_color: Some(color),
+            }
+        }
+
+        #[test]
+        fn a_grouped_figure_carries_its_groups_colour_under_its_own_digits() {
+            let segs = [
+                grouped("55%", GroupColor::Blue),
+                seg("12%", StatusItemColor::Neutral),
+            ];
+            let spans = figure_spans(&segs, 0);
+            let (buf, w, h) = render(&segs, false, 0, true);
+
+            let middle = |span: FigureSpan| (span.x0 + span.x1) / 2;
+            assert_eq!(
+                band_pixel(&buf, w, h, middle(spans[0])),
+                GroupColor::Blue.rgba(),
+                "the grouped figure's bar is its group's colour"
+            );
+            assert_eq!(
+                band_pixel(&buf, w, h, middle(spans[1])).3,
+                0,
+                "a standalone figure gets no bar"
+            );
+        }
+
+        #[test]
+        fn the_bar_spans_the_figures_ink_and_nothing_between_figures() {
+            let segs = [
+                grouped("55%", GroupColor::Red),
+                grouped("99%", GroupColor::Red),
+            ];
+            let spans = figure_spans(&segs, 0);
+            let (buf, w, h) = render(&segs, false, 0, true);
+
+            assert_eq!(band_pixel(&buf, w, h, spans[0].x0).3, 255);
+            assert_eq!(band_pixel(&buf, w, h, spans[0].x1 - 1).3, 255);
+            assert_eq!(
+                band_pixel(&buf, w, h, (spans[0].x1 + spans[1].x0) / 2).3,
+                0,
+                "the gap between two figures stays clear"
+            );
+        }
+
+        #[test]
+        fn the_bar_changes_neither_the_items_width_nor_its_digits() {
+            let bare = [seg("55%", StatusItemColor::Neutral)];
+            let with_bar = [grouped("55%", GroupColor::Violet)];
+            let (bare_buf, bare_w, bare_h) = render(&bare, false, 0, true);
+            let (bar_buf, bar_w, bar_h) = render(&with_bar, false, 0, true);
+
+            assert_eq!((bare_w, bare_h), (bar_w, bar_h));
+            let above_band =
+                ((bare_h - GROUP_UNDERLINE_BOTTOM_INSET_PX - GROUP_UNDERLINE_HEIGHT_PX)
+                    * bare_w
+                    * 4) as usize;
+            assert_eq!(
+                bare_buf[..above_band],
+                bar_buf[..above_band],
+                "the bar sits below the digits, not through them"
+            );
+        }
     }
 
     #[test]

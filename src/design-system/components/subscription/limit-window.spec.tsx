@@ -35,105 +35,24 @@ describe('LimitWindow scope badge', () => {
   })
 })
 
-describe('pinning a window that can be filed into a group', () => {
-  const groups = [{ id: 'g1', name: 'Money' }]
-
-  test("opens the destination menu instead of pinning outright, once there's somewhere to file it", () => {
-    const onTogglePinMenu = vi.fn()
-    const onTogglePin = vi.fn()
-    render(
-      <LimitWindow
-        id="w1"
-        name="Session"
-        used={40}
-        pinGroups={groups}
-        onTogglePinMenu={onTogglePinMenu}
-        onTogglePin={onTogglePin}
-      />,
-    )
-    fireEvent.click(screen.getByLabelText('Show in menu bar'))
-    expect(onTogglePinMenu).toHaveBeenCalledWith('w1')
-    expect(onTogglePin).not.toHaveBeenCalled()
-  })
-
-  test('unpinning stays one click, with no menu in the way', () => {
-    const onTogglePinMenu = vi.fn()
-    const onTogglePin = vi.fn()
-    render(
-      <LimitWindow
-        id="w1"
-        name="Session"
-        used={40}
-        pinned
-        pinGroups={groups}
-        onTogglePinMenu={onTogglePinMenu}
-        onTogglePin={onTogglePin}
-      />,
-    )
-    fireEvent.click(screen.getByLabelText('Remove from menu bar'))
-    expect(onTogglePin).toHaveBeenCalledWith('w1')
-    expect(onTogglePinMenu).not.toHaveBeenCalled()
-  })
-
-  test('pins standalone in one click where no destination menu is wired up at all', () => {
+describe("the pin button is a plain toggle: where a pin sits is the customize screen's business", () => {
+  test('pinning reports the window id and nothing else', () => {
     const onTogglePin = vi.fn()
     render(<LimitWindow id="w1" name="Session" used={40} onTogglePin={onTogglePin} />)
-    fireEvent.click(screen.getByLabelText('Show in menu bar'))
+
+    const button = screen.getByLabelText('Show in menu bar')
+    expect(button.getAttribute('aria-haspopup')).toBeNull()
+    fireEvent.click(button)
     expect(onTogglePin).toHaveBeenCalledWith('w1')
   })
 
-  test('the open menu names the groups and the window it is about to pin into one', () => {
-    render(
-      <LimitWindow
-        id="w1"
-        name="Session"
-        used={40}
-        pinGroups={groups}
-        pinMenuOpen
-        onTogglePinMenu={() => {}}
-      />,
-    )
-    const menu = screen.getByRole('menu')
-    expect(menu.getAttribute('aria-label')).toBe('Where to pin this limit')
-    expect(menu.getAttribute('data-quotos-menu-scope')).toBe('true')
-    expect(screen.getByText('Add to Money')).toBeTruthy()
-  })
+  test('unpinning is the same one click, from the pressed state', () => {
+    const onTogglePin = vi.fn()
+    render(<LimitWindow id="w1" name="Session" used={40} pinned onTogglePin={onTogglePin} />)
 
-  test('choosing a group reports the window and the group, then closes the menu', () => {
-    const onPin = vi.fn()
-    const onTogglePinMenu = vi.fn()
-    render(
-      <LimitWindow
-        id="w1"
-        name="Session"
-        used={40}
-        pinGroups={groups}
-        pinMenuOpen
-        onTogglePinMenu={onTogglePinMenu}
-        onPin={onPin}
-      />,
-    )
-    fireEvent.click(screen.getByText('Add to Money'))
-    expect(onPin).toHaveBeenCalledWith('w1', 'g1')
-    expect(onTogglePinMenu).toHaveBeenCalledWith('w1')
-  })
-
-  test('naming a new group reports the window and the name', () => {
-    const onCreateGroupWithWindow = vi.fn()
-    render(
-      <LimitWindow
-        id="w1"
-        name="Session"
-        used={40}
-        pinMenuOpen
-        onTogglePinMenu={() => {}}
-        onCreateGroupWithWindow={onCreateGroupWithWindow}
-      />,
-    )
-    fireEvent.click(screen.getByText('New group…'))
-    const field = screen.getByPlaceholderText('Group name')
-    fireEvent.change(field, { target: { value: 'Current limit' } })
-    fireEvent.keyDown(field, { key: 'Enter' })
-    expect(onCreateGroupWithWindow).toHaveBeenCalledWith('w1', 'Current limit')
+    const button = screen.getByLabelText('Remove from menu bar')
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(button)
+    expect(onTogglePin).toHaveBeenCalledWith('w1')
   })
 })

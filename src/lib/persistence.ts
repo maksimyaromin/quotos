@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { AccountDescriptor, PinGroup } from '@/types/entities'
+import { isGroupColor, nextGroupColor } from './pin-groups'
 
 export interface TrackedAccount extends AccountDescriptor {
   label: string | null
@@ -83,10 +84,22 @@ export async function saveTracked(tracked: TrackedAccount[]): Promise<void> {
   await invoke('save_tracked', { tracked })
 }
 
+// A group saved before colours shipped, or one whose colour a hand
+// edit spelled wrong, gets one from the palette here rather than
+// downstream: every other reader can then count on a group having a
+// colour to draw.
+function withGroupColors(groups: PinGroup[]): PinGroup[] {
+  const settled: PinGroup[] = []
+  for (const group of groups) {
+    settled.push(isGroupColor(group.color) ? group : { ...group, color: nextGroupColor(settled) })
+  }
+  return settled
+}
+
 export async function loadPinGroups(): Promise<PinGroup[]> {
-  if (!isTauri()) return loadLocalStorageGroups()
+  if (!isTauri()) return withGroupColors(loadLocalStorageGroups())
   try {
-    return await invoke<PinGroup[]>('load_pin_groups')
+    return withGroupColors(await invoke<PinGroup[]>('load_pin_groups'))
   } catch {
     return []
   }

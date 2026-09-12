@@ -51,7 +51,7 @@ describe('usePinGroups', () => {
 
   test('starts from what was persisted, and writes nothing until something changes', async () => {
     const saved: PinGroup[] = [
-      { id: 'g1', name: 'Money', collapsed: true, order: 0, memberKeys: ['a::w'] },
+      { id: 'g1', name: 'Money', collapsed: true, order: 0, color: 'teal', memberKeys: ['a::w'] },
     ]
     const { result } = await mountWith(saved)
 
@@ -61,7 +61,7 @@ describe('usePinGroups', () => {
 
   test('a collapse is persisted, so the layout survives a restart', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'Money', collapsed: false, order: 0, memberKeys: [] },
+      { id: 'g1', name: 'Money', collapsed: false, order: 0, color: 'teal', memberKeys: [] },
     ])
 
     act(() => result.current.toggleGroupCollapsed('g1'))
@@ -73,8 +73,8 @@ describe('usePinGroups', () => {
 
   test('a click on a group in the menu bar opens just that one out', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: true, order: 0, memberKeys: [] },
-      { id: 'g2', name: 'B', collapsed: true, order: 1, memberKeys: [] },
+      { id: 'g1', name: 'A', collapsed: true, order: 0, color: 'teal', memberKeys: [] },
+      { id: 'g2', name: 'B', collapsed: true, order: 1, color: 'teal', memberKeys: [] },
     ])
 
     act(() => trayClick?.('g2'))
@@ -85,7 +85,7 @@ describe('usePinGroups', () => {
 
   test('clicking the same group again rolls it back up', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: true, order: 0, memberKeys: [] },
+      { id: 'g1', name: 'A', collapsed: true, order: 0, color: 'teal', memberKeys: [] },
     ])
 
     act(() => trayClick?.('g1'))
@@ -99,7 +99,7 @@ describe('usePinGroups', () => {
 
   test('a click naming a group that no longer exists changes nothing', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: true, order: 0, memberKeys: [] },
+      { id: 'g1', name: 'A', collapsed: true, order: 0, color: 'teal', memberKeys: [] },
     ])
 
     act(() => trayClick?.('gone'))
@@ -109,47 +109,106 @@ describe('usePinGroups', () => {
     expect(savePinGroups).not.toHaveBeenCalled()
   })
 
-  test('a new group lands after the existing ones, rolled up, holding the pin that made it', async () => {
+  test('grouping two pins together makes one rolled-up group of them, last in order', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 3, memberKeys: [] },
+      { id: 'g1', name: 'A', collapsed: false, order: 0, color: 'teal', memberKeys: [] },
     ])
 
-    act(() => result.current.createGroupWith('Money', 'a::weekly'))
+    act(() => {
+      result.current.groupMembersTogether(['a::weekly', 'b::session'])
+    })
     await flush()
 
     const created = result.current.groups[1]
-    expect(created.name).toBe('Money')
-    expect(created.order).toBe(4)
-    expect(created.memberKeys).toEqual(['a::weekly'])
+    expect(created.memberKeys).toEqual(['a::weekly', 'b::session'])
+    expect(created.order).toBe(1)
     expect(created.collapsed).toBe(true)
+    expect(created.name).toBe('Group 2')
+  })
+
+  test('a new group takes a palette colour no other group is wearing', async () => {
+    const { result } = await mountWith([
+      { id: 'g1', name: 'A', collapsed: false, order: 0, color: 'teal', memberKeys: [] },
+    ])
+
+    act(() => {
+      result.current.createEmptyGroup()
+    })
+    await flush()
+
+    expect(result.current.groups[1].color).toBe('blue')
+    expect(result.current.groups[1].memberKeys).toEqual([])
+  })
+
+  test('grouping reports the new group id, so the panel can open its name for editing', async () => {
+    const { result } = await mountWith([])
+
+    let id = ''
+    act(() => {
+      id = result.current.createEmptyGroup()
+    })
+    await flush()
+
+    expect(result.current.groups[0].id).toBe(id)
   })
 
   test('filing a pin into a group takes it out of whatever it was in', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 0, memberKeys: ['a::w'] },
-      { id: 'g2', name: 'B', collapsed: false, order: 1, memberKeys: [] },
+      { id: 'g1', name: 'A', collapsed: false, order: 0, color: 'teal', memberKeys: ['a::w'] },
+      { id: 'g2', name: 'B', collapsed: false, order: 1, color: 'blue', memberKeys: [] },
     ])
 
-    act(() => result.current.assignMember('a::w', 'g2'))
+    act(() => result.current.addMemberToGroup('a::w', 'g2'))
     await flush()
 
     expect(result.current.groups.map((g) => g.memberKeys)).toEqual([[], ['a::w']])
   })
 
-  test('pinning standalone leaves it in no group at all', async () => {
+  test('a pin dropped on a member joins ahead of it, not at the end', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 0, memberKeys: ['a::w'] },
+      {
+        id: 'g1',
+        name: 'A',
+        collapsed: false,
+        order: 0,
+        color: 'teal',
+        memberKeys: ['a::w', 'b::w'],
+      },
     ])
 
-    act(() => result.current.assignMember('a::w', null))
+    act(() => result.current.addMemberToGroup('c::w', 'g1', 'b::w'))
     await flush()
 
-    expect(result.current.groups[0].memberKeys).toEqual([])
+    expect(result.current.groups[0].memberKeys).toEqual(['a::w', 'c::w', 'b::w'])
   })
 
-  test('unpinning removes just that member, leaving the rest of the group alone', async () => {
+  test('dragging a group onto another takes its place in the order', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 0, memberKeys: ['a::w', 'b::w'] },
+      { id: 'g1', name: 'A', collapsed: false, order: 0, color: 'teal', memberKeys: [] },
+      { id: 'g2', name: 'B', collapsed: false, order: 1, color: 'blue', memberKeys: [] },
+      { id: 'g3', name: 'C', collapsed: false, order: 2, color: 'red', memberKeys: [] },
+    ])
+
+    act(() => result.current.moveGroupBefore('g3', 'g1'))
+    await flush()
+
+    expect(stored().map((g) => [g.id, g.order])).toEqual([
+      ['g3', 0],
+      ['g1', 1],
+      ['g2', 2],
+    ])
+  })
+
+  test('taking a member out of its group leaves the group behind', async () => {
+    const { result } = await mountWith([
+      {
+        id: 'g1',
+        name: 'A',
+        collapsed: false,
+        order: 0,
+        color: 'teal',
+        memberKeys: ['a::w', 'b::w'],
+      },
     ])
 
     act(() => result.current.removeMember('a::w'))
@@ -160,7 +219,14 @@ describe('usePinGroups', () => {
 
   test('ungrouping empties the group without removing it', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 0, memberKeys: ['a::w', 'b::w'] },
+      {
+        id: 'g1',
+        name: 'A',
+        collapsed: false,
+        order: 0,
+        color: 'teal',
+        memberKeys: ['a::w', 'b::w'],
+      },
     ])
 
     act(() => result.current.ungroupAll('g1'))
@@ -172,8 +238,8 @@ describe('usePinGroups', () => {
 
   test('deleting drops the group and takes no other group with it', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 0, memberKeys: ['a::w'] },
-      { id: 'g2', name: 'B', collapsed: false, order: 1, memberKeys: ['b::w'] },
+      { id: 'g1', name: 'A', collapsed: false, order: 0, color: 'teal', memberKeys: ['a::w'] },
+      { id: 'g2', name: 'B', collapsed: false, order: 1, color: 'teal', memberKeys: ['b::w'] },
     ])
 
     act(() => result.current.deleteGroup('g1'))
@@ -185,7 +251,7 @@ describe('usePinGroups', () => {
 
   test('renaming keeps the members and the collapse state', async () => {
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: true, order: 0, memberKeys: ['a::w'] },
+      { id: 'g1', name: 'A', collapsed: true, order: 0, color: 'teal', memberKeys: ['a::w'] },
     ])
 
     act(() => result.current.renameGroup('g1', 'Money'))
@@ -196,6 +262,7 @@ describe('usePinGroups', () => {
       name: 'Money',
       collapsed: true,
       order: 0,
+      color: 'teal',
       memberKeys: ['a::w'],
     })
   })
@@ -203,7 +270,7 @@ describe('usePinGroups', () => {
   test('a failed save is retried on the next change rather than swallowed', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { result } = await mountWith([
-      { id: 'g1', name: 'A', collapsed: false, order: 0, memberKeys: [] },
+      { id: 'g1', name: 'A', collapsed: false, order: 0, color: 'teal', memberKeys: [] },
     ])
     savePinGroups.mockRejectedValueOnce(new Error('disk full'))
 

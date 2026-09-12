@@ -551,7 +551,9 @@ describe('useSubscriptions status item segments', () => {
 
     const calls = renderStatusItem.mock.calls
     const lastCall = calls[calls.length - 1]?.[0]
-    expect(lastCall).toEqual([{ text: '40%', color: 'neutral', groupStart: false, groupId: null }])
+    expect(lastCall).toEqual([
+      { text: '40%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+    ])
     for (const call of renderStatusItem.mock.calls) {
       for (const segment of call[0]) {
         expect(segment.text).not.toBe('!')
@@ -593,8 +595,8 @@ describe('useSubscriptions status item segments', () => {
     await flush()
     expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual(
       expect.arrayContaining([
-        { text: '10%', color: 'neutral', groupStart: false, groupId: null },
-        { text: '20%', color: 'neutral', groupStart: true, groupId: null },
+        { text: '10%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+        { text: '20%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
       ]),
     )
 
@@ -609,8 +611,8 @@ describe('useSubscriptions status item segments', () => {
     const segments = statusItemCalls[statusItemCalls.length - 1]?.[0]
     expect(segments).toEqual(
       expect.arrayContaining([
-        { text: '10%', color: 'amber', groupStart: false, groupId: null },
-        { text: '20%', color: 'amber', groupStart: true, groupId: null },
+        { text: '10%', color: 'amber', groupStart: false, groupId: null, groupColor: null },
+        { text: '20%', color: 'amber', groupStart: true, groupId: null, groupColor: null },
       ]),
     )
 
@@ -664,7 +666,7 @@ describe('useSubscriptions pin migration from a legacy pinned boolean', () => {
     expect(result.current.subscriptions[0].headlineWindowId).toBe('weekly_all')
     expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(['weekly_all'])
     expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([
-      { text: '33%', color: 'neutral', groupStart: false, groupId: null },
+      { text: '33%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
     ])
   })
 

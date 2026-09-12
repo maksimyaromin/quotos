@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from '@/components/icons'
+import {
+  type CustomizeGroup,
+  CustomizeDisplayScreen,
+  type CustomizePin,
+} from '@/components/customize-display-screen'
+import {
+  BackIcon,
+  DebugIcon,
+  PlusIcon,
+  RefreshIcon,
+  SlidersIcon,
+  SnapBackIcon,
+} from '@/components/icons'
 import { SubscriptionsScreen } from '@/components/subscriptions-screen'
 import { UndoRow } from '@/components/undo-row'
 import { Button, IconButton, Panel, SubscriptionRow } from '@/design-system'
 import { usePinGroups } from '@/hooks/use-pin-groups'
 import { useSubscriptions } from '@/hooks/use-subscriptions'
-import {
-  findGroupForMember,
-  pinMemberKey,
-  sortPinGroups,
-  splitPinMemberKey,
-} from '@/lib/pin-groups'
+import { layoutPinnedEntries, type PinnedEntry, pinMemberKey } from '@/lib/pin-groups'
 import { presentRow } from '@/lib/row-presentation'
 import {
   dragWindowStep,
@@ -34,18 +41,32 @@ function isBlocked(rateLimitedUntil: string | null, now: number): boolean {
   return !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > now
 }
 
-// One namespace for both menus the panel can have open, which is exactly
-// one at a time: a row's own menu and a limit window's pin-destination
-// menu share `openMenuId`, and so the same click-away and Escape.
-function pinMenuId(key: string): string {
-  return `pin:${key}`
+function pinLabel(entry: PinnedEntry): string {
+  const label = entry.subscription.labelOverride ?? entry.subscription.label
+  const scope = entry.window.scope ? ` (${entry.window.scope})` : ''
+  return `${label} — ${entry.window.name}${scope}`
+}
+
+function toCustomizePin(entry: PinnedEntry): CustomizePin {
+  return { key: entry.key, label: pinLabel(entry), used: entry.window.used }
 }
 
 export default function App() {
-  const { groups, assignMember, removeMember, createGroupWith } = usePinGroups()
+  const {
+    groups,
+    addMemberToGroup,
+    removeMember,
+    groupMembersTogether,
+    createEmptyGroup,
+    renameGroup,
+    moveGroupBefore,
+    ungroupAll,
+    deleteGroup,
+  } = usePinGroups()
   const {
     subscriptions,
     trackedSubscriptions,
+    statusItemSegments,
     refreshAll,
     refreshAccountById,
     togglePin,
@@ -63,7 +84,7 @@ export default function App() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [screen, setScreen] = useState<'list' | 'manage'>('list')
+  const [screen, setScreen] = useState<'list' | 'manage' | 'customize'>('list')
   const [detached, setDetached] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
@@ -208,6 +229,10 @@ export default function App() {
     setOpenMenuId(null)
     setScreen('manage')
   }
+  const goCustomize = () => {
+    setOpenMenuId(null)
+    setScreen('customize')
+  }
   const goList = () => setScreen('list')
 
   const handleDebugDump = async () => {
@@ -223,33 +248,27 @@ export default function App() {
     } catch {}
   }
 
-  const destinations = useMemo(
-    () => sortPinGroups(groups).map((group) => ({ id: group.id, name: group.name })),
-    [groups],
-  )
-
-  const pinInto = (subId: string, windowId: string, groupId: string | null) => {
+  // Pinning is a plain toggle again; where a pin sits in the menu bar is
+  // the customize screen's business, never the pin button's.
+  const togglePinnedWindow = (subId: string, windowId: string) => {
     const sub = trackedSubscriptions.find((s) => s.id === subId)
-    if (!sub?.pinnedWindowIds.includes(windowId)) togglePin(subId, windowId)
-    assignMember(pinMemberKey(subId, windowId), groupId)
-  }
-
-  const pinIntoNewGroup = (subId: string, windowId: string, name: string) => {
-    const sub = trackedSubscriptions.find((s) => s.id === subId)
-    if (!sub?.pinnedWindowIds.includes(windowId)) togglePin(subId, windowId)
-    createGroupWith(name, pinMemberKey(subId, windowId))
-  }
-
-  // Unpinning is also what takes a window out of its group; a group never
-  // outlives its members' pins.
-  const unpinWindow = (subId: string, windowId: string) => {
+    if (sub?.pinnedWindowIds.includes(windowId)) removeMember(pinMemberKey(subId, windowId))
     togglePin(subId, windowId)
-    removeMember(pinMemberKey(subId, windowId))
   }
 
-  const openPinMenu = openMenuId?.startsWith('pin:')
-    ? splitPinMemberKey(openMenuId.slice('pin:'.length))
-    : null
+  const pinnedLayout = useMemo(
+    () => layoutPinnedEntries(trackedSubscriptions, groups),
+    [trackedSubscriptions, groups],
+  )
+  const customizeGroups: CustomizeGroup[] = pinnedLayout.groups.map(({ group, members }) => ({
+    id: group.id,
+    name: group.name,
+    color: group.color,
+    members: members.map(toCustomizePin),
+  }))
+  const customizeStandalone = pinnedLayout.standalone.map(toCustomizePin)
+  const hasPins =
+    customizeGroups.some((g) => g.members.length > 0) || customizeStandalone.length > 0
 
   const nowDate = new Date(now)
   const blockedSubs = trackedSubscriptions.filter(
@@ -284,24 +303,35 @@ export default function App() {
 
   return (
     <Panel
-      title={screen === 'manage' ? 'Subscriptions' : 'Quotos'}
+      title={
+        screen === 'manage'
+          ? 'Subscriptions'
+          : screen === 'customize'
+            ? 'Customize display'
+            : 'Quotos'
+      }
       docked={!detached}
       beakLeft={beakLeft ?? undefined}
       dragging={dragging}
       onHeaderPointerDown={handleHeaderPointerDown}
       position={position}
       leading={
-        screen === 'manage' ? (
+        screen === 'list' ? null : (
           <IconButton label="Back" onClick={goList} className={styles.backButton}>
             <BackIcon />
           </IconButton>
-        ) : null
+        )
       }
       headerActions={
         <>
           {import.meta.env.DEV && screen === 'list' ? (
             <IconButton label="Copy debug state (dev only)" onClick={handleDebugDump}>
               <DebugIcon />
+            </IconButton>
+          ) : null}
+          {screen === 'list' && hasPins ? (
+            <IconButton label="Customize display" onClick={goCustomize}>
+              <SlidersIcon />
             </IconButton>
           ) : null}
           {screen === 'list' ? (
@@ -335,6 +365,20 @@ export default function App() {
           onRemove={removeSubscription}
           displayLabelFor={displayLabelFor}
         />
+      ) : screen === 'customize' ? (
+        <CustomizeDisplayScreen
+          preview={statusItemSegments}
+          groups={customizeGroups}
+          standalone={customizeStandalone}
+          onAddToGroup={addMemberToGroup}
+          onMakeStandalone={removeMember}
+          onGroupTogether={groupMembersTogether}
+          onMoveGroup={moveGroupBefore}
+          onRenameGroup={renameGroup}
+          onUngroup={ungroupAll}
+          onDeleteGroup={deleteGroup}
+          onNewGroup={createEmptyGroup}
+        />
       ) : subscriptions.length === 0 ? (
         <div className="quotos-empty">
           <p>Nothing tracked yet. Add a subscription and you'll see what's left on it here.</p>
@@ -359,7 +403,6 @@ export default function App() {
             resetLabel: formatExactReset(w.resetsAt, nowDate),
             scope: w.scope,
             pinned: sub.pinnedWindowIds.includes(w.id),
-            groupId: findGroupForMember(groups, pinMemberKey(sub.id, w.id))?.id ?? null,
           }))
           const headlineId = sub.headlineWindowId
           return (
@@ -384,8 +427,8 @@ export default function App() {
               footerNote={presentation.footerNote}
               onAction={() => (sub.needsSignIn ? startSignIn(sub.id) : refreshAccountById(sub.id))}
               onReadNow={() => refreshAccountById(sub.id)}
-              onTogglePin={() => headlineId && unpinWindow(sub.id, headlineId)}
-              onToggleWindowPin={(windowId: string) => unpinWindow(sub.id, windowId)}
+              onTogglePin={() => headlineId && togglePinnedWindow(sub.id, headlineId)}
+              onToggleWindowPin={(windowId: string) => togglePinnedWindow(sub.id, windowId)}
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}
@@ -397,27 +440,6 @@ export default function App() {
               signInInProgress={sub.signInInProgress}
               onSubmitSignInCode={(code: string) => submitSignInCode(sub.id, code)}
               onCancelSignIn={() => cancelSignIn(sub.id)}
-              pinGroups={destinations}
-              headlineGroupId={
-                headlineId
-                  ? (findGroupForMember(groups, pinMemberKey(sub.id, headlineId))?.id ?? null)
-                  : null
-              }
-              onPinHeadline={
-                headlineId ? (groupId) => pinInto(sub.id, headlineId, groupId) : undefined
-              }
-              onCreateGroupWithHeadline={
-                headlineId ? (name) => pinIntoNewGroup(sub.id, headlineId, name) : undefined
-              }
-              openPinMenuWindowId={
-                openPinMenu?.subscriptionId === sub.id ? openPinMenu.windowId : null
-              }
-              onToggleWindowPinMenu={(windowId: string) => {
-                const id = pinMenuId(pinMemberKey(sub.id, windowId))
-                setOpenMenuId((prev) => (prev === id ? null : id))
-              }}
-              onPinWindow={(windowId, groupId) => pinInto(sub.id, windowId, groupId)}
-              onCreateGroupWithWindow={(windowId, name) => pinIntoNewGroup(sub.id, windowId, name)}
             />
           )
         })

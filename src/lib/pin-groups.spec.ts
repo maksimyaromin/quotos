@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'vitest'
-import type { LimitWindowEntity, PinGroup, Subscription } from '@/types/entities'
+import {
+  GROUP_COLORS,
+  type LimitWindowEntity,
+  type PinGroup,
+  type Subscription,
+} from '@/types/entities'
 import {
   collectPinnedEntries,
-  findGroupForMember,
+  isGroupColor,
   layoutPinnedEntries,
+  nextGroupColor,
   pinMemberKey,
   rollUpUsed,
   sortPinGroups,
@@ -40,7 +46,14 @@ function subscription(overrides: Partial<Subscription> & { id: string }): Subscr
 }
 
 function group(overrides: Partial<PinGroup> & { id: string }): PinGroup {
-  return { name: overrides.id, collapsed: false, order: 0, memberKeys: [], ...overrides }
+  return {
+    name: overrides.id,
+    collapsed: false,
+    order: 0,
+    color: 'teal',
+    memberKeys: [],
+    ...overrides,
+  }
 }
 
 describe('pinMemberKey', () => {
@@ -159,10 +172,23 @@ describe('rollUpUsed', () => {
   })
 })
 
-describe('findGroupForMember', () => {
-  test('names the group a pin is filed under, or none', () => {
-    const groups = [group({ id: 'g1', memberKeys: [pinMemberKey('a', 'session')] })]
-    expect(findGroupForMember(groups, pinMemberKey('a', 'session'))?.id).toBe('g1')
-    expect(findGroupForMember(groups, pinMemberKey('a', 'weekly_all'))).toBeNull()
+describe('group colours', () => {
+  test('a new group takes the first palette colour no group is wearing', () => {
+    expect(nextGroupColor([])).toBe('teal')
+    expect(nextGroupColor([group({ id: 'g1', color: 'teal' })])).toBe('blue')
+    expect(
+      nextGroupColor([group({ id: 'g1', color: 'teal' }), group({ id: 'g2', color: 'violet' })]),
+    ).toBe('blue')
+  })
+
+  test('once the palette is spent it repeats in palette order, not at random', () => {
+    const spent = GROUP_COLORS.map((color, index) => group({ id: `g${index}`, color }))
+    expect(nextGroupColor(spent)).toBe(GROUP_COLORS[spent.length % GROUP_COLORS.length])
+  })
+
+  test('a colour that is not in the palette is not mistaken for one', () => {
+    expect(isGroupColor('teal')).toBe(true)
+    expect(isGroupColor('chartreuse')).toBe(false)
+    expect(isGroupColor(undefined)).toBe(false)
   })
 })

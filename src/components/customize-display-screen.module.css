@@ -1,0 +1,301 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-1-5) var(--space-2);
+}
+
+.previewLabel {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-quaternary);
+}
+
+.previewStrip {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2-5);
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--border-default);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  min-height: 30px;
+}
+
+.previewFigure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-0-5);
+  padding: 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.previewFigure[data-color="amber"] {
+  color: var(--amber);
+}
+
+.previewFigure[data-color="red"] {
+  color: var(--red);
+}
+
+.previewUnderline {
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.previewUnderline[data-color="teal"] {
+  background: var(--teal-bright);
+}
+
+.previewUnderline[data-color="blue"] {
+  background: var(--blue);
+}
+
+.previewUnderline[data-color="violet"] {
+  background: var(--violet);
+}
+
+.previewUnderline[data-color="amber"] {
+  background: var(--amber);
+}
+
+.previewUnderline[data-color="red"] {
+  background: var(--red);
+}
+
+.previewDivider {
+  width: 1px;
+  height: 12px;
+  margin: 0 var(--space-1);
+  background: var(--border-strong);
+}
+
+.description {
+  margin: 0 0 var(--space-0-5);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--text-tertiary);
+}
+
+.groupBox {
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-default);
+  overflow: hidden;
+}
+
+.groupBox[data-drop="true"] {
+  border-color: var(--teal-bright);
+  background: var(--bg-selected);
+}
+
+.groupBox[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--bg-elevated);
+  cursor: grab;
+  color: var(--text-quaternary);
+}
+
+.colorDot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--text-quaternary);
+}
+
+.colorDot[data-color="teal"] {
+  background: var(--teal-bright);
+}
+
+.colorDot[data-color="blue"] {
+  background: var(--blue);
+}
+
+.colorDot[data-color="violet"] {
+  background: var(--violet);
+}
+
+.colorDot[data-color="amber"] {
+  background: var(--amber);
+}
+
+.colorDot[data-color="red"] {
+  background: var(--red);
+}
+
+.groupName {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: text;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nameInput {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-1-5);
+  border: 0.5px solid var(--border-focus);
+  border-radius: var(--radius-xs);
+  background: var(--bg-input);
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.memberCount {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.headerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.headerButton:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.headerButton:disabled {
+  color: var(--text-quaternary);
+  cursor: default;
+}
+
+.memberRow,
+.standaloneRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
+  cursor: grab;
+  color: var(--text-quaternary);
+}
+
+.memberRow {
+  padding-left: var(--space-5);
+}
+
+.standaloneRow {
+  border-radius: var(--radius-md);
+  border: 0.5px solid transparent;
+}
+
+.memberRow[data-drop="true"],
+.standaloneRow[data-drop="true"] {
+  border-color: var(--teal-bright);
+  background: var(--bg-selected);
+}
+
+.memberRow[data-dragging="true"],
+.standaloneRow[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.pinLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.emptyGroup {
+  padding: var(--space-1-5) var(--space-2) var(--space-1-5) var(--space-5);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-quaternary);
+}
+
+.ungroupedZone {
+  padding: var(--space-2);
+  border: 1px dashed var(--teal-dim);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  text-align: center;
+  color: var(--text-accent);
+}
+
+.ungroupedZone[data-drop="true"] {
+  border-color: var(--teal-bright);
+  background: var(--bg-selected);
+}
+
+.emptyState {
+  padding: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--text-tertiary);
+}
+
+.newGroupButton {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-accent);
+}
+
+.newGroupButton:hover {
+  background: var(--bg-row-hover);
+}

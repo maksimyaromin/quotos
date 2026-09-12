@@ -1,4 +1,4 @@
-import type { PinGroup, StatusItemSegment, Subscription } from '@/types/entities'
+import type { GroupColor, PinGroup, StatusItemSegment, Subscription } from '@/types/entities'
 import {
   collectPinnedEntries,
   layoutPinnedEntries,
@@ -32,6 +32,7 @@ function windowLabel(entry: PinnedEntry): string {
 interface Figure {
   used: number
   groupId: string | null
+  groupColor: GroupColor | null
   cluster: string
 }
 
@@ -54,28 +55,35 @@ export function buildStatusItemSegments(
     if (group.collapsed) {
       const used = rollUpUsed(members)
       if (used === null) continue
-      figures.push({ used, groupId: group.id, cluster })
+      figures.push({ used, groupId: group.id, groupColor: group.color, cluster })
       continue
     }
     for (const entry of withFigure(members)) {
-      figures.push({ used: entry.window.used as number, groupId: group.id, cluster })
+      figures.push({
+        used: entry.window.used as number,
+        groupId: group.id,
+        groupColor: group.color,
+        cluster,
+      })
     }
   }
   for (const entry of withFigure(layout.standalone)) {
     figures.push({
       used: entry.window.used as number,
       groupId: null,
+      groupColor: null,
       cluster: `subscription:${entry.subscription.id}`,
     })
   }
 
   let lastCluster: string | null = null
-  return figures.map(({ used, groupId, cluster }) => {
+  return figures.map(({ used, groupId, groupColor, cluster }) => {
     const segment: StatusItemSegment = {
       text: `${used}%`,
       color: pickFigureColor(used, anyContributingStale),
       groupStart: lastCluster !== null && lastCluster !== cluster,
       groupId,
+      groupColor,
     }
     lastCluster = cluster
     return segment

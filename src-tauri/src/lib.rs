@@ -382,7 +382,9 @@ fn build_status_item(
                     tauri::Size::Physical(s) => s.width as f64,
                     tauri::Size::Logical(s) => s.width,
                 };
-                if let Some(group_id) = shell::group_at_click(app, position.x, item_x, item_width) {
+                if let Some(group_id) =
+                    shell::group_at_click(app, &window, position.x, item_x, item_y, item_width)
+                {
                     let _ = app.emit("status-item-group-clicked", group_id);
                     return;
                 }

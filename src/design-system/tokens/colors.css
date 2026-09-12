@@ -23,6 +23,7 @@
   --red-muted: #3a1f22;
   --blue: #5b8def;
   --blue-muted: #1b2740;
+  --violet: #8b7ad8;
 
   --bg-base: var(--graphite-0);
   --bg-panel: rgba(19, 21, 24, 0.86);
@@ -79,6 +80,7 @@
   --red-muted: #fbe4e5;
   --blue: #3a6fd8;
   --blue-muted: #e3ebfb;
+  --violet: #5f4bbd;
 
   --border-subtle: rgba(0, 0, 0, 0.06);
   --border-default: rgba(0, 0, 0, 0.11);

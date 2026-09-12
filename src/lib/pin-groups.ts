@@ -1,4 +1,10 @@
-import type { LimitWindowEntity, PinGroup, Subscription } from '@/types/entities'
+import {
+  GROUP_COLORS,
+  type GroupColor,
+  type LimitWindowEntity,
+  type PinGroup,
+  type Subscription,
+} from '@/types/entities'
 
 const KEY_SEPARATOR = '::'
 
@@ -38,6 +44,21 @@ export function splitPinMemberKey(
   }
 }
 
+export function isGroupColor(value: unknown): value is GroupColor {
+  return typeof value === 'string' && (GROUP_COLORS as readonly string[]).includes(value)
+}
+
+// A new group takes the first palette colour no group is already
+// wearing, so two groups only ever share one once the palette is used
+// up, and then in palette order rather than at random.
+export function nextGroupColor(groups: PinGroup[]): GroupColor {
+  const taken = new Set(groups.map((group) => group.color))
+  return (
+    GROUP_COLORS.find((color) => !taken.has(color)) ??
+    GROUP_COLORS[groups.length % GROUP_COLORS.length]
+  )
+}
+
 export function collectPinnedEntries(subscriptions: Subscription[]): PinnedEntry[] {
   const entries: PinnedEntry[] = []
   for (const subscription of subscriptions) {
@@ -56,10 +77,6 @@ export function sortPinGroups(groups: PinGroup[]): PinGroup[] {
     .map((entry) => entry.group)
 }
 
-export function findGroupForMember(groups: PinGroup[], key: string): PinGroup | null {
-  return groups.find((group) => group.memberKeys.includes(key)) ?? null
-}
-
 // Every group is reported, members or not, so the panel can still show
 // and dissolve one whose members were all unpinned.
 export function layoutPinnedEntries(
@@ -67,10 +84,16 @@ export function layoutPinnedEntries(
   groups: PinGroup[],
 ): PinnedLayout {
   const entries = collectPinnedEntries(subscriptions)
+  const byKey = new Map(entries.map((entry) => [entry.key, entry]))
   const ordered = sortPinGroups(groups)
   const claimed = new Set<string>()
+  // Members come out in `memberKeys` order, which is the order the
+  // customize screen dragged them into, not the order the
+  // subscriptions happen to be listed in.
   const laidOut = ordered.map((group) => {
-    const members = entries.filter((entry) => group.memberKeys.includes(entry.key))
+    const members = group.memberKeys
+      .map((key) => byKey.get(key))
+      .filter((entry): entry is PinnedEntry => entry !== undefined)
     for (const member of members) claimed.add(member.key)
     return { group, members }
   })
