@@ -21,9 +21,14 @@ pub(crate) fn hide_panel(app: tauri::AppHandle, window: tauri::WebviewWindow) {
 }
 
 /// One item in the menu bar, as the frontend describes it. Mirrors
-/// `StatusItemSegment` in `types/entities.ts`.
+/// `StatusItemSegment` in `types/entities.ts`; see "Crossing the IPC
+/// boundary" in docs/status-item-rendering.md for why both renames.
 #[derive(Deserialize, Clone, PartialEq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub(crate) enum StatusItemSegmentDto {
     /// The group's slug, derived by `lib/pin-groups.ts` from its name.
     /// The one thing a click can fold a group by, which `group_id`
@@ -790,5 +795,69 @@ pub(crate) fn toggle_panel(
         clear_docked_target(app);
     } else {
         show_panel(app, window, item_x, item_y);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The exact shape `lib/status-item-segments.ts` builds and
+    /// `renderStatusItem` sends. One field here refusing the spelling
+    /// it arrives in fails the whole array, and the tray stops dead.
+    const FRONTEND_PAYLOAD: &str = r#"[
+        {"kind":"chip","slug":"FAB","color":"blue","groupId":"group-1"},
+        {"kind":"figure","text":"18%","color":"neutral"},
+        {"kind":"figure","text":"99%","color":"red"}
+    ]"#;
+
+    fn parse(json: &str) -> Vec<StatusItemSegmentDto> {
+        serde_json::from_str(json).expect("the frontend's own payload must deserialize")
+    }
+
+    #[test]
+    fn a_chip_deserializes_from_the_spelling_the_frontend_sends() {
+        let dtos = parse(FRONTEND_PAYLOAD);
+        assert_eq!(dtos.len(), 3);
+        assert_eq!(dtos[0].group_id(), Some("group-1"));
+        assert_eq!(
+            to_segments(&dtos[..1]),
+            vec![status_item_render::StatusItemSegment::Chip {
+                slug: "FAB".to_string(),
+                color: status_item_render::GroupColor::Blue,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_figure_carries_no_group_and_keeps_its_colour() {
+        let dtos = parse(FRONTEND_PAYLOAD);
+        assert_eq!(dtos[1].group_id(), None);
+        assert_eq!(
+            to_segments(&dtos[1..]),
+            vec![
+                status_item_render::StatusItemSegment::Figure {
+                    text: "18%".to_string(),
+                    color: status_item_render::StatusItemColor::Neutral,
+                },
+                status_item_render::StatusItemSegment::Figure {
+                    text: "99%".to_string(),
+                    color: status_item_render::StatusItemColor::Red,
+                },
+            ]
+        );
+    }
+
+    /// The snake_case spelling is nobody's: it was never what the
+    /// frontend sent, and accepting it would let the camelCase one rot
+    /// again unnoticed.
+    #[test]
+    fn the_snake_case_spelling_is_not_accepted_in_its_place() {
+        let json = r#"[{"kind":"chip","slug":"FAB","color":"blue","group_id":"group-1"}]"#;
+        let parsed: Result<Vec<StatusItemSegmentDto>, _> = serde_json::from_str(json);
+        assert!(
+            parsed.is_err(),
+            "only the frontend's own spelling is the contract"
+        );
     }
 }

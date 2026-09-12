@@ -17,10 +17,9 @@ fn glyph_center_offset_from_item_left_points(
     item_width_points: Option<f64>,
     icon_width_px: f64,
 ) -> f64 {
-    const GLYPH_WIDTH_POINTS: f64 = 18.0;
     image_left_margin_points(item_width_points, icon_width_px)
         + status_item_render::GLYPH_LEFT_INSET_POINTS
-        + GLYPH_WIDTH_POINTS / 2.0
+        + status_item_render::GLYPH_WIDTH_POINTS / 2.0
 }
 
 /// Where a click landed in the composited image's own pixel grid, the
@@ -198,13 +197,19 @@ pub(crate) fn drag_target_from_anchor(anchor: DragAnchor, current_mouse: (f64, f
 mod tests {
     mod glyph_offset {
         use super::super::glyph_center_offset_from_item_left_points;
+        use crate::status_item_render::{GLYPH_LEFT_INSET_POINTS, GLYPH_WIDTH_POINTS};
+
+        /// The glyph's own centre inside the image: all of the offset
+        /// that is not the item's left margin. Read off the
+        /// compositor's constants so resizing the mark cannot rot it.
+        const IN_IMAGE: f64 = GLYPH_LEFT_INSET_POINTS + GLYPH_WIDTH_POINTS / 2.0;
 
         #[test]
         fn bare_glyph_offset_matches_the_measured_item_center() {
             let offset = glyph_center_offset_from_item_left_points(Some(46.0), 60.0);
             assert!(
-                (offset - 22.0).abs() < 0.01,
-                "expected ~22pt offset, got {offset}pt"
+                (offset - (8.0 + IN_IMAGE)).abs() < 0.01,
+                "a 30pt image centred in a 46pt item leaves an 8pt margin, got {offset}pt"
             );
         }
 
@@ -212,8 +217,8 @@ mod tests {
         fn pinned_digits_offset_scales_with_the_wider_image_not_a_fixed_constant() {
             let offset = glyph_center_offset_from_item_left_points(Some(74.0), 58.0 * 2.0);
             assert!(
-                (offset - 22.0).abs() < 0.01,
-                "expected ~22pt offset, got {offset}pt"
+                (offset - (8.0 + IN_IMAGE)).abs() < 0.01,
+                "a 58pt image centred in a 74pt item leaves the same 8pt margin, got {offset}pt"
             );
         }
 
@@ -227,7 +232,7 @@ mod tests {
         #[test]
         fn missing_item_rect_falls_back_to_glyph_flush_with_the_left_edge() {
             let offset = glyph_center_offset_from_item_left_points(None, 60.0);
-            assert!((offset - 14.0).abs() < 0.01, "got {offset}");
+            assert!((offset - IN_IMAGE).abs() < 0.01, "got {offset}");
         }
     }
 

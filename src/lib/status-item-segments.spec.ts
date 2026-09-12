@@ -273,6 +273,27 @@ describe('computeIconFillPercent', () => {
   test('a malformed key falls back to the mean rather than throwing', () => {
     expect(computeIconFillPercent(twoHeadlines, 'not-a-member-key')).toBe(35)
   })
+
+  // The shape a real choice has on disk: a subscription id with its
+  // own colon, and a window id that carries a second one. The gauge
+  // reads the window that was chosen, not the headline it sits under.
+  test('reads a scoped window whose own id carries a colon', () => {
+    const subs = [
+      subscription({
+        id: 'claude:claude',
+        used: 58,
+        pinnedWindowIds: ['session', 'weekly_scoped:Fable'],
+        windows: [
+          window({ id: 'session', name: 'Session', used: 12 }),
+          window({ id: 'weekly_scoped:Fable', name: 'Weekly', scope: 'Fable', used: 99 }),
+        ],
+      }),
+    ]
+    const chosen = pinMemberKey('claude:claude', 'weekly_scoped:Fable')
+    expect(chosen).toBe('claude%3Aclaude::weekly_scoped:Fable')
+    expect(computeIconFillPercent(subs, chosen)).toBe(99)
+    expect(computeIconFillPercent(subs)).toBe(58)
+  })
 })
 
 describe('buildStatusItemSegments with pin groups', () => {

@@ -259,9 +259,9 @@ so the preview cannot drift from what the status item draws.
 
 A group's `color`, one of `lib/pin-groups.ts`'s fixed palette names, is
 persisted with it rather than derived from its position, so the colour
-is a stable identity: `status_item_render.rs` draws it as a bar under
-every figure the group owns, and `tokens/colors.css` carries the same
-names for the panel's own swatches. A new group takes the first palette
+is a stable identity: `status_item_render.rs` draws the group's chip in
+it, and `tokens/colors.css` carries the same names for the panel's own
+swatches. A new group takes the first palette
 colour no group is wearing. A group loaded from a file written before
 colours shipped is assigned one in `lib/persistence.ts`, so every
 reader downstream can count on there being one.
