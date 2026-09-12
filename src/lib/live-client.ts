@@ -33,6 +33,10 @@ export function onPanelBeakOffset(callback: (offsetPx: number) => void): Promise
   return listen<number>('panel-beak-offset', (event) => callback(event.payload))
 }
 
+export function onStatusItemGroupClicked(callback: (groupId: string) => void): Promise<() => void> {
+  return listen<string>('status-item-group-clicked', (event) => callback(event.payload))
+}
+
 export function onQuotaRefresh(
   callback: (event: ScheduledRefreshEvent) => void,
 ): Promise<() => void> {

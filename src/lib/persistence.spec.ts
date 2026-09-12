@@ -6,7 +6,14 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }))
 
-import { loadTracked, saveTracked, type TrackedAccount } from './persistence'
+import type { PinGroup } from '@/types/entities'
+import {
+  loadPinGroups,
+  loadTracked,
+  savePinGroups,
+  saveTracked,
+  type TrackedAccount,
+} from './persistence'
 
 const LEGACY_KEY = 'quotos.tracked.v1'
 
@@ -16,6 +23,14 @@ const SAMPLE: TrackedAccount = {
   config_dir: '~/.claude',
   label: 'Renamed Personal',
   pinnedWindowIds: ['weekly_all'],
+}
+
+const SAMPLE_GROUP: PinGroup = {
+  id: 'g1',
+  name: 'Money',
+  collapsed: true,
+  order: 0,
+  memberKeys: ['claude%3Aclaude::weekly_all'],
 }
 
 function setNative(): void {
@@ -146,5 +161,61 @@ describe('persistence on the native path, migrating from localStorage', () => {
 
     expect(loaded).toEqual([SAMPLE])
     expect(window.localStorage.getItem(LEGACY_KEY)).toBe(raw)
+  })
+})
+
+describe('pin groups alongside the tracked list', () => {
+  beforeEach(() => {
+    clearNative()
+    window.localStorage.clear()
+    invoke.mockReset()
+  })
+
+  afterEach(() => {
+    clearNative()
+  })
+
+  test('round-trips through the browser harness without disturbing the tracked list', async () => {
+    await saveTracked([SAMPLE])
+    await savePinGroups([SAMPLE_GROUP])
+
+    expect(await loadPinGroups()).toEqual([SAMPLE_GROUP])
+    expect(await loadTracked()).toEqual([SAMPLE])
+  })
+
+  test('saving the tracked list afterwards leaves the groups intact', async () => {
+    await savePinGroups([SAMPLE_GROUP])
+    await saveTracked([SAMPLE])
+
+    expect(await loadPinGroups()).toEqual([SAMPLE_GROUP])
+  })
+
+  test('is empty for a payload written before pin groups shipped', async () => {
+    window.localStorage.setItem(LEGACY_KEY, JSON.stringify({ version: 1, tracked: [SAMPLE] }))
+    expect(await loadPinGroups()).toEqual([])
+  })
+
+  test('round-trips through the native commands', async () => {
+    setNative()
+    invoke.mockImplementation((cmd: string) => {
+      if (cmd === 'load_pin_groups') return Promise.resolve([SAMPLE_GROUP])
+      return Promise.resolve()
+    })
+
+    await savePinGroups([SAMPLE_GROUP])
+    expect(invoke).toHaveBeenCalledWith('save_pin_groups', { groups: [SAMPLE_GROUP] })
+    expect(await loadPinGroups()).toEqual([SAMPLE_GROUP])
+  })
+
+  test('falls back to none if the native load itself fails', async () => {
+    setNative()
+    invoke.mockRejectedValue(new Error('no such command'))
+    expect(await loadPinGroups()).toEqual([])
+  })
+
+  test('rejects when the native write fails, so the caller can retry', async () => {
+    setNative()
+    invoke.mockRejectedValue(new Error('disk full'))
+    await expect(savePinGroups([SAMPLE_GROUP])).rejects.toThrow('disk full')
   })
 })

@@ -25,6 +25,9 @@ export const onQuotaRefresh: (
 export const kickScheduler: () => Promise<void> = isTauri ? live.kickScheduler : async () => {}
 export const onPanelBeakOffset: (callback: (offsetPx: number) => void) => Promise<() => void> =
   isTauri ? live.onPanelBeakOffset : async () => () => {}
+export const onStatusItemGroupClicked: (
+  callback: (groupId: string) => void,
+) => Promise<() => void> = isTauri ? live.onStatusItemGroupClicked : async () => () => {}
 
 export const startSignIn = client.startSignIn
 export const submitSignInCode = client.submitSignInCode

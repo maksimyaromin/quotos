@@ -1,92 +1,13 @@
 import * as React from 'react'
+import { MenuItem, MenuSeparator, RowMenu, useRowMenu } from '../controls/row-menu'
+import { Chevron, MenuDotsGlyph, PinGlyph } from '../glyphs'
 import { Badge } from '../indicators/badge'
 import { CapacityBar } from '../indicators/capacity-bar'
 import type { SubscriptionState } from '../indicators/status-dot'
 import { StatusDot } from '../indicators/status-dot'
 import { LimitWindow, type LimitWindowProps } from './limit-window'
+import { PinDestinationItems, type PinDestinationGroup } from './pin-destination-items'
 import styles from './subscription-row.module.css'
-
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={styles.chevron}
-      data-open={open ? 'true' : undefined}
-    >
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  )
-}
-
-function PinGlyph({ size = 12 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 17v5M9 10.76V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.76a2 2 0 0 0 .59 1.41l1.3 1.3A1 1 0 0 1 17.18 15H6.82a1 1 0 0 1-.7-1.71l1.29-1.32A2 2 0 0 0 9 10.76Z" />
-    </svg>
-  )
-}
-
-function MenuDotsGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-      <circle cx="5" cy="12" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="19" cy="12" r="1.6" />
-    </svg>
-  )
-}
-
-const MENU_GAP = 4
-const MENU_VIEWPORT_MARGIN = 8
-const MENU_MIN_WIDTH = 168
-
-function nextMenuIndex(key: string, current: number, length: number): number {
-  if (key === 'Home') return 0
-  if (key === 'End') return length - 1
-  if (key === 'ArrowDown') return current < 0 ? 0 : (current + 1) % length
-  return current < 0 ? length - 1 : (current - 1 + length) % length
-}
-
-function MenuItem({
-  danger,
-  disabled,
-  onClick,
-  children,
-}: {
-  danger?: boolean
-  disabled?: boolean
-  onClick?: () => void
-  children?: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      disabled={disabled}
-      onClick={onClick}
-      data-danger={danger ? 'true' : undefined}
-      className={styles.menuItem}
-    >
-      {children}
-    </button>
-  )
-}
 
 export interface SubscriptionRowProps {
   label: string
@@ -122,12 +43,17 @@ export interface SubscriptionRowProps {
   signInInProgress?: boolean
   onSubmitSignInCode?: (code: string) => void
   onCancelSignIn?: () => void
+  // Pin groups: the destinations a pin can be filed under, and which one
+  // each window is already in.
+  pinGroups?: PinDestinationGroup[]
+  headlineGroupId?: string | null
+  onPinHeadline?: (groupId: string | null) => void
+  onCreateGroupWithHeadline?: (name: string) => void
+  openPinMenuWindowId?: string | null
+  onToggleWindowPinMenu?: (id: string) => void
+  onPinWindow?: (id: string, groupId: string | null) => void
+  onCreateGroupWithWindow?: (id: string, name: string) => void
   style?: React.CSSProperties
-}
-
-interface MenuPosition {
-  top: number
-  left: number
 }
 
 export function SubscriptionRow({
@@ -164,6 +90,14 @@ export function SubscriptionRow({
   signInInProgress = false,
   onSubmitSignInCode,
   onCancelSignIn,
+  pinGroups,
+  headlineGroupId = null,
+  onPinHeadline,
+  onCreateGroupWithHeadline,
+  openPinMenuWindowId = null,
+  onToggleWindowPinMenu,
+  onPinWindow,
+  onCreateGroupWithWindow,
   style,
 }: SubscriptionRowProps) {
   const [renaming, setRenaming] = React.useState(false)
@@ -171,48 +105,12 @@ export function SubscriptionRow({
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [codeDraft, setCodeDraft] = React.useState('')
   const codeInputRef = React.useRef<HTMLInputElement>(null)
-  const menuButtonRef = React.useRef<HTMLButtonElement>(null)
-  const menuRef = React.useRef<HTMLDivElement>(null)
-  const [menuPos, setMenuPos] = React.useState<MenuPosition | null>(null)
+  const menu = useRowMenu(menuOpen)
+  // The menu's second page: where to file a pin the row is about to make.
+  const [choosingPinDestination, setChoosingPinDestination] = React.useState(false)
 
-  React.useLayoutEffect(() => {
-    if (!menuOpen) {
-      setMenuPos(null)
-      return undefined
-    }
-    const place = () => {
-      const trigger = menuButtonRef.current
-      const menu = menuRef.current
-      if (!trigger || !menu) return
-      const anchor = trigger.getBoundingClientRect()
-      const width = menu.offsetWidth || MENU_MIN_WIDTH
-      const height = menu.offsetHeight
-      const below = anchor.bottom + MENU_GAP
-      const top =
-        below + height <= window.innerHeight - MENU_VIEWPORT_MARGIN
-          ? below
-          : Math.max(MENU_VIEWPORT_MARGIN, anchor.top - MENU_GAP - height)
-      const left = Math.min(
-        Math.max(MENU_VIEWPORT_MARGIN, anchor.right - width),
-        Math.max(MENU_VIEWPORT_MARGIN, window.innerWidth - width - MENU_VIEWPORT_MARGIN),
-      )
-      setMenuPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }))
-    }
-    place()
-    window.addEventListener('scroll', place, true)
-    window.addEventListener('resize', place)
-    return () => {
-      window.removeEventListener('scroll', place, true)
-      window.removeEventListener('resize', place)
-    }
-  }, [menuOpen])
-
-  const wasMenuOpen = React.useRef(false)
   React.useEffect(() => {
-    if (wasMenuOpen.current && !menuOpen && document.activeElement === document.body) {
-      menuButtonRef.current?.focus()
-    }
-    wasMenuOpen.current = menuOpen
+    if (!menuOpen) setChoosingPinDestination(false)
   }, [menuOpen])
 
   React.useEffect(() => {
@@ -248,6 +146,7 @@ export function SubscriptionRow({
   const hasData = typeof used === 'number'
   const active = expanded || menuOpen
   const hasWindows = windows.length > 0
+  const offersPinDestinations = onPinHeadline !== undefined
 
   const usedLevel = stale ? 'stale' : severity !== 'healthy' ? severity : undefined
 
@@ -260,21 +159,10 @@ export function SubscriptionRow({
     onToggleExpand?.()
   }
 
-  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!menuOpen || !menuRef.current) return
-    if ((e.target as HTMLElement).tagName === 'INPUT') return
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
-    const items = Array.from(menuRef.current.querySelectorAll('button')).filter((b) => !b.disabled)
-    if (items.length === 0) return
-    e.preventDefault()
-    const current = items.indexOf(document.activeElement as HTMLButtonElement)
-    items[nextMenuIndex(e.key, current, items.length)].focus()
-  }
-
   return (
     <div
       onClick={handleRowClick}
-      onKeyDown={handleMenuKeyDown}
+      onKeyDown={menu.onKeyDown}
       data-active={active ? 'true' : undefined}
       className={styles.row}
       style={style}
@@ -325,7 +213,7 @@ export function SubscriptionRow({
           aria-expanded={menuOpen}
           data-quotos-menu-scope="true"
           data-open={menuOpen ? 'true' : undefined}
-          ref={menuButtonRef}
+          ref={menu.triggerRef}
           onClick={(e) => {
             e.stopPropagation()
             onToggleMenu?.()
@@ -427,7 +315,7 @@ export function SubscriptionRow({
             className={styles.disclosureButton}
           >
             {windows.length} {windows.length === 1 ? 'limit' : 'limits'}
-            <Chevron open={expanded} />
+            <Chevron open={expanded} className={styles.chevron} />
           </button>
         ) : null}
       </div>
@@ -441,7 +329,17 @@ export function SubscriptionRow({
           {hasWindows ? (
             <div className={styles.windowsList}>
               {windows.map((w, i) => (
-                <LimitWindow key={w.id ?? i} {...w} stale={stale} onTogglePin={onToggleWindowPin} />
+                <LimitWindow
+                  key={w.id ?? i}
+                  {...w}
+                  stale={stale}
+                  onTogglePin={onToggleWindowPin}
+                  pinGroups={pinGroups}
+                  pinMenuOpen={w.id !== undefined && openPinMenuWindowId === w.id}
+                  onTogglePinMenu={onToggleWindowPinMenu}
+                  onPin={onPinWindow}
+                  onCreateGroupWithWindow={onCreateGroupWithWindow}
+                />
               ))}
             </div>
           ) : null}
@@ -449,73 +347,81 @@ export function SubscriptionRow({
       </div>
 
       {menuOpen ? (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label="Subscription actions"
-          data-quotos-menu-scope="true"
-          onClick={(e) => e.stopPropagation()}
-          className={styles.rowMenu}
-          style={{
-            top: menuPos ? menuPos.top : 0,
-            left: menuPos ? menuPos.left : 0,
-            visibility: menuPos ? 'visible' : 'hidden',
-            minWidth: MENU_MIN_WIDTH,
-          }}
-        >
-          <MenuItem
-            onClick={() => {
-              onToggleMenu?.()
-              onReadNow?.()
-            }}
-          >
-            Read now
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              onToggleMenu?.()
-              setRenaming(true)
-            }}
-          >
-            Rename
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              onToggleMenu?.()
-              onTogglePin?.()
-            }}
-          >
-            {headlinePinned ? 'Hide from menu bar' : 'Show in menu bar'}
-          </MenuItem>
-          <MenuItem
-            disabled={!canMoveUp}
-            onClick={() => {
-              onToggleMenu?.()
-              onMoveUp?.()
-            }}
-          >
-            Move up
-          </MenuItem>
-          <MenuItem
-            disabled={!canMoveDown}
-            onClick={() => {
-              onToggleMenu?.()
-              onMoveDown?.()
-            }}
-          >
-            Move down
-          </MenuItem>
-          <div role="separator" className={styles.separator} />
-          <MenuItem
-            danger
-            onClick={() => {
-              onToggleMenu?.()
-              onStopTracking?.()
-            }}
-          >
-            Stop tracking
-          </MenuItem>
-        </div>
+        <RowMenu anchor={menu} label="Subscription actions">
+          {choosingPinDestination ? (
+            <PinDestinationItems
+              groups={pinGroups}
+              currentGroupId={headlineGroupId}
+              onPin={(groupId) => {
+                onToggleMenu?.()
+                onPinHeadline?.(groupId)
+              }}
+              onCreateGroup={(name) => {
+                onToggleMenu?.()
+                onCreateGroupWithHeadline?.(name)
+              }}
+            />
+          ) : (
+            <>
+              <MenuItem
+                onClick={() => {
+                  onToggleMenu?.()
+                  onReadNow?.()
+                }}
+              >
+                Read now
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  onToggleMenu?.()
+                  setRenaming(true)
+                }}
+              >
+                Rename
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  if (!headlinePinned && offersPinDestinations) {
+                    setChoosingPinDestination(true)
+                    return
+                  }
+                  onToggleMenu?.()
+                  onTogglePin?.()
+                }}
+              >
+                {headlinePinned ? 'Hide from menu bar' : 'Show in menu bar'}
+              </MenuItem>
+              <MenuItem
+                disabled={!canMoveUp}
+                onClick={() => {
+                  onToggleMenu?.()
+                  onMoveUp?.()
+                }}
+              >
+                Move up
+              </MenuItem>
+              <MenuItem
+                disabled={!canMoveDown}
+                onClick={() => {
+                  onToggleMenu?.()
+                  onMoveDown?.()
+                }}
+              >
+                Move down
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                onClick={() => {
+                  onToggleMenu?.()
+                  onStopTracking?.()
+                }}
+              >
+                Stop tracking
+              </MenuItem>
+            </>
+          )}
+        </RowMenu>
       ) : null}
     </div>
   )

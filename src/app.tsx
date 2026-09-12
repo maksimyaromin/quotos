@@ -1,9 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BackIcon, DebugIcon, PlusIcon, RefreshIcon, SnapBackIcon } from '@/components/icons'
 import { SubscriptionsScreen } from '@/components/subscriptions-screen'
 import { UndoRow } from '@/components/undo-row'
 import { Button, IconButton, Panel, SubscriptionRow } from '@/design-system'
+import { usePinGroups } from '@/hooks/use-pin-groups'
 import { useSubscriptions } from '@/hooks/use-subscriptions'
+import {
+  findGroupForMember,
+  pinMemberKey,
+  sortPinGroups,
+  splitPinMemberKey,
+} from '@/lib/pin-groups'
 import { presentRow } from '@/lib/row-presentation'
 import {
   dragWindowStep,
@@ -27,7 +34,15 @@ function isBlocked(rateLimitedUntil: string | null, now: number): boolean {
   return !!rateLimitedUntil && new Date(rateLimitedUntil).getTime() > now
 }
 
+// One namespace for both menus the panel can have open, which is exactly
+// one at a time: a row's own menu and a limit window's pin-destination
+// menu share `openMenuId`, and so the same click-away and Escape.
+function pinMenuId(key: string): string {
+  return `pin:${key}`
+}
+
 export default function App() {
+  const { groups, assignMember, removeMember, createGroupWith } = usePinGroups()
   const {
     subscriptions,
     trackedSubscriptions,
@@ -44,7 +59,7 @@ export default function App() {
     startSignIn,
     submitSignInCode,
     cancelSignIn,
-  } = useSubscriptions()
+  } = useSubscriptions(groups)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -199,6 +214,7 @@ export default function App() {
     const dump = {
       dumpedAt: new Date().toISOString(),
       subscriptions,
+      groups,
     }
     const json = JSON.stringify(dump, null, 2)
     console.log('[quotos debug state]', dump)
@@ -206,6 +222,34 @@ export default function App() {
       await navigator.clipboard.writeText(json)
     } catch {}
   }
+
+  const destinations = useMemo(
+    () => sortPinGroups(groups).map((group) => ({ id: group.id, name: group.name })),
+    [groups],
+  )
+
+  const pinInto = (subId: string, windowId: string, groupId: string | null) => {
+    const sub = trackedSubscriptions.find((s) => s.id === subId)
+    if (!sub?.pinnedWindowIds.includes(windowId)) togglePin(subId, windowId)
+    assignMember(pinMemberKey(subId, windowId), groupId)
+  }
+
+  const pinIntoNewGroup = (subId: string, windowId: string, name: string) => {
+    const sub = trackedSubscriptions.find((s) => s.id === subId)
+    if (!sub?.pinnedWindowIds.includes(windowId)) togglePin(subId, windowId)
+    createGroupWith(name, pinMemberKey(subId, windowId))
+  }
+
+  // Unpinning is also what takes a window out of its group; a group never
+  // outlives its members' pins.
+  const unpinWindow = (subId: string, windowId: string) => {
+    togglePin(subId, windowId)
+    removeMember(pinMemberKey(subId, windowId))
+  }
+
+  const openPinMenu = openMenuId?.startsWith('pin:')
+    ? splitPinMemberKey(openMenuId.slice('pin:'.length))
+    : null
 
   const nowDate = new Date(now)
   const blockedSubs = trackedSubscriptions.filter(
@@ -315,7 +359,9 @@ export default function App() {
             resetLabel: formatExactReset(w.resetsAt, nowDate),
             scope: w.scope,
             pinned: sub.pinnedWindowIds.includes(w.id),
+            groupId: findGroupForMember(groups, pinMemberKey(sub.id, w.id))?.id ?? null,
           }))
+          const headlineId = sub.headlineWindowId
           return (
             <SubscriptionRow
               key={sub.id}
@@ -331,17 +377,15 @@ export default function App() {
               reason={sub.reason ?? undefined}
               badge={presentation.badge}
               pinnedCount={windows.filter((w) => w.pinned).length}
-              headlinePinned={
-                sub.headlineWindowId !== null && sub.pinnedWindowIds.includes(sub.headlineWindowId)
-              }
+              headlinePinned={headlineId !== null && sub.pinnedWindowIds.includes(headlineId)}
               expanded={expanded.has(sub.id)}
               menuOpen={openMenuId === sub.id}
               actionLabel={presentation.actionLabel}
               footerNote={presentation.footerNote}
               onAction={() => (sub.needsSignIn ? startSignIn(sub.id) : refreshAccountById(sub.id))}
               onReadNow={() => refreshAccountById(sub.id)}
-              onTogglePin={() => togglePin(sub.id, sub.headlineWindowId)}
-              onToggleWindowPin={(windowId: string) => togglePin(sub.id, windowId)}
+              onTogglePin={() => headlineId && unpinWindow(sub.id, headlineId)}
+              onToggleWindowPin={(windowId: string) => unpinWindow(sub.id, windowId)}
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}
@@ -353,6 +397,27 @@ export default function App() {
               signInInProgress={sub.signInInProgress}
               onSubmitSignInCode={(code: string) => submitSignInCode(sub.id, code)}
               onCancelSignIn={() => cancelSignIn(sub.id)}
+              pinGroups={destinations}
+              headlineGroupId={
+                headlineId
+                  ? (findGroupForMember(groups, pinMemberKey(sub.id, headlineId))?.id ?? null)
+                  : null
+              }
+              onPinHeadline={
+                headlineId ? (groupId) => pinInto(sub.id, headlineId, groupId) : undefined
+              }
+              onCreateGroupWithHeadline={
+                headlineId ? (name) => pinIntoNewGroup(sub.id, headlineId, name) : undefined
+              }
+              openPinMenuWindowId={
+                openPinMenu?.subscriptionId === sub.id ? openPinMenu.windowId : null
+              }
+              onToggleWindowPinMenu={(windowId: string) => {
+                const id = pinMenuId(pinMemberKey(sub.id, windowId))
+                setOpenMenuId((prev) => (prev === id ? null : id))
+              }}
+              onPinWindow={(windowId, groupId) => pinInto(sub.id, windowId, groupId)}
+              onCreateGroupWithWindow={(windowId, name) => pinIntoNewGroup(sub.id, windowId, name)}
             />
           )
         })

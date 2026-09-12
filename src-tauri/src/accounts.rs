@@ -6,7 +6,7 @@ use tauri::{Emitter, Manager};
 
 use crate::AppState;
 use crate::idle;
-use crate::persistence::TrackedAccount;
+use crate::persistence::{PinGroup, TrackedAccount};
 use crate::providers::{self, AccountDescriptor, FetchError, RawSnapshot};
 use crate::statusline;
 
@@ -110,6 +110,21 @@ pub(crate) fn save_tracked(
 ) -> Result<(), String> {
     state.tracked_store.save(tracked).inspect_err(|err| {
         eprintln!("quotos: saving the tracked list failed: {err}");
+    })
+}
+
+#[tauri::command(async)]
+pub(crate) fn load_pin_groups(state: tauri::State<'_, AppState>) -> Vec<PinGroup> {
+    state.tracked_store.list_groups()
+}
+
+#[tauri::command(async)]
+pub(crate) fn save_pin_groups(
+    state: tauri::State<'_, AppState>,
+    groups: Vec<PinGroup>,
+) -> Result<(), String> {
+    state.tracked_store.save_groups(groups).inspect_err(|err| {
+        eprintln!("quotos: saving the pin groups failed: {err}");
     })
 }
 

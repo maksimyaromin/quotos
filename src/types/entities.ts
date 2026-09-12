@@ -37,6 +37,19 @@ export interface Subscription {
   pendingRemoval: boolean
 }
 
+// One named collection of pinned limit windows, drawn from any
+// subscription. `memberKeys` holds composite keys built by
+// `lib/pin-groups.ts`'s `pinMemberKey`, not bare window ids;
+// `collapsed` is how the group is drawn in the menu bar, rolled up to
+// one figure or opened out to every member's own.
+export interface PinGroup {
+  id: string
+  name: string
+  collapsed: boolean
+  order: number
+  memberKeys: string[]
+}
+
 export interface AccountDescriptor {
   id: string
   provider: string
@@ -124,4 +137,8 @@ export interface StatusItemSegment {
   text: string
   color: 'neutral' | 'amber' | 'red'
   groupStart: boolean
+  // Set when this figure stands for a pin group, or for one member of an
+  // expanded one: the native side hit-tests a click against it to toggle
+  // that group in the menu bar instead of opening the panel.
+  groupId: string | null
 }

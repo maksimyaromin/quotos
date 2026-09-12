@@ -71,9 +71,9 @@ shape's own rendered ink to the next shape's own rendered ink, never
 from either shape's wider advance box or reserved cell. `GLYPH_GAP_PX`
 is that distance from the glyph to the first figure, `FIGURE_GAP_PX`
 from one figure to the next, and `GROUP_GUTTER_PRE_PX`/
-`GROUP_GUTTER_POST_PX` from a figure to the hairline marking a new
-subscription group, in place of the plain figure gap that boundary
-would otherwise have gotten. `layout_figures` computes every position
+`GROUP_GUTTER_POST_PX` from a figure to the hairline marking a cluster
+boundary, a pin group or one subscription's standalone pins, in place of
+the plain figure gap that boundary would otherwise have gotten. `layout_figures` computes every position
 by this one rule; nothing downstream hand-adjusts a value it produces.
 
 An earlier design measured a figure's own advance box, the space
@@ -137,6 +137,28 @@ another 5-CSS-px, doubled for this buffer's 2x convention. `render`
 never draws a hairline before the very first segment overall,
 regardless of what the frontend sets on it, since there is no prior
 group for the first segment to part from.
+
+## Resolving a click back to a figure
+
+A click on a pin group's own figure toggles that group in place instead
+of opening the panel, so a click has to be resolved back to the figure
+underneath it. `figure_spans` reports the horizontal span each figure's
+ink occupies, sharing `layout_figures` with `render` rather than
+re-deriving the geometry, so the spans a click is tested against are the
+ones the figures were drawn at. `shell.rs` computes them once per
+repaint and caches them; nothing measures anything at click time.
+
+`figure_at` takes the click as a fraction of the item's own width rather
+than a coordinate, which keeps points, pixels and display scale out of
+it entirely: the caller divides the click's offset by the item's width,
+both of which arrive in the same units from the same event.
+
+`HIT_PADDING_PX` widens every span a little before the test, because a
+figure's ink is only as wide as its digits and a click a point or two
+shy of them clearly still means that figure. A compile-time assertion
+keeps the padding, doubled, narrower than `FIGURE_GAP_PX` less the
+rounding slack the span edges pick up from flooring and ceiling, so two
+adjacent figures can never both claim the same pixel.
 
 ## Compositing
 

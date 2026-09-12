@@ -20,6 +20,7 @@ import { mapOutcomeFor, normalizeFor, resolveProviderDisplayName } from '@/provi
 import type {
   AccountDescriptor,
   FetchError,
+  PinGroup,
   RawSnapshot,
   Subscription,
   SubscriptionState,
@@ -113,7 +114,7 @@ function capturePriorRead(sub: Subscription | undefined): PriorRead {
   }
 }
 
-export function useSubscriptions() {
+export function useSubscriptions(pinGroups: PinGroup[] = []) {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const subscriptionsRef = useRef<Subscription[]>(subscriptions)
   subscriptionsRef.current = subscriptions
@@ -510,10 +511,14 @@ export function useSubscriptions() {
   }, [trackedSubscriptions])
 
   useEffect(() => {
-    const segments = buildStatusItemSegments(trackedSubscriptions)
+    const segments = buildStatusItemSegments(trackedSubscriptions, pinGroups)
     const worstUsedPercent = computeWorstActiveLimitPercent(trackedSubscriptions)
-    renderStatusItem(segments, worstUsedPercent, buildStatusItemTooltip(trackedSubscriptions))
-  }, [trackedSubscriptions])
+    renderStatusItem(
+      segments,
+      worstUsedPercent,
+      buildStatusItemTooltip(trackedSubscriptions, pinGroups),
+    )
+  }, [trackedSubscriptions, pinGroups])
 
   const displayLabelFor = useCallback(
     (account: AccountDescriptor) => knownLabels[account.id] ?? deriveAccountLabel(account),

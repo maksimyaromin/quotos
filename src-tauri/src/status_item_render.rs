@@ -670,7 +670,29 @@ pub fn used_fallback_font() -> bool {
 struct FigurePlacement {
     origin: TextOrigin,
     hairline_x0: Option<u32>,
+    span: FigureSpan,
 }
+
+/// The horizontal span one figure's ink occupies in the bitmap `render`
+/// draws, so a click in the menu bar can be resolved back to the figure
+/// underneath it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FigureSpan {
+    pub x0: u32,
+    pub x1: u32,
+}
+
+/// A figure's ink is only as wide as its digits, so a click a hair off
+/// one still belongs to it rather than falling through to the panel.
+/// Stays under every gap the layout leaves, so no two spans overlap.
+const HIT_PADDING_PX: u32 = 4;
+
+const _: () = assert!(
+    // The +2 is the rounding slack: a span's edges are floored and
+    // ceiled, so the drawn gap can come out a pixel narrower each side.
+    HIT_PADDING_PX * 2 + 2 < FIGURE_GAP_PX,
+    "two adjacent figures must not both claim the gap between them"
+);
 
 /// Places the glyph and every figure a fixed ink-to-ink gap apart; see
 /// "Spacing the figures evenly" in docs/status-item-rendering.md. Returns
@@ -705,9 +727,43 @@ fn layout_figures(
                 local_offset: origin - x0,
             },
             hairline_x0,
+            span: FigureSpan {
+                x0: (origin + ink_min_x).floor().max(0.0) as u32,
+                x1: ink_cursor.ceil().max(0.0) as u32,
+            },
         });
     }
     (placements, ink_cursor)
+}
+
+/// Shares `layout_figures` with `render`, so the spans a click is tested
+/// against are the ones the figures were actually drawn at.
+pub fn figure_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec<FigureSpan> {
+    if segments.is_empty() {
+        return Vec::new();
+    }
+    let coverage = glyph_coverage(GLYPH_PX, worst_used_percent as f64 / 100.0);
+    let font = text::load_font(text_font_size_pt());
+    let ink_bounds: Vec<(f64, f64)> = segments
+        .iter()
+        .map(|s| text::ink_bounds(&font, &s.text))
+        .collect();
+    let glyph_ink_right_edge = SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX);
+    let (placements, _) = layout_figures(segments, &ink_bounds, glyph_ink_right_edge);
+    placements.into_iter().map(|p| p.span).collect()
+}
+
+/// Which figure a click landed on, given where it fell across the item's
+/// own width. Taking a fraction rather than a coordinate keeps points,
+/// pixels and display scale out of this entirely.
+pub fn figure_at(spans: &[FigureSpan], icon_width_px: u32, fraction: f64) -> Option<usize> {
+    if !(0.0..=1.0).contains(&fraction) {
+        return None;
+    }
+    let x = fraction * icon_width_px as f64;
+    spans.iter().position(|span| {
+        x >= span.x0.saturating_sub(HIT_PADDING_PX) as f64 && x <= (span.x1 + HIT_PADDING_PX) as f64
+    })
 }
 
 pub fn render(
@@ -826,6 +882,134 @@ mod tests {
                 (origin + min_x, origin + max_x)
             })
             .collect()
+    }
+
+    fn group_seg(text: &str) -> StatusItemSegment {
+        StatusItemSegment {
+            text: text.into(),
+            color: StatusItemColor::Neutral,
+            group_start: true,
+        }
+    }
+
+    /// The fraction of the item's width a given icon pixel sits at, the
+    /// shape `figure_at` takes its clicks in.
+    fn at_pixel(icon_width_px: u32, x: f64) -> f64 {
+        x / icon_width_px as f64
+    }
+
+    #[test]
+    fn figure_spans_land_on_the_ink_the_figures_are_drawn_with() {
+        let segs = [
+            seg("18%", StatusItemColor::Neutral),
+            seg("84%", StatusItemColor::Amber),
+        ];
+        let font = text::load_font(text_font_size_pt());
+        let edges = figure_ink_edges(&font, &segs);
+        let spans = figure_spans(&segs, 0);
+
+        assert_eq!(spans.len(), 2);
+        for (span, (ink_min, ink_max)) in spans.iter().zip(edges) {
+            assert!(
+                (span.x0 as f64 - ink_min).abs() <= 1.0,
+                "span {span:?} should start at the ink's own left edge {ink_min}"
+            );
+            assert!(
+                (span.x1 as f64 - ink_max).abs() <= 1.0,
+                "span {span:?} should end at the ink's own right edge {ink_max}"
+            );
+        }
+    }
+
+    #[test]
+    fn figure_spans_are_ordered_and_never_overlap_even_padded() {
+        let segs = [
+            seg("9%", StatusItemColor::Neutral),
+            seg("100%", StatusItemColor::Red),
+            group_seg("47%"),
+        ];
+        let spans = figure_spans(&segs, 60);
+
+        for pair in spans.windows(2) {
+            assert!(
+                pair[0].x1 + HIT_PADDING_PX < pair[1].x0.saturating_sub(HIT_PADDING_PX),
+                "padded spans must stay disjoint: {pair:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn figure_spans_are_empty_without_any_figure() {
+        assert!(figure_spans(&[], 0).is_empty());
+    }
+
+    #[test]
+    fn figure_at_finds_the_figure_a_click_landed_on() {
+        let segs = [
+            seg("18%", StatusItemColor::Neutral),
+            seg("84%", StatusItemColor::Amber),
+        ];
+        let spans = figure_spans(&segs, 0);
+        let (_, width, _) = render(&segs, false, 0, false);
+
+        for (index, span) in spans.iter().enumerate() {
+            let middle = (span.x0 + span.x1) as f64 / 2.0;
+            assert_eq!(
+                figure_at(&spans, width, at_pixel(width, middle)),
+                Some(index),
+                "the middle of figure {index} should resolve to it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_click_on_the_glyph_belongs_to_no_figure() {
+        let segs = [seg("18%", StatusItemColor::Neutral)];
+        let spans = figure_spans(&segs, 0);
+        let (_, width, _) = render(&segs, false, 0, false);
+
+        let glyph_middle = (SIDE_PAD_PX + GLYPH_PX / 2) as f64;
+        assert_eq!(
+            figure_at(&spans, width, at_pixel(width, glyph_middle)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_click_past_either_end_belongs_to_no_figure() {
+        let segs = [seg("18%", StatusItemColor::Neutral)];
+        let spans = figure_spans(&segs, 0);
+        let (_, width, _) = render(&segs, false, 0, false);
+
+        assert_eq!(figure_at(&spans, width, -0.1), None);
+        assert_eq!(figure_at(&spans, width, 1.1), None);
+        assert_eq!(figure_at(&spans, width, 1.0), None, "the right pad is ink");
+    }
+
+    #[test]
+    fn a_click_just_off_a_figure_still_belongs_to_it() {
+        let segs = [seg("18%", StatusItemColor::Neutral)];
+        let spans = figure_spans(&segs, 0);
+        let (_, width, _) = render(&segs, false, 0, false);
+        for off in 1..HIT_PADDING_PX {
+            let left = spans[0].x0 as f64 - off as f64;
+            let right = spans[0].x1 as f64 + off as f64;
+            assert_eq!(
+                figure_at(&spans, width, at_pixel(width, left)),
+                Some(0),
+                "a click {off}px shy of the digits is still that figure"
+            );
+            assert_eq!(
+                figure_at(&spans, width, at_pixel(width, right)),
+                Some(0),
+                "a click {off}px past the digits is still that figure"
+            );
+        }
+    }
+
+    #[test]
+    fn figure_at_finds_nothing_when_nothing_is_drawn() {
+        assert_eq!(figure_at(&[], SIDE_PAD_PX * 2 + GLYPH_PX, 0.5), None);
     }
 
     #[test]
