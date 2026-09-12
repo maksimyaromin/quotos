@@ -73,8 +73,12 @@ is that distance from the glyph to the first figure, `FIGURE_GAP_PX`
 from one figure to the next, and `GROUP_GUTTER_PRE_PX`/
 `GROUP_GUTTER_POST_PX` from a figure to the hairline marking a cluster
 boundary, a pin group or one subscription's standalone pins, in place of
-the plain figure gap that boundary would otherwise have gotten. `layout_figures` computes every position
-by this one rule; nothing downstream hand-adjusts a value it produces.
+the plain figure gap that boundary would otherwise have gotten.
+`SLUG_GAP_PX` is that distance from a group's slug to the first figure
+it leads, deliberately tighter than `FIGURE_GAP_PX` so the slug reads as
+belonging to the figures after it rather than standing between two of
+them. `layout_segments` computes every position by this one rule;
+nothing downstream hand-adjusts a value it produces.
 
 An earlier design measured a figure's own advance box, the space
 `CTLineGetTypographicBounds` reports a run occupies, and stepped a
@@ -98,8 +102,9 @@ sizing. The glyph has no advance box to begin with, since it is
 painted procedurally rather than laid out as text, so its own ink right
 edge is scanned directly from its rendered coverage buffer: the
 rightmost pixel whose coverage crosses half, matching where
-antialiasing places the visible edge to the eye. `layout_figures`
-threads an ink cursor through the glyph and every figure in order, each
+antialiasing places the visible edge to the eye. `layout_segments`
+threads an ink cursor through the glyph, then each cluster's slug and
+figures in order, each
 one's origin computed from the previous shape's own ink edge plus that
 boundary's constant minus the new shape's own leading bearing, so the
 canvas width the buffer is sized to is exactly where the last figure's
@@ -138,41 +143,47 @@ never draws a hairline before the very first segment overall,
 regardless of what the frontend sets on it, since there is no prior
 group for the first segment to part from.
 
-## Resolving a click back to a figure
+## Resolving a click back to a slug
 
-A click on a pin group's own figure toggles that group in place instead
-of opening the panel, so a click has to be resolved back to the figure
-underneath it. `figure_spans` reports the horizontal span each figure's
-ink occupies, sharing `layout_figures` with `render` rather than
-re-deriving the geometry, so the spans a click is tested against are the
-ones the figures were drawn at. `shell.rs` computes them once per
+A click on a pin group's slug folds that group in place instead of
+opening the panel, so a click has to be resolved back to the slug
+underneath it. A click on a figure resolves to nothing and opens the
+panel like any other click on the item: the figure reports a number,
+the slug is the button. `slug_spans` reports the horizontal span each
+slug's ink occupies, sharing `layout_segments` with `render` rather
+than re-deriving the geometry, so the spans a click is tested against
+are the ones the slugs were drawn at. `shell.rs` computes them once per
 repaint and caches them; nothing measures anything at click time.
 
-`figure_at` takes the click as a coordinate in this buffer's own pixels,
-which is the space the spans are reported in;
-`geometry.rs`'s `click_x_in_icon_px` is what puts a click there, and
-"Clicking a figure in the menu bar" in
-[architecture.md](architecture.md#clicking-a-figure-in-the-menu-bar)
+`slug_at` takes the click as a coordinate in this buffer's own pixels,
+which is the space the spans are reported in; `geometry.rs`'s
+`click_x_in_icon_px` is what puts a click there, and "Clicking a
+group's slug in the menu bar" in
+[architecture.md](architecture.md#clicking-a-groups-slug-in-the-menu-bar)
 covers why the item's own width cannot stand in for the image's.
 
 `HIT_PADDING_PX` widens every span a little before the test, because a
-figure's ink is only as wide as its digits and a click a point or two
-shy of them clearly still means that figure. A compile-time assertion
-keeps the padding, doubled, narrower than `FIGURE_GAP_PX` less the
-rounding slack the span edges pick up from flooring and ceiling, so two
-adjacent figures can never both claim the same pixel.
+slug's ink is only as wide as its three letters and a click a point or
+two shy of them clearly still means that group. A compile-time
+assertion keeps the padding narrower than `GROUP_GUTTER_PRE_PX`, so a
+forgiving edge never reaches back across a cluster boundary onto the
+figure before it.
 
-## The group bar
+## The group slug
 
-A figure that belongs to a pin group carries that group's colour as a
-bar under its digits, so which figures belong together reads without
-clicking anything; a standalone pin's figure carries none.
-`draw_group_underline` spans exactly the figure's own `FigureSpan`, the
-same span a click is tested against, and sits a fixed inset above the
-buffer's bottom edge rather than being placed off the text's baseline,
-which keeps it clear of the digits without measuring them. The bar
-never changes the item's width, since it is drawn inside ink the layout
-has already reserved.
+A group is named in the menu bar rather than tinted there: the first
+three characters of its name, uppercased, drawn just before the figures
+it leads. The slug is derived wherever it is drawn or hit-tested, never
+stored; `lib/pin-groups.ts`'s `groupSlug` is the one derivation, and the
+segment list carries its result down. Only the first figure of a group's
+cluster carries a slug, so an opened-out group is named once rather than
+once per member, and a standalone pin has none at all.
+
+The slug is drawn in the same face as the figures at `SLUG_FONT_SIZE_PT`
+and at `SLUG_INK_FRACTION` of the neutral figure's own alpha, so it
+names its group without competing with the number beside it. A colour
+bar under each grouped figure did this job before and was dropped: a
+name says which group without a legend, a colour does not.
 
 ## Compositing
 

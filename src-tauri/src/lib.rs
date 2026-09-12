@@ -43,7 +43,7 @@ struct AppState {
     last_icon_width_px: Mutex<u32>,
     status_item_highlighted: Mutex<bool>,
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
-    last_status_item_figure_spans: Mutex<Vec<status_item_render::FigureSpan>>,
+    last_status_item_slug_spans: Mutex<Vec<status_item_render::SlugSpan>>,
     last_status_item_worst_used_percent: Mutex<u8>,
     last_status_item_tooltip: Mutex<String>,
     docked_target: Mutex<Option<DockedLayout>>,
@@ -104,7 +104,7 @@ pub fn run() {
             let status_item = build_status_item(
                 app.handle(),
                 (initial_rgba, initial_w, initial_h),
-                &menu,
+                menu,
                 launch_item,
             )?;
             shell::sync_status_item_length(&status_item, initial_w);
@@ -177,7 +177,7 @@ fn initial_app_state(
         last_icon_width_px: Mutex::new(initial_icon_width),
         status_item_highlighted: Mutex::new(false),
         last_status_item_segments: Mutex::new(Vec::new()),
-        last_status_item_figure_spans: Mutex::new(Vec::new()),
+        last_status_item_slug_spans: Mutex::new(Vec::new()),
         last_status_item_worst_used_percent: Mutex::new(0),
         last_status_item_tooltip: Mutex::new("Quotos".to_string()),
         docked_target: Mutex::new(None),
@@ -318,18 +318,51 @@ fn build_status_item_menu(
     Ok((menu, launch_item))
 }
 
+/// What a click on the status item is asking for. The menu appears
+/// because this says so, not because one is attached to the item; see
+/// "Clicking a group's slug in the menu bar" in docs/architecture.md.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TrayClickIntent {
+    ShowMenu,
+    OpenPanelOrFoldGroup,
+    Ignore,
+}
+
+fn tray_click_intent(
+    button: tauri::tray::MouseButton,
+    button_state: tauri::tray::MouseButtonState,
+) -> TrayClickIntent {
+    use tauri::tray::{MouseButton, MouseButtonState};
+    match (button, button_state) {
+        // On press, the way every other menu bar menu opens.
+        (MouseButton::Right, MouseButtonState::Down) => TrayClickIntent::ShowMenu,
+        // On release, so a press that turns into a drag is not a click.
+        (MouseButton::Left, MouseButtonState::Up) => TrayClickIntent::OpenPanelOrFoldGroup,
+        _ => TrayClickIntent::Ignore,
+    }
+}
+
+/// Attached only for as long as the menu is on screen. `show_menu`
+/// runs the menu's own tracking loop and returns once it closes, so
+/// the item is left owning no menu and cannot pop one on its own.
+fn show_status_item_menu(status_item: &TrayIcon, menu: &Menu<tauri::Wry>) {
+    if status_item.set_menu(Some(menu.clone())).is_err() {
+        return;
+    }
+    let _ = status_item.with_inner_tray_icon(|inner| inner.show_menu());
+    let _ = status_item.set_menu(None::<Menu<tauri::Wry>>);
+}
+
 fn build_status_item(
     app: &AppHandle,
     icon: (Vec<u8>, u32, u32),
-    menu: &Menu<tauri::Wry>,
+    menu: Menu<tauri::Wry>,
     launch_item: CheckMenuItem<tauri::Wry>,
 ) -> tauri::Result<TrayIcon> {
     let (rgba, w, h) = icon;
     TrayIconBuilder::with_id("main-status-item")
         .icon(Image::new_owned(rgba, w, h))
         .icon_as_template(true)
-        .menu(menu)
-        .show_menu_on_left_click(false)
         .tooltip("Quotos")
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
@@ -342,7 +375,7 @@ fn build_status_item(
             }
             _ => {}
         })
-        .on_tray_icon_event(|status_item, event| {
+        .on_tray_icon_event(move |status_item, event| {
             let rect_position = match &event {
                 TrayIconEvent::Click { rect, .. }
                 | TrayIconEvent::DoubleClick { rect, .. }
@@ -363,38 +396,46 @@ fn build_status_item(
                     .expect("last_status_item_rect mutex poisoned") = Some(xy);
             }
 
-            if let (
-                TrayIconEvent::Click {
-                    button: tauri::tray::MouseButton::Left,
-                    button_state: tauri::tray::MouseButtonState::Up,
-                    position,
-                    rect,
-                    ..
-                },
-                Some((item_x, item_y)),
-            ) = (&event, item_xy)
-                && let Some(window) = app.get_webview_window("main")
-            {
-                // A click on a pin group's own figure toggles that group
-                // instead of opening the panel; see "Clicking a figure in
-                // the menu bar" in docs/architecture.md.
-                let item_width = match rect.size {
-                    tauri::Size::Physical(s) => s.width as f64,
-                    tauri::Size::Logical(s) => s.width,
-                };
-                if let Some(group_id) =
-                    shell::group_at_click(app, &window, position.x, item_x, item_y, item_width)
-                {
-                    let _ = app.emit("status-item-group-clicked", group_id);
-                    return;
+            let TrayIconEvent::Click {
+                button,
+                button_state,
+                position,
+                rect,
+                ..
+            } = &event
+            else {
+                return;
+            };
+            match tray_click_intent(*button, *button_state) {
+                TrayClickIntent::Ignore => {}
+                TrayClickIntent::ShowMenu => show_status_item_menu(status_item, &menu),
+                TrayClickIntent::OpenPanelOrFoldGroup => {
+                    let (Some((item_x, item_y)), Some(window)) =
+                        (item_xy, app.get_webview_window("main"))
+                    else {
+                        return;
+                    };
+                    // A click on a group's slug folds that group; one
+                    // anywhere else, a bare figure included, opens the
+                    // panel. See docs/architecture.md.
+                    let item_width = match rect.size {
+                        tauri::Size::Physical(s) => s.width as f64,
+                        tauri::Size::Logical(s) => s.width,
+                    };
+                    if let Some(group_id) =
+                        shell::group_at_click(app, &window, position.x, item_x, item_y, item_width)
+                    {
+                        let _ = app.emit("status-item-group-clicked", group_id);
+                        return;
+                    }
+                    let detached = app
+                        .state::<AppState>()
+                        .detached
+                        .lock()
+                        .map(|d| *d)
+                        .unwrap_or(false);
+                    shell::toggle_panel(app, &window, detached, item_x, item_y);
                 }
-                let detached = app
-                    .state::<AppState>()
-                    .detached
-                    .lock()
-                    .map(|d| *d)
-                    .unwrap_or(false);
-                shell::toggle_panel(app, &window, detached, item_x, item_y);
             }
         })
         .build(app)
@@ -423,4 +464,51 @@ fn spawn_debug_auto_open_if_enabled(app: AppHandle) {
             shell::show_panel(&app, &window, x, y);
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TrayClickIntent, tray_click_intent};
+    use tauri::tray::{MouseButton, MouseButtonState};
+
+    #[test]
+    fn a_right_press_is_the_only_thing_that_shows_the_menu() {
+        assert_eq!(
+            tray_click_intent(MouseButton::Right, MouseButtonState::Down),
+            TrayClickIntent::ShowMenu
+        );
+        for (button, state) in [
+            (MouseButton::Right, MouseButtonState::Up),
+            (MouseButton::Middle, MouseButtonState::Down),
+            (MouseButton::Middle, MouseButtonState::Up),
+        ] {
+            assert_ne!(
+                tray_click_intent(button, state),
+                TrayClickIntent::ShowMenu,
+                "{button:?} {state:?} must not show the menu"
+            );
+        }
+    }
+
+    /// The reported regression: the Launch at Login / Quit menu came up
+    /// on a plain left click, where the panel belongs.
+    #[test]
+    fn no_left_click_of_any_kind_shows_the_menu() {
+        assert_eq!(
+            tray_click_intent(MouseButton::Left, MouseButtonState::Up),
+            TrayClickIntent::OpenPanelOrFoldGroup
+        );
+        assert_eq!(
+            tray_click_intent(MouseButton::Left, MouseButtonState::Down),
+            TrayClickIntent::Ignore
+        );
+    }
+
+    #[test]
+    fn a_release_of_a_button_other_than_the_left_one_does_nothing() {
+        assert_eq!(
+            tray_click_intent(MouseButton::Middle, MouseButtonState::Up),
+            TrayClickIntent::Ignore
+        );
+    }
 }

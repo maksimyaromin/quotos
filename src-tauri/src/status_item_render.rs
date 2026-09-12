@@ -13,18 +13,28 @@ const GROUP_GUTTER_PRE_PX: u32 = 10;
 const HAIRLINE_WIDTH_PX: u32 = 2;
 const GROUP_GUTTER_POST_PX: u32 = 10;
 const HAIRLINE_HEIGHT_PX: u32 = 22;
-/// A grouped figure carries its group's colour as a bar under its own
-/// digits, so which figures belong together reads without a click.
-const GROUP_UNDERLINE_HEIGHT_PX: u32 = 4;
-const GROUP_UNDERLINE_BOTTOM_INSET_PX: u32 = 2;
+/// Between a group's slug and the first figure it leads. Tighter than
+/// the gap between two figures, so the slug reads as belonging to the
+/// figures after it rather than standing between two of them.
+const SLUG_GAP_PX: u32 = 7;
 
 const _: () = assert!(
     GLYPH_GAP_PX > FIGURE_GAP_PX,
     "the glyph must read as a separate shape from the figures via a wider gap than sits between two figures"
 );
 
+const _: () = assert!(
+    FIGURE_GAP_PX > SLUG_GAP_PX,
+    "a slug must sit closer to the figures it leads than those figures sit to each other"
+);
+
 #[cfg(target_os = "macos")]
 const TEXT_FONT_SIZE_PT: f64 = 12.0 * 2.0;
+/// A slug names its group; it never reports a number. Drawn smaller and
+/// lighter than the digits so it leads them instead of competing.
+#[cfg(target_os = "macos")]
+const SLUG_FONT_SIZE_PT: f64 = 10.0 * 2.0;
+const SLUG_INK_FRACTION: f64 = 0.62;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StatusItemColor {
@@ -44,49 +54,14 @@ impl StatusItemColor {
     }
 }
 
-/// A pin group's own colour. The palette is small and fixed:
-/// `lib/pin-groups.ts` holds the same names, `tokens/colors.css` the
-/// same values for the panel's side of it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum GroupColor {
-    Teal,
-    Blue,
-    Violet,
-    Amber,
-    Red,
-}
-
-impl GroupColor {
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "teal" => Some(GroupColor::Teal),
-            "blue" => Some(GroupColor::Blue),
-            "violet" => Some(GroupColor::Violet),
-            "amber" => Some(GroupColor::Amber),
-            "red" => Some(GroupColor::Red),
-            _ => None,
-        }
-    }
-
-    fn rgba(self) -> (u8, u8, u8, u8) {
-        match self {
-            GroupColor::Teal => (0x4e, 0x9c, 0x8d, 0xff),
-            GroupColor::Blue => (0x5b, 0x8d, 0xef, 0xff),
-            GroupColor::Violet => (0x8b, 0x7a, 0xd8, 0xff),
-            GroupColor::Amber => (0xe0, 0xa9, 0x2b, 0xff),
-            GroupColor::Red => (0xe5, 0x64, 0x6a, 0xff),
-        }
-    }
-}
-
 pub struct StatusItemSegment {
     pub text: String,
     pub color: StatusItemColor,
     pub group_start: bool,
-    /// Set on a figure that belongs to a pin group, whether it stands
-    /// for the whole rolled-up group or for one opened-out member; a
-    /// standalone pin's figure carries none and gets no bar.
-    pub group_color: Option<GroupColor>,
+    /// The group's short name, drawn just before this figure and the
+    /// only thing a click folds that group by. Carried by the first
+    /// figure of a group's cluster and by nothing else.
+    pub slug: Option<String>,
 }
 
 fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
@@ -283,18 +258,11 @@ fn draw_hairline(buf: &mut [u8], w: u32, h: u32, x0: u32, dark: bool) {
     }
 }
 
-/// Spans exactly the figure's own ink, so the bar belongs to those
-/// digits and to no neighbour, and is measured from the buffer's bottom
-/// edge so it sits below them rather than through them.
-fn draw_group_underline(buf: &mut [u8], w: u32, h: u32, span: FigureSpan, color: GroupColor) {
-    let rgba = color.rgba();
-    let bottom = h.saturating_sub(GROUP_UNDERLINE_BOTTOM_INSET_PX);
-    let top = bottom.saturating_sub(GROUP_UNDERLINE_HEIGHT_PX);
-    for y in top..bottom {
-        for x in span.x0..span.x1.min(w) {
-            blend_pixel(buf, w, h, x, y, rgba);
-        }
-    }
+/// The slug's ink: the neutral figure colour, thinned so the group's
+/// name stays legible without reading as loudly as a number.
+fn slug_rgba(dark: bool) -> (u8, u8, u8, u8) {
+    let (r, g, b, a) = StatusItemColor::Neutral.rgba(dark);
+    (r, g, b, (a as f64 * SLUG_INK_FRACTION).round() as u8)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -628,6 +596,34 @@ mod text {
             '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
             '%' => [0b101, 0b001, 0b010, 0b100, 0b101],
             '!' => [0b010, 0b010, 0b010, 0b000, 0b010],
+            // A group's slug is letters, so this font carries the
+            // uppercase alphabet the slug is built from as well.
+            'A' => [0b010, 0b101, 0b111, 0b101, 0b101],
+            'B' => [0b110, 0b101, 0b110, 0b101, 0b110],
+            'C' => [0b011, 0b100, 0b100, 0b100, 0b011],
+            'D' => [0b110, 0b101, 0b101, 0b101, 0b110],
+            'E' => [0b111, 0b100, 0b110, 0b100, 0b111],
+            'F' => [0b111, 0b100, 0b110, 0b100, 0b100],
+            'G' => [0b011, 0b100, 0b101, 0b101, 0b011],
+            'H' => [0b101, 0b101, 0b111, 0b101, 0b101],
+            'I' => [0b111, 0b010, 0b010, 0b010, 0b111],
+            'J' => [0b001, 0b001, 0b001, 0b101, 0b010],
+            'K' => [0b101, 0b101, 0b110, 0b101, 0b101],
+            'L' => [0b100, 0b100, 0b100, 0b100, 0b111],
+            'M' => [0b101, 0b111, 0b111, 0b101, 0b101],
+            'N' => [0b101, 0b111, 0b111, 0b111, 0b101],
+            'O' => [0b010, 0b101, 0b101, 0b101, 0b010],
+            'P' => [0b110, 0b101, 0b110, 0b100, 0b100],
+            'Q' => [0b010, 0b101, 0b101, 0b110, 0b011],
+            'R' => [0b110, 0b101, 0b110, 0b101, 0b101],
+            'S' => [0b011, 0b100, 0b010, 0b001, 0b110],
+            'T' => [0b111, 0b010, 0b010, 0b010, 0b010],
+            'U' => [0b101, 0b101, 0b101, 0b101, 0b011],
+            'V' => [0b101, 0b101, 0b101, 0b101, 0b010],
+            'W' => [0b101, 0b101, 0b111, 0b111, 0b101],
+            'X' => [0b101, 0b101, 0b010, 0b101, 0b101],
+            'Y' => [0b101, 0b101, 0b010, 0b010, 0b010],
+            'Z' => [0b111, 0b001, 0b010, 0b100, 0b111],
             _ => [0, 0, 0, 0, 0],
         }
     }
@@ -717,6 +713,15 @@ fn text_font_size_pt() -> f64 {
     0.0
 }
 
+#[cfg(target_os = "macos")]
+fn slug_font_size_pt() -> f64 {
+    SLUG_FONT_SIZE_PT
+}
+#[cfg(not(target_os = "macos"))]
+fn slug_font_size_pt() -> f64 {
+    0.0
+}
+
 pub fn used_fallback_font() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -728,45 +733,93 @@ pub fn used_fallback_font() -> bool {
     }
 }
 
-struct FigurePlacement {
-    origin: TextOrigin,
+/// Where one segment's text runs are drawn: the figure always, the
+/// group's slug ahead of it when this figure leads a group's cluster.
+struct SegmentPlacement {
+    slug: Option<TextPlacement>,
+    figure: TextPlacement,
     hairline_x0: Option<u32>,
-    span: FigureSpan,
 }
 
-/// The horizontal span one figure's ink occupies in the bitmap `render`
-/// draws, so a click in the menu bar can be resolved back to the figure
-/// underneath it.
+struct TextPlacement {
+    origin: TextOrigin,
+    span: InkSpan,
+}
+
+/// The horizontal span one text run's ink occupies in the bitmap
+/// `render` draws, so a click in the menu bar can be resolved back to
+/// what sits underneath it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FigureSpan {
+pub struct InkSpan {
     pub x0: u32,
     pub x1: u32,
 }
 
-/// A figure's ink is only as wide as its digits, so a click a hair off
-/// one still belongs to it rather than falling through to the panel.
-/// Stays under every gap the layout leaves, so no two spans overlap.
+/// One group slug's ink, and which segment carries it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SlugSpan {
+    pub segment: usize,
+    pub span: InkSpan,
+}
+
+/// A slug's ink is only as wide as its three letters, so a click a hair
+/// off one still folds that group rather than falling through to the
+/// panel.
 const HIT_PADDING_PX: u32 = 4;
 
 const _: () = assert!(
-    // The +2 is the rounding slack: a span's edges are floored and
-    // ceiled, so the drawn gap can come out a pixel narrower each side.
-    HIT_PADDING_PX * 2 + 2 < FIGURE_GAP_PX,
-    "two adjacent figures must not both claim the gap between them"
+    HIT_PADDING_PX < GROUP_GUTTER_PRE_PX,
+    "a slug's forgiving edge must stay inside its own cluster's gutter, never reaching the figure before it"
 );
 
-/// Places the glyph and every figure a fixed ink-to-ink gap apart; see
-/// "Spacing the figures evenly" in docs/status-item-rendering.md. Returns
-/// each placement and the absolute x just past the last figure's own ink.
-fn layout_figures(
+struct SegmentInk {
+    slug: Option<(f64, f64)>,
+    figure: (f64, f64),
+}
+
+fn measure_segments(segments: &[StatusItemSegment]) -> Vec<SegmentInk> {
+    let figure_font = text::load_font(text_font_size_pt());
+    let slug_font = text::load_font(slug_font_size_pt());
+    segments
+        .iter()
+        .map(|seg| SegmentInk {
+            slug: seg
+                .slug
+                .as_deref()
+                .filter(|slug| !slug.is_empty())
+                .map(|slug| text::ink_bounds(&slug_font, slug)),
+            figure: text::ink_bounds(&figure_font, &seg.text),
+        })
+        .collect()
+}
+
+/// Places the glyph, then every cluster's slug and figures a fixed
+/// ink-to-ink gap apart; see "Spacing the figures evenly" in
+/// docs/status-item-rendering.md. Also returns where that ink ends.
+fn layout_segments(
     segments: &[StatusItemSegment],
-    ink_bounds: &[(f64, f64)],
+    ink: &[SegmentInk],
     glyph_ink_right_edge: f64,
-) -> (Vec<FigurePlacement>, f64) {
+) -> (Vec<SegmentPlacement>, f64) {
     let mut placements = Vec::with_capacity(segments.len());
     let mut ink_cursor = glyph_ink_right_edge;
+    let place = |gap: f64, (ink_min_x, ink_max_x): (f64, f64), cursor: &mut f64| {
+        let origin = *cursor + gap - ink_min_x;
+        *cursor = origin + ink_max_x;
+        let x0 = origin.floor();
+        TextPlacement {
+            origin: TextOrigin {
+                x0: x0 as u32,
+                local_offset: origin - x0,
+            },
+            span: InkSpan {
+                x0: (origin + ink_min_x).floor().max(0.0) as u32,
+                x1: cursor.ceil().max(0.0) as u32,
+            },
+        }
+    };
     for (i, seg) in segments.iter().enumerate() {
-        let (gap, hairline_x0) = if i == 0 {
+        let (lead_gap, hairline_x0) = if i == 0 {
             (GLYPH_GAP_PX as f64, None)
         } else if seg.group_start {
             let hairline_left = ink_cursor + GROUP_GUTTER_PRE_PX as f64;
@@ -778,52 +831,64 @@ fn layout_figures(
         } else {
             (FIGURE_GAP_PX as f64, None)
         };
-        let (ink_min_x, ink_max_x) = ink_bounds[i];
-        let origin = ink_cursor + gap - ink_min_x;
-        ink_cursor = origin + ink_max_x;
-        let x0 = origin.floor();
-        placements.push(FigurePlacement {
-            origin: TextOrigin {
-                x0: x0 as u32,
-                local_offset: origin - x0,
-            },
+        let slug = ink[i]
+            .slug
+            .map(|bounds| place(lead_gap, bounds, &mut ink_cursor));
+        let figure_gap = if slug.is_some() {
+            SLUG_GAP_PX as f64
+        } else {
+            lead_gap
+        };
+        let figure = place(figure_gap, ink[i].figure, &mut ink_cursor);
+        placements.push(SegmentPlacement {
+            slug,
+            figure,
             hairline_x0,
-            span: FigureSpan {
-                x0: (origin + ink_min_x).floor().max(0.0) as u32,
-                x1: ink_cursor.ceil().max(0.0) as u32,
-            },
         });
     }
     (placements, ink_cursor)
 }
 
-/// Shares `layout_figures` with `render`, so the spans a click is tested
-/// against are the ones the figures were actually drawn at.
-pub fn figure_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec<FigureSpan> {
+fn glyph_ink_right_edge_for(worst_used_percent: u8) -> f64 {
+    let coverage = glyph_coverage(GLYPH_PX, worst_used_percent as f64 / 100.0);
+    SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX)
+}
+
+/// Shares `layout_segments` with `render`, so the spans a click is
+/// tested against are the ones the slugs were actually drawn at.
+pub fn slug_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec<SlugSpan> {
     if segments.is_empty() {
         return Vec::new();
     }
-    let coverage = glyph_coverage(GLYPH_PX, worst_used_percent as f64 / 100.0);
-    let font = text::load_font(text_font_size_pt());
-    let ink_bounds: Vec<(f64, f64)> = segments
-        .iter()
-        .map(|s| text::ink_bounds(&font, &s.text))
-        .collect();
-    let glyph_ink_right_edge = SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX);
-    let (placements, _) = layout_figures(segments, &ink_bounds, glyph_ink_right_edge);
-    placements.into_iter().map(|p| p.span).collect()
+    let ink = measure_segments(segments);
+    let (placements, _) =
+        layout_segments(segments, &ink, glyph_ink_right_edge_for(worst_used_percent));
+    placements
+        .into_iter()
+        .enumerate()
+        .filter_map(|(segment, placement)| {
+            placement.slug.map(|slug| SlugSpan {
+                segment,
+                span: slug.span,
+            })
+        })
+        .collect()
 }
 
-/// Which figure a click landed on, given where it fell in the image's
-/// own pixel grid. `geometry.rs`'s `click_x_in_icon_px` puts a click
-/// into that space; one in the button's margin falls outside it.
-pub fn figure_at(spans: &[FigureSpan], icon_width_px: u32, x: f64) -> Option<usize> {
+/// Which segment's slug a click landed on, in the image's own pixel
+/// grid, which `geometry.rs`'s `click_x_in_icon_px` puts a click into.
+/// A click on a bare figure lands on no slug and so folds nothing.
+pub fn slug_at(spans: &[SlugSpan], icon_width_px: u32, x: f64) -> Option<usize> {
     if !(0.0..=icon_width_px as f64).contains(&x) {
         return None;
     }
-    spans.iter().position(|span| {
-        x >= span.x0.saturating_sub(HIT_PADDING_PX) as f64 && x <= (span.x1 + HIT_PADDING_PX) as f64
-    })
+    spans
+        .iter()
+        .find(|slug| {
+            x >= slug.span.x0.saturating_sub(HIT_PADDING_PX) as f64
+                && x <= (slug.span.x1 + HIT_PADDING_PX) as f64
+        })
+        .map(|slug| slug.segment)
 }
 
 pub fn render(
@@ -834,15 +899,12 @@ pub fn render(
 ) -> (Vec<u8>, u32, u32) {
     let used_fraction = worst_used_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
-    let font = text::load_font(text_font_size_pt());
+    let figure_font = text::load_font(text_font_size_pt());
+    let slug_font = text::load_font(slug_font_size_pt());
 
-    let ink_bounds: Vec<(f64, f64)> = segments
-        .iter()
-        .map(|s| text::ink_bounds(&font, &s.text))
-        .collect();
-    let glyph_ink_right_edge = SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX);
+    let ink = measure_segments(segments);
     let (placements, content_ink_right) =
-        layout_figures(segments, &ink_bounds, glyph_ink_right_edge);
+        layout_segments(segments, &ink, glyph_ink_right_edge_for(worst_used_percent));
 
     let total_w = if segments.is_empty() {
         SIDE_PAD_PX * 2 + GLYPH_PX
@@ -856,21 +918,21 @@ pub fn render(
         draw_highlight_background(&mut buf, total_w, total_h, dark);
     }
 
-    let ink = StatusItemColor::Neutral.rgba(dark);
+    let ink_color = StatusItemColor::Neutral.rgba(dark);
     for y in 0..GLYPH_PX {
         for x in 0..GLYPH_PX {
             let a = coverage[(y * GLYPH_PX + x) as usize];
             if a == 0 {
                 continue;
             }
-            let blended = ((ink.3 as u16 * a as u16) / 255) as u8;
+            let blended = ((ink_color.3 as u16 * a as u16) / 255) as u8;
             blend_pixel(
                 &mut buf,
                 total_w,
                 total_h,
                 SIDE_PAD_PX + x,
                 y,
-                (ink.0, ink.1, ink.2, blended),
+                (ink_color.0, ink_color.1, ink_color.2, blended),
             );
         }
     }
@@ -879,15 +941,23 @@ pub fn render(
         if let Some(hairline_x0) = placement.hairline_x0 {
             draw_hairline(&mut buf, total_w, total_h, hairline_x0, dark);
         }
-        if let Some(group_color) = seg.group_color {
-            draw_group_underline(&mut buf, total_w, total_h, placement.span, group_color);
+        if let (Some(slug), Some(text)) = (&placement.slug, seg.slug.as_deref()) {
+            text::draw_text(
+                &mut buf,
+                total_w,
+                total_h,
+                slug.origin,
+                &slug_font,
+                text,
+                slug_rgba(dark),
+            );
         }
         text::draw_text(
             &mut buf,
             total_w,
             total_h,
-            placement.origin,
-            &font,
+            placement.figure.origin,
+            &figure_font,
             &seg.text,
             seg.color.rgba(dark),
         );
@@ -923,38 +993,55 @@ mod tests {
             text: text.into(),
             color,
             group_start: false,
-            group_color: None,
+            slug: None,
         }
     }
 
-    /// Every segment's own absolute ink edges, computed the same way
-    /// `render` places them; see "Spacing the figures evenly" in
-    /// docs/status-item-rendering.md.
-    fn figure_ink_edges(font: &text::LoadedFont, segs: &[StatusItemSegment]) -> Vec<(f64, f64)> {
-        let ink_bounds: Vec<(f64, f64)> = segs
-            .iter()
-            .map(|s| text::ink_bounds(font, &s.text))
-            .collect();
-        let glyph_ink_right_edge =
-            SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
-        let (placements, _) = layout_figures(segs, &ink_bounds, glyph_ink_right_edge);
-        placements
-            .iter()
-            .zip(&ink_bounds)
-            .map(|(p, &(min_x, max_x))| {
-                let origin = p.origin.x0 as f64 + p.origin.local_offset;
-                (origin + min_x, origin + max_x)
+    fn led(slug: &str, text: &str) -> StatusItemSegment {
+        StatusItemSegment {
+            slug: Some(slug.into()),
+            ..seg(text, StatusItemColor::Neutral)
+        }
+    }
+
+    fn ink_with(
+        figure_font: &text::LoadedFont,
+        slug_font: &text::LoadedFont,
+        segs: &[StatusItemSegment],
+    ) -> Vec<SegmentInk> {
+        segs.iter()
+            .map(|s| SegmentInk {
+                slug: s
+                    .slug
+                    .as_deref()
+                    .map(|slug| text::ink_bounds(slug_font, slug)),
+                figure: text::ink_bounds(figure_font, &s.text),
             })
             .collect()
     }
 
-    fn group_seg(text: &str) -> StatusItemSegment {
-        StatusItemSegment {
-            text: text.into(),
-            color: StatusItemColor::Neutral,
-            group_start: true,
-            group_color: None,
-        }
+    /// Every segment's own absolute figure ink edges, computed the same
+    /// way `render` places them; see "Spacing the figures evenly" in
+    /// docs/status-item-rendering.md.
+    fn figure_ink_edges(font: &text::LoadedFont, segs: &[StatusItemSegment]) -> Vec<(f64, f64)> {
+        let slug_font = text::load_font(slug_font_size_pt());
+        let ink = ink_with(font, &slug_font, segs);
+        let (placements, _) = layout_segments(segs, &ink, glyph_ink_right_edge_for(0));
+        placements
+            .iter()
+            .zip(&ink)
+            .map(|(p, i)| {
+                let origin = p.figure.origin.x0 as f64 + p.figure.origin.local_offset;
+                (origin + i.figure.0, origin + i.figure.1)
+            })
+            .collect()
+    }
+
+    fn figure_spans(segs: &[StatusItemSegment], worst_used_percent: u8) -> Vec<InkSpan> {
+        let ink = measure_segments(segs);
+        let (placements, _) =
+            layout_segments(segs, &ink, glyph_ink_right_edge_for(worst_used_percent));
+        placements.into_iter().map(|p| p.figure.span).collect()
     }
 
     #[test]
@@ -980,97 +1067,264 @@ mod tests {
         }
     }
 
-    #[test]
-    fn figure_spans_are_ordered_and_never_overlap_even_padded() {
-        let segs = [
-            seg("9%", StatusItemColor::Neutral),
-            seg("100%", StatusItemColor::Red),
-            group_seg("47%"),
-        ];
-        let spans = figure_spans(&segs, 60);
+    mod slugs {
+        use super::*;
 
-        for pair in spans.windows(2) {
+        #[test]
+        fn a_slug_is_drawn_just_before_the_figure_it_leads() {
+            let segs = [led("FAB", "55%")];
+            let slugs = slug_spans(&segs, 0);
+            let figures = figure_spans(&segs, 0);
+
+            assert_eq!(slugs.len(), 1);
+            assert_eq!(slugs[0].segment, 0);
             assert!(
-                pair[0].x1 + HIT_PADDING_PX < pair[1].x0.saturating_sub(HIT_PADDING_PX),
-                "padded spans must stay disjoint: {pair:?}"
+                slugs[0].span.x1 <= figures[0].x0,
+                "the slug leads its figure: {:?} then {:?}",
+                slugs[0].span,
+                figures[0]
+            );
+            assert!(
+                (figures[0].x0 - slugs[0].span.x1).abs_diff(SLUG_GAP_PX) <= 1,
+                "a slug sits SLUG_GAP_PX ({SLUG_GAP_PX}px) from the figure it leads, give or take how each edge rounds, got {}px",
+                figures[0].x0 - slugs[0].span.x1
             );
         }
-    }
 
-    #[test]
-    fn figure_spans_are_empty_without_any_figure() {
-        assert!(figure_spans(&[], 0).is_empty());
-    }
+        #[test]
+        fn a_slug_span_lands_on_the_ink_the_slug_is_drawn_with() {
+            let segs = [led("CUR", "99%")];
+            let slug_font = text::load_font(slug_font_size_pt());
+            let ink = measure_segments(&segs);
+            let (placements, _) = layout_segments(&segs, &ink, glyph_ink_right_edge_for(0));
+            let placed = placements[0].slug.as_ref().expect("the slug is placed");
+            let origin = placed.origin.x0 as f64 + placed.origin.local_offset;
+            let (ink_min, ink_max) = text::ink_bounds(&slug_font, "CUR");
+            let span = slug_spans(&segs, 0)[0].span;
 
-    #[test]
-    fn figure_at_finds_the_figure_a_click_landed_on() {
-        let segs = [
-            seg("18%", StatusItemColor::Neutral),
-            seg("84%", StatusItemColor::Amber),
-        ];
-        let spans = figure_spans(&segs, 0);
-        let (_, width, _) = render(&segs, false, 0, false);
+            assert!((span.x0 as f64 - (origin + ink_min)).abs() <= 1.0);
+            assert!((span.x1 as f64 - (origin + ink_max)).abs() <= 1.0);
+        }
 
-        for (index, span) in spans.iter().enumerate() {
-            let middle = (span.x0 + span.x1) as f64 / 2.0;
+        #[test]
+        fn only_the_figures_given_a_slug_report_one() {
+            let segs = [
+                led("FAB", "55%"),
+                seg("18%", StatusItemColor::Neutral),
+                StatusItemSegment {
+                    group_start: true,
+                    ..led("CUR", "99%")
+                },
+                StatusItemSegment {
+                    group_start: true,
+                    ..seg("12%", StatusItemColor::Neutral)
+                },
+            ];
             assert_eq!(
-                figure_at(&spans, width, middle),
-                Some(index),
-                "the middle of figure {index} should resolve to it"
+                slug_spans(&segs, 0)
+                    .iter()
+                    .map(|s| s.segment)
+                    .collect::<Vec<_>>(),
+                vec![0, 2],
+                "an opened group's later members and a standalone pin carry no slug"
             );
         }
-    }
 
-    #[test]
-    fn a_click_on_the_glyph_belongs_to_no_figure() {
-        let segs = [seg("18%", StatusItemColor::Neutral)];
-        let spans = figure_spans(&segs, 0);
-        let (_, width, _) = render(&segs, false, 0, false);
-
-        let glyph_middle = (SIDE_PAD_PX + GLYPH_PX / 2) as f64;
-        assert_eq!(figure_at(&spans, width, glyph_middle), None);
-    }
-
-    #[test]
-    fn a_click_past_either_end_belongs_to_no_figure() {
-        let segs = [seg("18%", StatusItemColor::Neutral)];
-        let spans = figure_spans(&segs, 0);
-        let (_, width, _) = render(&segs, false, 0, false);
-
-        assert_eq!(figure_at(&spans, width, -0.1), None);
-        assert_eq!(figure_at(&spans, width, width as f64 + 0.1), None);
-        assert_eq!(
-            figure_at(&spans, width, width as f64),
-            None,
-            "the right pad is not ink"
-        );
-    }
-
-    #[test]
-    fn a_click_just_off_a_figure_still_belongs_to_it() {
-        let segs = [seg("18%", StatusItemColor::Neutral)];
-        let spans = figure_spans(&segs, 0);
-        let (_, width, _) = render(&segs, false, 0, false);
-        for off in 1..HIT_PADDING_PX {
-            let left = spans[0].x0 as f64 - off as f64;
-            let right = spans[0].x1 as f64 + off as f64;
+        #[test]
+        fn an_empty_slug_is_drawn_and_hit_tested_as_no_slug_at_all() {
+            let segs = [StatusItemSegment {
+                slug: Some(String::new()),
+                ..seg("55%", StatusItemColor::Neutral)
+            }];
+            assert!(slug_spans(&segs, 0).is_empty());
             assert_eq!(
-                figure_at(&spans, width, left),
-                Some(0),
-                "a click {off}px shy of the digits is still that figure"
-            );
-            assert_eq!(
-                figure_at(&spans, width, right),
-                Some(0),
-                "a click {off}px past the digits is still that figure"
+                render(&segs, false, 0, true).1,
+                render(&[seg("55%", StatusItemColor::Neutral)], false, 0, true).1,
+                "an empty slug reserves no width"
             );
         }
-    }
 
-    #[test]
-    fn figure_at_finds_nothing_when_nothing_is_drawn() {
-        let width = SIDE_PAD_PX * 2 + GLYPH_PX;
-        assert_eq!(figure_at(&[], width, width as f64 / 2.0), None);
+        #[test]
+        fn slug_at_folds_the_group_whose_slug_was_clicked() {
+            let segs = [
+                led("FAB", "55%"),
+                StatusItemSegment {
+                    group_start: true,
+                    ..led("CUR", "99%")
+                },
+            ];
+            let spans = slug_spans(&segs, 0);
+            let (_, width, _) = render(&segs, false, 0, false);
+
+            for slug in &spans {
+                let middle = (slug.span.x0 + slug.span.x1) as f64 / 2.0;
+                assert_eq!(
+                    slug_at(&spans, width, middle),
+                    Some(slug.segment),
+                    "the middle of a slug folds its own group"
+                );
+            }
+        }
+
+        /// The whole point of moving the click target: the figure is no
+        /// longer a button, so a click on the digits opens the panel
+        /// like any other click on the item.
+        #[test]
+        fn a_click_on_the_bare_figure_folds_nothing() {
+            let segs = [led("FAB", "55%")];
+            let slugs = slug_spans(&segs, 0);
+            let figure = figure_spans(&segs, 0)[0];
+            let (_, width, _) = render(&segs, false, 0, false);
+
+            for x in [
+                figure.x0 as f64 + HIT_PADDING_PX as f64 + 1.0,
+                (figure.x0 + figure.x1) as f64 / 2.0,
+                figure.x1 as f64,
+            ] {
+                assert_eq!(
+                    slug_at(&slugs, width, x),
+                    None,
+                    "icon pixel {x} is the figure's own ink, which folds nothing"
+                );
+            }
+        }
+
+        #[test]
+        fn a_click_on_the_glyph_or_past_either_end_folds_nothing() {
+            let segs = [led("FAB", "55%")];
+            let spans = slug_spans(&segs, 0);
+            let (_, width, _) = render(&segs, false, 0, false);
+
+            assert_eq!(
+                slug_at(&spans, width, (SIDE_PAD_PX + GLYPH_PX / 2) as f64),
+                None
+            );
+            assert_eq!(slug_at(&spans, width, -0.1), None);
+            assert_eq!(slug_at(&spans, width, width as f64 + 0.1), None);
+            assert_eq!(slug_at(&spans, width, width as f64), None);
+        }
+
+        #[test]
+        fn a_click_just_off_a_slug_still_folds_its_group() {
+            let segs = [led("FAB", "55%")];
+            let spans = slug_spans(&segs, 0);
+            let (_, width, _) = render(&segs, false, 0, false);
+            for off in 1..HIT_PADDING_PX {
+                assert_eq!(
+                    slug_at(&spans, width, spans[0].span.x0 as f64 - off as f64),
+                    Some(0),
+                    "a click {off}px shy of the letters still folds the group"
+                );
+            }
+        }
+
+        #[test]
+        fn slug_at_finds_nothing_when_nothing_is_drawn() {
+            let width = SIDE_PAD_PX * 2 + GLYPH_PX;
+            assert_eq!(slug_at(&[], width, width as f64 / 2.0), None);
+            assert!(slug_spans(&[], 0).is_empty());
+        }
+
+        #[test]
+        fn two_slugs_never_claim_the_same_pixel_even_padded() {
+            let segs = [
+                led("FAB", "55%"),
+                StatusItemSegment {
+                    group_start: true,
+                    ..led("CUR", "99%")
+                },
+            ];
+            let spans = slug_spans(&segs, 0);
+            assert!(
+                spans[0].span.x1 + HIT_PADDING_PX < spans[1].span.x0.saturating_sub(HIT_PADDING_PX),
+                "padded slug spans must stay disjoint: {spans:?}"
+            );
+        }
+
+        #[test]
+        fn a_slug_widens_the_image_by_its_own_ink_plus_its_gap() {
+            let bare = render(&[seg("55%", StatusItemColor::Neutral)], false, 0, false);
+            let with_slug = render(&[led("FAB", "55%")], false, 0, false);
+            let slug_font = text::load_font(slug_font_size_pt());
+            let (ink_min, ink_max) = text::ink_bounds(&slug_font, "FAB");
+            let slug_ink = (ink_max - ink_min).round() as u32;
+
+            assert!(with_slug.1 > bare.1, "a slug has to cost width");
+            assert_eq!(with_slug.2, bare.2, "and no height");
+            assert!(
+                (with_slug.1 - bare.1).abs_diff(slug_ink + SLUG_GAP_PX) <= 2,
+                "the slug should cost its own ink plus its gap: {} vs {}",
+                with_slug.1 - bare.1,
+                slug_ink + SLUG_GAP_PX
+            );
+        }
+
+        #[test]
+        fn a_slug_paints_ink_of_its_own_lighter_than_the_digits_beside_it() {
+            let segs = [led("FAB", "55%")];
+            let (buf, w, _) = render(&segs, false, 0, true);
+            let span = slug_spans(&segs, 0)[0].span;
+            let alpha_at = |x: u32, y: u32| buf[(((y * w) + x) * 4 + 3) as usize];
+            let column_ink = |x: u32| (0..GLYPH_PX).map(|y| alpha_at(x, y)).max().unwrap_or(0);
+
+            let slug_ink = (span.x0..span.x1).map(column_ink).max().unwrap_or(0);
+            assert!(slug_ink > 0, "the slug's letters have to be drawn");
+            assert!(
+                slug_ink < StatusItemColor::Neutral.rgba(true).3,
+                "the slug is drawn lighter than a figure's own ink"
+            );
+        }
+
+        /// The colour bar that used to sit under a grouped figure is
+        /// gone: a group is named in the menu bar, never tinted there.
+        #[test]
+        fn nothing_is_painted_under_a_grouped_figure_any_more() {
+            let segs = [led("FAB", "55%")];
+            let (buf, w, h) = render(&segs, false, 0, true);
+            let figure = figure_spans(&segs, 0)[0];
+            // The band the bar used to occupy: the bottom few rows
+            // under the digits' own ink.
+            for y in (h - 6)..h {
+                for x in figure.x0..figure.x1.min(w) {
+                    assert_eq!(
+                        buf[(((y * w) + x) * 4 + 3) as usize],
+                        0,
+                        "pixel ({x}, {y}) under the figure must stay clear"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn a_slug_does_not_disturb_the_figures_own_ink() {
+            let bare_segs = [seg("55%", StatusItemColor::Neutral)];
+            let led_segs = [led("FAB", "55%")];
+            let bare = render(&bare_segs, false, 0, true);
+            let with_slug = render(&led_segs, false, 0, true);
+            let bare_span = figure_spans(&bare_segs, 0)[0];
+            let led_span = figure_spans(&led_segs, 0)[0];
+
+            // The slug shifts the digits into a different sub-pixel
+            // phase, so their antialiasing differs column by column;
+            // what must not change is how much ink they are drawn with.
+            let ink_mass = |buf: &[u8], w: u32, span: InkSpan| -> u64 {
+                (0..GLYPH_PX)
+                    .flat_map(|y| (span.x0..span.x1).map(move |x| (y, x)))
+                    .map(|(y, x)| buf[(((y * w) + x) * 4 + 3) as usize] as u64)
+                    .sum()
+            };
+            let before = ink_mass(&bare.0, bare.1, bare_span);
+            let after = ink_mass(&with_slug.0, with_slug.1, led_span);
+
+            assert!(
+                (bare_span.x1 - bare_span.x0).abs_diff(led_span.x1 - led_span.x0) <= 1,
+                "the digits keep their own width, give or take how each edge rounds"
+            );
+            assert!(
+                before.abs_diff(after) * 100 < before * 3,
+                "the digits keep their own weight: {before} then {after}"
+            );
+        }
     }
 
     /// The click geometry the first pin-groups version got wrong: a
@@ -1087,20 +1341,32 @@ mod tests {
         const ITEM_LEFT_POINTS: f64 = 1183.0;
 
         struct Scene {
-            spans: Vec<FigureSpan>,
+            segments: Vec<StatusItemSegment>,
+            spans: Vec<SlugSpan>,
             icon_width_px: u32,
             item_width_points: f64,
         }
 
         fn scene() -> Scene {
-            let segs = [
-                seg("55%", StatusItemColor::Neutral),
-                group_seg("99%"),
-                group_seg("12%"),
+            let segments = vec![
+                led("FAB", "55%"),
+                StatusItemSegment {
+                    group_start: true,
+                    ..led("CUR", "99%")
+                },
+                StatusItemSegment {
+                    group_start: true,
+                    ..led("MON", "84%")
+                },
+                StatusItemSegment {
+                    group_start: true,
+                    ..seg("12%", StatusItemColor::Neutral)
+                },
             ];
-            let spans = figure_spans(&segs, 50);
-            let (_, icon_width_px, _) = render(&segs, false, 50, true);
+            let spans = slug_spans(&segments, 50);
+            let (_, icon_width_px, _) = render(&segments, false, 50, true);
             Scene {
+                segments,
                 spans,
                 icon_width_px,
                 item_width_points: icon_width_px as f64 / RENDER_SCALE + MARGIN_POINTS * 2.0,
@@ -1114,7 +1380,7 @@ mod tests {
         }
 
         fn resolve(scene: &Scene, click_x_points: f64) -> Option<usize> {
-            figure_at(
+            slug_at(
                 &scene.spans,
                 scene.icon_width_px,
                 click_x_in_icon_px(
@@ -1131,7 +1397,7 @@ mod tests {
         /// image's own width.
         fn resolve_by_bare_fraction(scene: &Scene, click_x_points: f64) -> Option<usize> {
             let fraction = (click_x_points - ITEM_LEFT_POINTS) / scene.item_width_points;
-            figure_at(
+            slug_at(
                 &scene.spans,
                 scene.icon_width_px,
                 fraction * scene.icon_width_px as f64,
@@ -1139,39 +1405,42 @@ mod tests {
         }
 
         #[test]
-        fn a_click_anywhere_on_a_figure_resolves_to_that_figure() {
+        fn a_click_anywhere_on_a_slug_folds_that_slugs_own_group() {
             let scene = scene();
-            for (index, span) in scene.spans.iter().enumerate() {
+            for slug in &scene.spans {
                 for icon_px in [
-                    span.x0 as f64,
-                    (span.x0 + span.x1) as f64 / 2.0,
-                    span.x1 as f64,
+                    slug.span.x0 as f64,
+                    (slug.span.x0 + slug.span.x1) as f64 / 2.0,
+                    slug.span.x1 as f64,
                 ] {
                     assert_eq!(
                         resolve(&scene, click_landing_on(icon_px)),
-                        Some(index),
-                        "icon pixel {icon_px} is figure {index}'s own ink"
+                        Some(slug.segment),
+                        "icon pixel {icon_px} is slug {}'s own ink",
+                        slug.segment
                     );
                 }
             }
         }
 
         #[test]
-        fn the_bare_fraction_of_the_buttons_width_misses_the_figure_clicked() {
+        fn the_bare_fraction_of_the_buttons_width_misses_the_slug_clicked() {
             let scene = scene();
-            let last = scene.spans.last().copied().expect("three figures drawn");
-            let click = click_landing_on(last.x0 as f64);
-
-            assert_eq!(resolve(&scene, click), Some(scene.spans.len() - 1));
-            assert_ne!(
-                resolve_by_bare_fraction(&scene, click),
-                Some(scene.spans.len() - 1),
-                "this click is exactly what the margin-blind arithmetic got wrong"
+            let goes_astray = scene.spans.iter().any(|slug| {
+                (slug.span.x0..=slug.span.x1).any(|icon_px| {
+                    let click = click_landing_on(icon_px as f64);
+                    resolve(&scene, click) == Some(slug.segment)
+                        && resolve_by_bare_fraction(&scene, click) != Some(slug.segment)
+                })
+            });
+            assert!(
+                goes_astray,
+                "the margin-blind arithmetic has to send at least one click on a slug's own letters somewhere else; that is the bug it caused"
             );
         }
 
         #[test]
-        fn a_click_in_the_buttons_own_margin_belongs_to_no_figure() {
+        fn a_click_in_the_buttons_own_margin_folds_nothing() {
             let scene = scene();
             assert_eq!(
                 resolve(&scene, ITEM_LEFT_POINTS + MARGIN_POINTS / 2.0),
@@ -1186,6 +1455,17 @@ mod tests {
             );
         }
 
+        /// Through the same coordinate space the slugs are resolved in:
+        /// a click on the digits themselves opens the panel.
+        #[test]
+        fn a_click_on_a_figure_across_the_margin_folds_nothing_either() {
+            let scene = scene();
+            for figure in figure_spans(&scene.segments, 50) {
+                let middle = (figure.x0 + figure.x1) as f64 / 2.0;
+                assert_eq!(resolve(&scene, click_landing_on(middle)), None);
+            }
+        }
+
         #[test]
         fn without_the_buttons_width_the_image_is_taken_as_flush_left() {
             let scene = scene();
@@ -1193,84 +1473,6 @@ mod tests {
             assert_eq!(
                 click_x_in_icon_px(click, ITEM_LEFT_POINTS, None, scene.icon_width_px as f64),
                 30.0 * RENDER_SCALE
-            );
-        }
-    }
-
-    mod group_underline {
-        use super::*;
-
-        fn band_pixel(buf: &[u8], w: u32, h: u32, x: u32) -> (u8, u8, u8, u8) {
-            let y = h - GROUP_UNDERLINE_BOTTOM_INSET_PX - GROUP_UNDERLINE_HEIGHT_PX / 2;
-            let i = ((y * w + x) * 4) as usize;
-            (buf[i], buf[i + 1], buf[i + 2], buf[i + 3])
-        }
-
-        fn grouped(text: &str, color: GroupColor) -> StatusItemSegment {
-            StatusItemSegment {
-                text: text.into(),
-                color: StatusItemColor::Neutral,
-                group_start: false,
-                group_color: Some(color),
-            }
-        }
-
-        #[test]
-        fn a_grouped_figure_carries_its_groups_colour_under_its_own_digits() {
-            let segs = [
-                grouped("55%", GroupColor::Blue),
-                seg("12%", StatusItemColor::Neutral),
-            ];
-            let spans = figure_spans(&segs, 0);
-            let (buf, w, h) = render(&segs, false, 0, true);
-
-            let middle = |span: FigureSpan| (span.x0 + span.x1) / 2;
-            assert_eq!(
-                band_pixel(&buf, w, h, middle(spans[0])),
-                GroupColor::Blue.rgba(),
-                "the grouped figure's bar is its group's colour"
-            );
-            assert_eq!(
-                band_pixel(&buf, w, h, middle(spans[1])).3,
-                0,
-                "a standalone figure gets no bar"
-            );
-        }
-
-        #[test]
-        fn the_bar_spans_the_figures_ink_and_nothing_between_figures() {
-            let segs = [
-                grouped("55%", GroupColor::Red),
-                grouped("99%", GroupColor::Red),
-            ];
-            let spans = figure_spans(&segs, 0);
-            let (buf, w, h) = render(&segs, false, 0, true);
-
-            assert_eq!(band_pixel(&buf, w, h, spans[0].x0).3, 255);
-            assert_eq!(band_pixel(&buf, w, h, spans[0].x1 - 1).3, 255);
-            assert_eq!(
-                band_pixel(&buf, w, h, (spans[0].x1 + spans[1].x0) / 2).3,
-                0,
-                "the gap between two figures stays clear"
-            );
-        }
-
-        #[test]
-        fn the_bar_changes_neither_the_items_width_nor_its_digits() {
-            let bare = [seg("55%", StatusItemColor::Neutral)];
-            let with_bar = [grouped("55%", GroupColor::Violet)];
-            let (bare_buf, bare_w, bare_h) = render(&bare, false, 0, true);
-            let (bar_buf, bar_w, bar_h) = render(&with_bar, false, 0, true);
-
-            assert_eq!((bare_w, bare_h), (bar_w, bar_h));
-            let above_band =
-                ((bare_h - GROUP_UNDERLINE_BOTTOM_INSET_PX - GROUP_UNDERLINE_HEIGHT_PX)
-                    * bare_w
-                    * 4) as usize;
-            assert_eq!(
-                bare_buf[..above_band],
-                bar_buf[..above_band],
-                "the bar sits below the digits, not through them"
             );
         }
     }
@@ -1563,14 +1765,8 @@ mod tests {
             s.group_start = true;
             s
         }];
-        let font = text::load_font(text_font_size_pt());
-        let ink_bounds: Vec<(f64, f64)> = segs
-            .iter()
-            .map(|s| text::ink_bounds(&font, &s.text))
-            .collect();
-        let glyph_ink_right_edge =
-            SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&glyph_coverage(GLYPH_PX, 0.0), GLYPH_PX);
-        let (placements, _) = layout_figures(&segs, &ink_bounds, glyph_ink_right_edge);
+        let ink = measure_segments(&segs);
+        let (placements, _) = layout_segments(&segs, &ink, glyph_ink_right_edge_for(0));
         let gutter_x = placements[1]
             .hairline_x0
             .expect("the second group's leading segment must carry the hairline");

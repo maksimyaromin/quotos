@@ -1,6 +1,7 @@
-import type { GroupColor, PinGroup, StatusItemSegment, Subscription } from '@/types/entities'
+import type { PinGroup, StatusItemSegment, Subscription } from '@/types/entities'
 import {
   collectPinnedEntries,
+  groupSlug,
   layoutPinnedEntries,
   type PinnedEntry,
   rollUpUsed,
@@ -32,7 +33,9 @@ function windowLabel(entry: PinnedEntry): string {
 interface Figure {
   used: number
   groupId: string | null
-  groupColor: GroupColor | null
+  // Set on the figure that leads its group's cluster and on no other,
+  // so an opened group is named once rather than once per member.
+  slug: string | null
   cluster: string
 }
 
@@ -47,22 +50,23 @@ export function buildStatusItemSegments(
 
   // A rolled-up group spends one figure's width for however many members
   // it holds; opened out, it spends each member's own. Either way the
-  // group is one cluster, so a break falls between groups and again
-  // before the standalone pins.
+  // group is one cluster, led by its slug, so a break falls between
+  // groups and again before the standalone pins.
   const figures: Figure[] = []
   for (const { group, members } of layout.groups) {
     const cluster = `group:${group.id}`
+    const slug = groupSlug(group.name) || null
     if (group.collapsed) {
       const used = rollUpUsed(members)
       if (used === null) continue
-      figures.push({ used, groupId: group.id, groupColor: group.color, cluster })
+      figures.push({ used, groupId: group.id, slug, cluster })
       continue
     }
-    for (const entry of withFigure(members)) {
+    for (const [index, entry] of withFigure(members).entries()) {
       figures.push({
         used: entry.window.used as number,
         groupId: group.id,
-        groupColor: group.color,
+        slug: index === 0 ? slug : null,
         cluster,
       })
     }
@@ -71,19 +75,19 @@ export function buildStatusItemSegments(
     figures.push({
       used: entry.window.used as number,
       groupId: null,
-      groupColor: null,
+      slug: null,
       cluster: `subscription:${entry.subscription.id}`,
     })
   }
 
   let lastCluster: string | null = null
-  return figures.map(({ used, groupId, groupColor, cluster }) => {
+  return figures.map(({ used, groupId, slug, cluster }) => {
     const segment: StatusItemSegment = {
       text: `${used}%`,
       color: pickFigureColor(used, anyContributingStale),
       groupStart: lastCluster !== null && lastCluster !== cluster,
       groupId,
-      groupColor,
+      slug,
     }
     lastCluster = cluster
     return segment

@@ -1,7 +1,28 @@
+import type { DndContextProps, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { type DragItem, pinDragId, UNGROUPED_DROP_ID } from '@/lib/customize-drag'
+import { pinMemberKey } from '@/lib/pin-groups'
 
 afterEach(cleanup)
+
+// jsdom has no layout, so the drag library has no geometry to report
+// from; its context is stood in for and handed the answers a real drag
+// would reach. See customize-display-screen.spec.tsx.
+const dnd = vi.hoisted(() => ({ props: null as unknown }))
+
+vi.mock('@dnd-kit/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/core')>()
+  return {
+    ...actual,
+    DndContext: (props: DndContextProps) => {
+      dnd.props = props
+      return props.children
+    },
+    DragOverlay: ({ children }: { children?: ReactNode }) => children ?? null,
+  }
+})
 
 class ResizeObserverStub {
   observe() {}
@@ -224,14 +245,26 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
     return renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]
   }
 
-  // Each step flushes on its own: the drag reads its own state back
-  // between the press, the move and the release, exactly as a real one
-  // does across three separate events.
-  async function dragOnto(what: string, target: string) {
-    fireEvent.mouseDown(screen.getByText(what), { button: 0 })
-    fireEvent.mouseMove(screen.getByText(target))
+  const ACCOUNT = 'claude:claude'
+  const SESSION = pinMemberKey(ACCOUNT, 'session')
+  const WEEKLY = pinMemberKey(ACCOUNT, 'weekly_all')
+
+  interface Target {
+    id: string
+    data: { current?: DragItem }
+  }
+
+  function pin(key: string, groupId: string | null = null): Target {
+    return { id: pinDragId(key), data: { current: { kind: 'pin', key, groupId } } }
+  }
+
+  const LEAVE_ZONE: Target = { id: UNGROUPED_DROP_ID, data: {} }
+
+  async function dragOnto(active: Target, over: Target | null) {
+    const context = dnd.props as DndContextProps
+    act(() => context.onDragStart?.({ active } as unknown as DragStartEvent))
     await act(async () => {
-      fireEvent.mouseUp(window)
+      context.onDragEnd?.({ active, over } as unknown as DragEndEvent)
     })
   }
 
@@ -254,7 +287,7 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
 
   async function groupTheTwoPins() {
     await openCustomizeScreen()
-    await dragOnto('Claude — Weekly', 'Claude — Session')
+    await dragOnto(pin(WEEKLY), pin(SESSION))
   }
 
   test('pinning is a plain toggle again, with no destination menu to answer', async () => {
@@ -267,7 +300,7 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
     expect(screen.queryByText('Pin standalone')).toBeNull()
     expect(screen.queryByText('New group…')).toBeNull()
     expect(lastSegments()).toEqual([
-      { text: '10%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+      { text: '10%', color: 'neutral', groupStart: false, groupId: null, slug: null },
     ])
   })
 
@@ -288,22 +321,22 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
     for (const segment of lastSegments()) expect(strip.textContent).toContain(segment.text)
   })
 
-  test('dragging one pin onto the other collects them into one rolled-up, coloured figure', async () => {
+  test('dragging one pin onto the other collects them into one rolled-up figure, led by its slug', async () => {
     await groupTheTwoPins()
 
     const segments = lastSegments()
     expect(segments).toHaveLength(1)
     expect(segments[0]).toMatchObject({ text: '20%', groupId: expect.any(String) })
-    expect(segments[0].groupColor).toBe('teal')
+    expect(segments[0].slug).toBe('GRO')
   })
 
   test('the preview follows the arrangement without leaving the screen', async () => {
     await groupTheTwoPins()
 
-    expect(screen.getByLabelText('Menu bar preview').textContent).toBe('20%')
+    expect(screen.getByLabelText('Menu bar preview').textContent).toBe('GRO20%')
   })
 
-  test("a click on the group's figure in the menu bar opens it out to its members", async () => {
+  test("a click on the group's slug in the menu bar opens it out to its members", async () => {
     await groupTheTwoPins()
 
     const groupId = lastSegments()[0].groupId
@@ -318,12 +351,13 @@ describe('arranging pins into groups on the customize screen, end to end', () =>
 
   test('taking a member back out leaves it pinned, standing on its own', async () => {
     await groupTheTwoPins()
+    const groupId: string = lastSegments()[0].groupId
 
-    await dragOnto('Claude — Weekly', 'Drop here to leave the group')
+    await dragOnto(pin(WEEKLY, groupId), LEAVE_ZONE)
 
     const segments = lastSegments()
     expect(segments.map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
-    expect(segments.map((s: { groupColor: string | null }) => s.groupColor)).toEqual(['teal', null])
+    expect(segments.map((s: { slug: string | null }) => s.slug)).toEqual(['GRO', null])
   })
 
   test('deleting the group leaves both windows pinned, each on its own figure', async () => {
