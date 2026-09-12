@@ -1,5 +1,5 @@
 ---
-id: note.199ff10bcf8811aa2e49aaf38d45da90
+id: note.checks-see-only-tracked-files
 type: note
 state: active
 kind: fact
@@ -18,9 +18,13 @@ So a local `npm run verify` on a change that adds files is not the same
 run CI performs. The new file passes locally by being invisible and
 fails in CI, where it has been committed, with a failure that looks
 unrelated to anything just written. Naming rules are the usual victim,
-since they are the checks a brand new path is most likely to break.
+since they are the checks a brand new path is most likely to break: the
+Rust example added alongside the chip renderer is exactly that story,
+green locally while untracked and failing the kebab-case check on the
+first CI run, because the snake_case exemption at the time covered only
+`src-tauri/src/` and not the crate's examples.
 
-Stage new files with `git add` before trusting a local verify. The other
-lanes — format, lint, typecheck, test, cargo — read the working tree and
-do not share this blind spot, which is what makes it easy to miss: most
-of the gate sees the file and a handful of checks do not.
+Stage new files with `git add` before trusting a local verify. The
+other lanes — format, lint, typecheck, test, cargo — read the working
+tree and do not share this blind spot, which is what makes it easy to
+miss: most of the gate sees the file and a handful of checks do not.
