@@ -26,6 +26,9 @@ test commands.
 - `src/design-system/` holds the design system: the tokens and React
   components the app builds against, and the only copy of them in this
   repository.
+- `docs/brand/` holds the brand assets; `docs/contributing.md`'s "App
+  icons" section names every source of truth the mark and the wordmark
+  are drawn from, in the app and out of it.
 - [docs/architecture.md](docs/architecture.md),
   [docs/claude-provider.md](docs/claude-provider.md), and
   [docs/platform-constraints.md](docs/platform-constraints.md) cover how

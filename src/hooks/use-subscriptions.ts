@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { loadTracked, saveTracked, type TrackedAccount } from '@/lib/persistence'
+import {
+  loadIconFillSource,
+  loadTracked,
+  saveIconFillSource,
+  saveTracked,
+  type TrackedAccount,
+} from '@/lib/persistence'
+import { pinMemberKey, splitPinMemberKey } from '@/lib/pin-groups'
 import {
   buildStatusItemSegments,
   buildStatusItemTooltip,
-  computeWorstActiveLimitPercent,
+  computeIconFillPercent,
 } from '@/lib/status-item-segments'
 import {
   cancelSignIn as cancelSignInIpc,
@@ -128,6 +135,13 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
   const lastSavedRef = useRef<string | null>(null)
 
   const [saveError, setSaveError] = useState<Error | null>(null)
+
+  // Exactly one window can drive the menu bar mark's gauge, so the
+  // choice is one key rather than a set: picking a new one replaces
+  // whatever was picked before. Null is the arithmetic-mean default.
+  const [iconFillSource, setIconFillSource] = useState<string | null>(null)
+  const iconFillSourceLoadedRef = useRef(false)
+  const lastSavedIconFillSourceRef = useRef<string | null>(null)
 
   const pendingPinMigrationRef = useRef<Set<string>>(new Set())
 
@@ -334,18 +348,29 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     [refreshOneGuarded, clearRemovalTimer],
   )
 
+  // Untracking the subscription the gauge reads from returns it to the
+  // arithmetic-mean default, rather than leaving a key pointing at a
+  // window nothing reports any more.
+  const forgetIconFillSourceFor = useCallback((id: string) => {
+    setIconFillSource((prev) =>
+      prev !== null && splitPinMemberKey(prev)?.subscriptionId === id ? null : prev,
+    )
+  }, [])
+
   const removeSubscription = useCallback(
     (id: string) => {
       clearRemovalTimer(id)
+      forgetIconFillSourceFor(id)
       setSubscriptions((prev) => prev.filter((s) => s.id !== id))
       void cancelSignInIpc(id)
     },
-    [clearRemovalTimer],
+    [clearRemovalTimer, forgetIconFillSourceFor],
   )
 
   const stopTracking = useCallback(
     (id: string) => {
       clearRemovalTimer(id)
+      forgetIconFillSourceFor(id)
       setSubscriptions((prev) =>
         prev.map((s) => (s.id === id ? { ...s, pendingRemoval: true } : s)),
       )
@@ -355,7 +380,7 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
         setSubscriptions((prev) => prev.filter((s) => !(s.id === id && s.pendingRemoval)))
       }, STOP_TRACKING_UNDO_MS)
     },
-    [clearRemovalTimer],
+    [clearRemovalTimer, forgetIconFillSourceFor],
   )
 
   const undoStopTracking = useCallback(
@@ -510,6 +535,46 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     })()
   }, [trackedSubscriptions])
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const loaded = await loadIconFillSource()
+      if (cancelled) return
+      setIconFillSource(loaded)
+      lastSavedIconFillSourceRef.current = loaded
+      iconFillSourceLoadedRef.current = true
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!iconFillSourceLoadedRef.current) return
+    if (lastSavedIconFillSourceRef.current === iconFillSource) return
+    lastSavedIconFillSourceRef.current = iconFillSource
+    void (async () => {
+      try {
+        await saveIconFillSource(iconFillSource)
+      } catch (error) {
+        console.error(
+          "Quotos: saving the menu bar icon's fill source failed; will retry on the next change",
+          error,
+        )
+        if (lastSavedIconFillSourceRef.current === iconFillSource) {
+          lastSavedIconFillSourceRef.current = null
+        }
+      }
+    })()
+  }, [iconFillSource])
+
+  // Choosing a window replaces whatever was chosen before; choosing the
+  // same one again clears it back to the arithmetic-mean default.
+  const toggleIconFillSource = useCallback((id: string, windowId: string) => {
+    const key = pinMemberKey(id, windowId)
+    setIconFillSource((prev) => (prev === key ? null : key))
+  }, [])
+
   // The one segment list there is: the menu bar is drawn from it, and
   // the customize screen previews it rather than deriving its own.
   const statusItemSegments = useMemo(
@@ -517,20 +582,20 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     [trackedSubscriptions, pinGroups],
   )
 
-  // How full the capacity glyph is drawn, in the live tray and in the
-  // customize screen's preview of it alike.
-  const worstUsedPercent = useMemo(
-    () => computeWorstActiveLimitPercent(trackedSubscriptions),
-    [trackedSubscriptions],
+  // How full the mark's limit chevron is drawn, in the live tray and in
+  // the customize screen's preview of it alike.
+  const iconFillPercent = useMemo(
+    () => computeIconFillPercent(trackedSubscriptions, iconFillSource),
+    [trackedSubscriptions, iconFillSource],
   )
 
   useEffect(() => {
     renderStatusItem(
       statusItemSegments,
-      worstUsedPercent,
+      iconFillPercent,
       buildStatusItemTooltip(trackedSubscriptions, pinGroups),
     )
-  }, [statusItemSegments, worstUsedPercent, trackedSubscriptions, pinGroups])
+  }, [statusItemSegments, iconFillPercent, trackedSubscriptions, pinGroups])
 
   const displayLabelFor = useCallback(
     (account: AccountDescriptor) => knownLabels[account.id] ?? deriveAccountLabel(account),
@@ -541,7 +606,9 @@ export function useSubscriptions(pinGroups: PinGroup[] = []) {
     subscriptions,
     trackedSubscriptions,
     statusItemSegments,
-    worstUsedPercent,
+    iconFillPercent,
+    iconFillSource,
+    toggleIconFillSource,
     saveError,
     refreshAll,
     refreshAccountById,

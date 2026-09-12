@@ -118,104 +118,199 @@ impl StatusItemSegment {
     }
 }
 
-fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> Vec<u8> {
-    const TRACK_RADIUS_SVG: f64 = 5.4;
-    const TRACK_STROKE_SVG: f64 = 1.4;
-    const TRACK_OPACITY: f64 = 0.26;
-    const ARC_RADIUS_SVG: f64 = 5.4;
-    const ARC_STROKE_SVG: f64 = 1.9;
-    const GAP_CENTER_RAD: f64 = std::f64::consts::FRAC_PI_4;
-    const GAP_HALF_WIDTH_RAD: f64 = 31.0 * std::f64::consts::PI / 180.0;
-    const ARC_GAP_LOW_RAD: f64 = GAP_CENTER_RAD - GAP_HALF_WIDTH_RAD;
-    const ARC_GAP_HIGH_RAD: f64 = GAP_CENTER_RAD + GAP_HALF_WIDTH_RAD;
-    const TAIL_ANGLE_RAD: f64 = GAP_CENTER_RAD;
-    const TAIL_R_INNER_SVG: f64 = 3.2;
-    const TAIL_R_OUTER_SVG: f64 = 8.0;
-    const TAIL_STROKE_SVG: f64 = ARC_STROKE_SVG;
-    const TARGET_INK_DIAMETER_CSS_PX: f64 = 15.0;
-    const AA_HALF_WIDTH_PX: f64 = 0.75;
-
-    let natural_outer_diameter = (ARC_RADIUS_SVG + ARC_STROKE_SVG / 2.0) * 2.0;
-    let px_per_css_px = canvas_px as f64 / 18.0;
-    let scale = (TARGET_INK_DIAMETER_CSS_PX * px_per_css_px) / natural_outer_diameter;
-    let center = canvas_px as f64 / 2.0;
-
-    let gap_width = ARC_GAP_HIGH_RAD - ARC_GAP_LOW_RAD;
-    let max_sweep = std::f64::consts::TAU - gap_width;
-    let sweep = used_fraction.clamp(0.0, 1.0) * max_sweep;
-    let arc_start = ARC_GAP_HIGH_RAD;
-
-    let cap_point = |a: f64| (ARC_RADIUS_SVG * a.cos(), ARC_RADIUS_SVG * a.sin());
-    let (cap_start_x, cap_start_y) = cap_point(arc_start);
-    let (cap_end_x, cap_end_y) = cap_point(arc_start + sweep);
-
-    let (tail_x1, tail_y1) = (
-        TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.cos(),
-        TAIL_R_INNER_SVG * TAIL_ANGLE_RAD.sin(),
-    );
-    let (tail_x2, tail_y2) = (
-        TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.cos(),
-        TAIL_R_OUTER_SVG * TAIL_ANGLE_RAD.sin(),
-    );
-    let (tail_dx, tail_dy) = (tail_x2 - tail_x1, tail_y2 - tail_y1);
-    let tail_len_sq = tail_dx * tail_dx + tail_dy * tail_dy;
-
-    let mut cov = vec![0u8; (canvas_px * canvas_px) as usize];
-    for y in 0..canvas_px {
-        for x in 0..canvas_px {
-            let ux = (x as f64 + 0.5 - center) / scale;
-            let uy = (y as f64 + 0.5 - center) / scale;
-            let dist = (ux * ux + uy * uy).sqrt();
-            let mut angle = uy.atan2(ux);
-            if angle < 0.0 {
-                angle += std::f64::consts::TAU;
-            }
-
-            let track_edge = (dist - TRACK_RADIUS_SVG).abs() - TRACK_STROKE_SVG / 2.0;
-            let track_cov =
-                (1.0 - (track_edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0) * TRACK_OPACITY;
-
-            let mut angle_rel = angle - arc_start;
-            if angle_rel < 0.0 {
-                angle_rel += std::f64::consts::TAU;
-            }
-            let arc_cov = if sweep <= 0.0 {
-                0.0
-            } else if angle_rel <= sweep {
-                let edge = (dist - ARC_RADIUS_SVG).abs() - ARC_STROKE_SVG / 2.0;
-                (1.0 - (edge * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
-            } else {
-                let d_start = ((ux - cap_start_x).powi(2) + (uy - cap_start_y).powi(2)).sqrt();
-                let d_end = ((ux - cap_end_x).powi(2) + (uy - cap_end_y).powi(2)).sqrt();
-                let d = d_start.min(d_end);
-                (1.0 - ((d - ARC_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
-            };
-
-            let t = (((ux - tail_x1) * tail_dx + (uy - tail_y1) * tail_dy) / tail_len_sq)
-                .clamp(0.0, 1.0);
-            let (cx, cy) = (tail_x1 + t * tail_dx, tail_y1 + t * tail_dy);
-            let tail_dist = ((ux - cx).powi(2) + (uy - cy).powi(2)).sqrt();
-            let tail_cov = (1.0 - ((tail_dist - TAIL_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX)
-                .clamp(0.0, 1.0);
-
-            let coverage = track_cov.max(arc_cov).max(tail_cov);
-            if coverage <= 0.0 {
-                continue;
-            }
-            cov[(y * canvas_px + x) as usize] = (coverage * 255.0).round().clamp(0.0, 255.0) as u8;
-        }
+/// The brand's two inks, `docs/brand/`, in the same light and dark
+/// pairs the panel's own `--spend` and `--peach` tokens carry.
+fn spend_rgb(dark_mode: bool) -> (u8, u8, u8) {
+    if dark_mode {
+        (0x8a, 0x91, 0xad)
+    } else {
+        (0x67, 0x6a, 0x80)
     }
-    cov
 }
 
-/// The glyph's own rightmost ink pixel, scanned from its rendered coverage.
-/// See "Spacing the figures evenly" in docs/status-item-rendering.md.
-fn glyph_ink_right_edge_px(coverage: &[u8], canvas_px: u32) -> f64 {
+fn limit_rgb(dark_mode: bool) -> (u8, u8, u8) {
+    if dark_mode {
+        (0xff, 0xab, 0x7f)
+    } else {
+        (0xed, 0x57, 0x00)
+    }
+}
+
+/// One chevron of the mark, on its own 28-unit grid: two arms meeting
+/// at `(CHEVRON_APEX_X_SVG, vertex_y)`, their tips at `tip_y`. A
+/// chevron whose vertex sits below its tips points down.
+#[derive(Clone, Copy)]
+struct Chevron {
+    vertex_y: f64,
+    tip_y: f64,
+}
+
+impl Chevron {
+    /// The distance from a point to this chevron's centreline, and the
+    /// y of the nearest point on it, which is what the gauge clips
+    /// against: measuring along the stroke keeps the cut perpendicular.
+    fn nearest(self, x: f64, y: f64) -> (f64, f64) {
+        let apex = (CHEVRON_APEX_X_SVG, self.vertex_y);
+        [
+            ((CHEVRON_LEFT_X_SVG, self.tip_y), apex),
+            (apex, (CHEVRON_RIGHT_X_SVG, self.tip_y)),
+        ]
+        .into_iter()
+        .map(|((x1, y1), (x2, y2))| {
+            let (dx, dy) = (x2 - x1, y2 - y1);
+            let t = (((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
+            let (nx, ny) = (x1 + t * dx, y1 + t * dy);
+            (((x - nx).powi(2) + (y - ny).powi(2)).sqrt(), ny)
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .expect("a chevron always has two arms")
+    }
+}
+
+/// The mark's geometry, `src/design-system/assets/menubar-glyph.svg`,
+/// read off that file's own 28-unit grid.
+const CHEVRON_STROKE_SVG: f64 = 2.6;
+const CHEVRON_LEFT_X_SVG: f64 = 9.0;
+const CHEVRON_APEX_X_SVG: f64 = 14.0;
+const CHEVRON_RIGHT_X_SVG: f64 = 19.0;
+/// The limit: the one chevron pointing down, and the one the gauge is
+/// drawn on. Its vertex is the bottom of its own wedge.
+const LIMIT_CHEVRON: Chevron = Chevron {
+    vertex_y: 9.0,
+    tip_y: 4.0,
+};
+/// Spend rising: two chevrons pointing up, drawn at full colour
+/// whatever the gauge reads, since they are not a gauge.
+const SPEND_CHEVRONS: [Chevron; 2] = [
+    Chevron {
+        vertex_y: 13.0,
+        tip_y: 18.0,
+    },
+    Chevron {
+        vertex_y: 20.5,
+        tip_y: 25.5,
+    },
+];
+/// How faint the limit chevron's always-drawn track is against its own
+/// fully-saturated fill.
+const LIMIT_TRACK_OPACITY: f64 = 0.3;
+
+/// The mark's own ink box on that grid, round caps included: the tips
+/// of the topmost and bottommost chevrons, and the outer edge of either
+/// arm.
+const INK_TOP_SVG: f64 = LIMIT_CHEVRON.tip_y - CHEVRON_STROKE_SVG / 2.0;
+const INK_BOTTOM_SVG: f64 = SPEND_CHEVRONS[1].tip_y + CHEVRON_STROKE_SVG / 2.0;
+const INK_HEIGHT_SVG: f64 = INK_BOTTOM_SVG - INK_TOP_SVG;
+const INK_CENTER_Y_SVG: f64 = (INK_TOP_SVG + INK_BOTTOM_SVG) / 2.0;
+
+/// The mark drawn at the target resolution from its own vector
+/// geometry, in three layers rather than one; see "The capacity glyph"
+/// in docs/status-item-rendering.md.
+struct GlyphCoverage {
+    /// The two spend chevrons.
+    spend: Vec<u8>,
+    /// The limit chevron at its full extent, already faded to the
+    /// track's own opacity.
+    limit_track: Vec<u8>,
+    /// The part of that same chevron the gauge has reached, at full
+    /// saturation.
+    limit_fill: Vec<u8>,
+}
+
+fn glyph_coverage(canvas_px: u32, used_fraction: f64) -> GlyphCoverage {
+    const TARGET_INK_HEIGHT_CSS_PX: f64 = 15.0;
+    const AA_HALF_WIDTH_PX: f64 = 0.75;
+
+    let px_per_css_px = canvas_px as f64 / 18.0;
+    let scale = (TARGET_INK_HEIGHT_CSS_PX * px_per_css_px) / INK_HEIGHT_SVG;
+    let center = canvas_px as f64 / 2.0;
+
+    // The gauge runs from the limit chevron's own vertex up toward its
+    // two arm-tips, so at 0% only the vertex is bright and at 100% the
+    // whole chevron is.
+    let fill_from_y = LIMIT_CHEVRON.vertex_y
+        - used_fraction.clamp(0.0, 1.0) * (LIMIT_CHEVRON.vertex_y - LIMIT_CHEVRON.tip_y);
+
+    let stroke_coverage = |distance: f64| {
+        (1.0 - ((distance - CHEVRON_STROKE_SVG / 2.0) * scale) / AA_HALF_WIDTH_PX).clamp(0.0, 1.0)
+    };
+
+    let size = (canvas_px * canvas_px) as usize;
+    let mut coverage = GlyphCoverage {
+        spend: vec![0u8; size],
+        limit_track: vec![0u8; size],
+        limit_fill: vec![0u8; size],
+    };
+    for y in 0..canvas_px {
+        for x in 0..canvas_px {
+            let ux = CHEVRON_APEX_X_SVG + (x as f64 + 0.5 - center) / scale;
+            let uy = INK_CENTER_Y_SVG + (y as f64 + 0.5 - center) / scale;
+            let at = (y * canvas_px + x) as usize;
+
+            let spend = SPEND_CHEVRONS
+                .iter()
+                .map(|chevron| stroke_coverage(chevron.nearest(ux, uy).0))
+                .fold(0.0f64, f64::max);
+            coverage.spend[at] = to_alpha(spend);
+
+            let (limit_distance, nearest_y) = LIMIT_CHEVRON.nearest(ux, uy);
+            let limit = stroke_coverage(limit_distance);
+            coverage.limit_track[at] = to_alpha(limit * LIMIT_TRACK_OPACITY);
+            if nearest_y >= fill_from_y {
+                coverage.limit_fill[at] = to_alpha(limit);
+            }
+        }
+    }
+    coverage
+}
+
+fn to_alpha(coverage: f64) -> u8 {
+    (coverage * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// Paints the mark into `buf` at `left`, the three layers in the order
+/// they stack: the limit's faint track first, its bright fill over it,
+/// and the spend chevrons, which overlap neither.
+fn draw_glyph(
+    buf: &mut [u8],
+    total_w: u32,
+    total_h: u32,
+    left: u32,
+    coverage: &GlyphCoverage,
+    dark: bool,
+) {
+    let (sr, sg, sb) = spend_rgb(dark);
+    let (lr, lg, lb) = limit_rgb(dark);
+    for y in 0..GLYPH_PX {
+        for x in 0..GLYPH_PX {
+            let at = (y * GLYPH_PX + x) as usize;
+            for (alpha, (r, g, b)) in [
+                (coverage.limit_track[at], (lr, lg, lb)),
+                (coverage.limit_fill[at], (lr, lg, lb)),
+                (coverage.spend[at], (sr, sg, sb)),
+            ] {
+                if alpha == 0 {
+                    continue;
+                }
+                blend_pixel(buf, total_w, total_h, left + x, y, (r, g, b, alpha));
+            }
+        }
+    }
+}
+
+/// The glyph's own rightmost ink pixel, scanned across every layer of
+/// its rendered coverage. See "Spacing the figures evenly" in
+/// docs/status-item-rendering.md.
+fn glyph_ink_right_edge_px(coverage: &GlyphCoverage, canvas_px: u32) -> f64 {
     const INK_EDGE_COVERAGE_THRESHOLD: u8 = 127;
     let mut max_x = None;
     for y in 0..canvas_px {
         for x in 0..canvas_px {
-            if coverage[(y * canvas_px + x) as usize] > INK_EDGE_COVERAGE_THRESHOLD {
+            let at = (y * canvas_px + x) as usize;
+            let ink = coverage.spend[at]
+                .max(coverage.limit_track[at])
+                .max(coverage.limit_fill[at]);
+            if ink > INK_EDGE_COVERAGE_THRESHOLD {
                 max_x = Some(max_x.map_or(x, |m: u32| m.max(x)));
             }
         }
@@ -951,20 +1046,20 @@ fn layout_segments(
     (placements, cursor)
 }
 
-fn glyph_ink_right_edge_for(worst_used_percent: u8) -> f64 {
-    let coverage = glyph_coverage(GLYPH_PX, worst_used_percent as f64 / 100.0);
+fn glyph_ink_right_edge_for(icon_fill_percent: u8) -> f64 {
+    let coverage = glyph_coverage(GLYPH_PX, icon_fill_percent as f64 / 100.0);
     SIDE_PAD_PX as f64 + glyph_ink_right_edge_px(&coverage, GLYPH_PX)
 }
 
 /// Shares `layout_segments` with `render`, so the spans a click is
 /// tested against are the frames the chips were actually drawn at.
-pub fn chip_spans(segments: &[StatusItemSegment], worst_used_percent: u8) -> Vec<ChipSpan> {
+pub fn chip_spans(segments: &[StatusItemSegment], icon_fill_percent: u8) -> Vec<ChipSpan> {
     if segments.is_empty() {
         return Vec::new();
     }
     let ink = measure_segments(segments);
     let (placements, _) =
-        layout_segments(segments, &ink, glyph_ink_right_edge_for(worst_used_percent));
+        layout_segments(segments, &ink, glyph_ink_right_edge_for(icon_fill_percent));
     placements
         .into_iter()
         .enumerate()
@@ -997,17 +1092,17 @@ pub fn chip_at(spans: &[ChipSpan], icon_width_px: u32, x: f64) -> Option<usize> 
 pub fn render(
     segments: &[StatusItemSegment],
     highlighted: bool,
-    worst_used_percent: u8,
+    icon_fill_percent: u8,
     dark: bool,
 ) -> (Vec<u8>, u32, u32) {
-    let used_fraction = worst_used_percent as f64 / 100.0;
+    let used_fraction = icon_fill_percent as f64 / 100.0;
     let coverage = glyph_coverage(GLYPH_PX, used_fraction);
     let figure_font = text::load_font(text_font_size_pt());
     let slug_font = text::load_ui_font(slug_font_size_pt());
 
     let ink = measure_segments(segments);
     let (placements, content_ink_right) =
-        layout_segments(segments, &ink, glyph_ink_right_edge_for(worst_used_percent));
+        layout_segments(segments, &ink, glyph_ink_right_edge_for(icon_fill_percent));
 
     let placed_anything = placements.iter().any(Option::is_some);
     let total_w = if placed_anything {
@@ -1022,24 +1117,7 @@ pub fn render(
         draw_highlight_background(&mut buf, total_w, total_h, dark);
     }
 
-    let ink_color = StatusItemColor::Neutral.rgba(dark);
-    for y in 0..GLYPH_PX {
-        for x in 0..GLYPH_PX {
-            let a = coverage[(y * GLYPH_PX + x) as usize];
-            if a == 0 {
-                continue;
-            }
-            let blended = ((ink_color.3 as u16 * a as u16) / 255) as u8;
-            blend_pixel(
-                &mut buf,
-                total_w,
-                total_h,
-                SIDE_PAD_PX + x,
-                y,
-                (ink_color.0, ink_color.1, ink_color.2, blended),
-            );
-        }
-    }
+    draw_glyph(&mut buf, total_w, total_h, SIDE_PAD_PX, &coverage, dark);
 
     for (seg, placement) in segments.iter().zip(placements.iter()) {
         let Some(placement) = placement else { continue };
@@ -1073,24 +1151,6 @@ pub fn render(
     }
 
     (buf, total_w, total_h)
-}
-
-pub fn plain_glyph_rgba(worst_used_percent: u8) -> (Vec<u8>, u32, u32) {
-    let used_fraction = worst_used_percent as f64 / 100.0;
-    let coverage = glyph_coverage(GLYPH_PX, used_fraction);
-    let total_w = SIDE_PAD_PX * 2 + GLYPH_PX;
-    let mut rgba = vec![0u8; (total_w * GLYPH_PX * 4) as usize];
-    for y in 0..GLYPH_PX {
-        for x in 0..GLYPH_PX {
-            let a = coverage[(y * GLYPH_PX + x) as usize];
-            let idx = (((y * total_w) + SIDE_PAD_PX + x) * 4) as usize;
-            rgba[idx] = 0xff;
-            rgba[idx + 1] = 0xff;
-            rgba[idx + 2] = 0xff;
-            rgba[idx + 3] = a;
-        }
-    }
-    (rgba, total_w, GLYPH_PX)
 }
 
 #[cfg(test)]
@@ -1144,18 +1204,18 @@ mod tests {
             .collect()
     }
 
-    fn spans(segs: &[StatusItemSegment], worst_used_percent: u8) -> Vec<Option<InkSpan>> {
+    fn spans(segs: &[StatusItemSegment], icon_fill_percent: u8) -> Vec<Option<InkSpan>> {
         let ink = measure_segments(segs);
         let (placements, _) =
-            layout_segments(segs, &ink, glyph_ink_right_edge_for(worst_used_percent));
+            layout_segments(segs, &ink, glyph_ink_right_edge_for(icon_fill_percent));
         placements
             .into_iter()
             .map(|p| p.map(|p| p.span()))
             .collect()
     }
 
-    fn figure_spans(segs: &[StatusItemSegment], worst_used_percent: u8) -> Vec<InkSpan> {
-        spans(segs, worst_used_percent)
+    fn figure_spans(segs: &[StatusItemSegment], icon_fill_percent: u8) -> Vec<InkSpan> {
+        spans(segs, icon_fill_percent)
             .into_iter()
             .zip(segs)
             .filter(|(_, seg)| matches!(seg, StatusItemSegment::Figure { .. }))
@@ -1752,45 +1812,110 @@ mod tests {
         }
     }
 
-    #[test]
-    fn glyph_has_some_ink() {
-        let cov = glyph_coverage(GLYPH_PX, 0.5);
-        assert!(
-            cov.iter().any(|&a| a > 0),
-            "glyph must have some opaque pixels"
-        );
+    fn ink_pixels(cov: &GlyphCoverage) -> Vec<u8> {
+        cov.spend
+            .iter()
+            .zip(&cov.limit_track)
+            .zip(&cov.limit_fill)
+            .map(|((&s, &t), &f)| s.max(t).max(f))
+            .collect()
     }
 
     #[test]
-    fn the_tail_renders_even_at_zero_percent_used() {
+    fn the_mark_always_reads_as_three_chevrons() {
         let cov = glyph_coverage(GLYPH_PX, 0.0);
         assert!(
-            cov.iter().any(|&a| a > 0),
-            "the tail (and track) must still draw at 0% used"
+            cov.spend.iter().any(|&a| a > 200),
+            "the two spend chevrons are not a gauge and must draw solid at 0% used"
+        );
+        assert!(
+            cov.limit_track.iter().any(|&a| a > 32),
+            "the limit chevron's track must still draw at 0% used, or the mark loses a chevron"
         );
     }
 
     #[test]
-    fn arc_sweep_grows_with_used_fraction() {
+    fn the_spend_chevrons_never_move_with_the_gauge() {
         let empty = glyph_coverage(GLYPH_PX, 0.0);
         let full = glyph_coverage(GLYPH_PX, 1.0);
-        let count_ink = |cov: &[u8]| cov.iter().filter(|&&a| a > 32).count();
+        assert_eq!(
+            empty.spend, full.spend,
+            "spend is rising, not a gauge: its two chevrons are identical at either extreme"
+        );
+        assert_eq!(
+            empty.limit_track, full.limit_track,
+            "the limit chevron's track is drawn at full extent whatever the gauge reads"
+        );
+    }
+
+    #[test]
+    fn the_gauge_fills_the_limit_chevron_from_its_vertex_up() {
+        let lit = |cov: &GlyphCoverage| cov.limit_fill.iter().filter(|&&a| a > 32).count();
+        let counts: Vec<usize> = [0.0, 0.25, 0.5, 0.75, 1.0]
+            .iter()
+            .map(|&f| lit(&glyph_coverage(GLYPH_PX, f)))
+            .collect();
         assert!(
-            count_ink(&full) > count_ink(&empty) + 50,
-            "a fully-used arc should paint substantially more ink than an empty one"
+            counts.windows(2).all(|pair| pair[1] > pair[0]),
+            "the bright pass must grow monotonically with used_fraction, got {counts:?}"
+        );
+
+        let empty = glyph_coverage(GLYPH_PX, 0.0);
+        let full = glyph_coverage(GLYPH_PX, 1.0);
+        assert!(
+            counts[0] > 0,
+            "at 0% the chevron's own vertex is still the bright point"
+        );
+        assert!(
+            full.limit_track
+                .iter()
+                .zip(&full.limit_fill)
+                .all(|(&track, &fill)| track == 0 || fill > 0),
+            "at 100% the bright pass must cover the whole chevron the track drew"
+        );
+        assert!(
+            lowest_lit_row(&empty.limit_fill) < GLYPH_PX,
+            "the vertex must actually paint something at 0%"
+        );
+        assert!(
+            highest_lit_row(&full.limit_fill) < highest_lit_row(&empty.limit_fill),
+            "filling reaches upward toward the arm-tips, so the topmost lit row rises"
+        );
+    }
+
+    fn highest_lit_row(layer: &[u8]) -> u32 {
+        (0..GLYPH_PX)
+            .find(|&y| (0..GLYPH_PX).any(|x| layer[(y * GLYPH_PX + x) as usize] > 32))
+            .unwrap_or(GLYPH_PX)
+    }
+
+    fn lowest_lit_row(layer: &[u8]) -> u32 {
+        (0..GLYPH_PX)
+            .rev()
+            .find(|&y| (0..GLYPH_PX).any(|x| layer[(y * GLYPH_PX + x) as usize] > 32))
+            .unwrap_or(GLYPH_PX)
+    }
+
+    #[test]
+    fn the_gauge_sits_entirely_above_the_spend_chevrons() {
+        let cov = glyph_coverage(GLYPH_PX, 1.0);
+        assert!(
+            lowest_lit_row(&cov.limit_fill) < highest_lit_row(&cov.spend),
+            "the limit presses down from above; it must never overlap the spend chevrons"
         );
     }
 
     #[test]
     fn glyph_ink_bounding_box_is_in_the_target_band() {
         let cov = glyph_coverage(GLYPH_PX, 1.0);
+        let ink = ink_pixels(&cov);
         let mut min_x = GLYPH_PX;
         let mut max_x = 0i64;
         let mut min_y = GLYPH_PX;
         let mut max_y = 0i64;
         for y in 0..GLYPH_PX {
             for x in 0..GLYPH_PX {
-                if cov[(y * GLYPH_PX + x) as usize] > 32 {
+                if ink[(y * GLYPH_PX + x) as usize] > 32 {
                     min_x = min_x.min(x);
                     max_x = max_x.max(x as i64);
                     min_y = min_y.min(y);
@@ -1800,13 +1925,15 @@ mod tests {
         }
         let width = max_x - min_x as i64 + 1;
         let height = max_y - min_y as i64 + 1;
+        // The mark is tall and narrow, its own 12.6x24.1 grid box: the
+        // target is set on the height, and the width follows from it.
         assert!(
-            (26..=34).contains(&width),
-            "ink width {width}px should be roughly 28-32px (14-16pt @2x)"
+            (28..=32).contains(&height),
+            "ink height {height}px should be roughly 30px (15pt @2x)"
         );
         assert!(
-            (26..=34).contains(&height),
-            "ink height {height}px should be roughly 28-32px (14-16pt @2x)"
+            (14..=18).contains(&width),
+            "ink width {width}px should follow the mark's own aspect, roughly 16px"
         );
     }
 
@@ -1815,12 +1942,6 @@ mod tests {
         let (buf, w, h) = render(&[], false, 0, false);
         assert_eq!((w, h), (SIDE_PAD_PX * 2 + GLYPH_PX, GLYPH_PX));
         assert_eq!(buf.len(), (w * h * 4) as usize);
-    }
-
-    #[test]
-    fn every_bare_glyph_path_produces_the_same_image_width() {
-        assert_eq!(plain_glyph_rgba(50).1, render(&[], false, 50, false).1);
-        assert_eq!(plain_glyph_rgba(50).1, render(&[], true, 50, false).1);
     }
 
     #[test]
@@ -1840,8 +1961,7 @@ mod tests {
     }
 
     #[test]
-    fn worst_used_percent_never_changes_the_bare_glyph_width() {
-        assert_eq!(plain_glyph_rgba(0).1, plain_glyph_rgba(100).1);
+    fn icon_fill_percent_never_changes_the_bare_glyph_width() {
         assert_eq!(
             render(&[], false, 0, false).1,
             render(&[], false, 100, false).1

@@ -2,19 +2,44 @@ import type * as React from 'react'
 import type { SubscriptionState } from '../indicators/status-dot'
 import styles from './menu-bar-tile.module.css'
 
-export function QuotaGlyph({ size = 15 }: { size?: number }) {
+// The brand mark as the menu bar draws it, in the design system's own
+// preview of that bar: two spend chevrons at full colour, and the limit
+// chevron twice — faint at full extent, saturated over the part `used`
+// has reached. `status_item_render.rs` is the drawing that actually
+// ships; this one stands for it inside the design system.
+export function QuotaGlyph({ size = 15, used = 0 }: { size?: number; used?: number }) {
+  const filled = Math.max(0, Math.min(1, used / 100))
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={styles.glyph}>
-      <circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeWidth="1.4" opacity="0.28" />
+    <svg
+      width={(size * MARK_ASPECT).toFixed(2)}
+      height={size}
+      viewBox="7.7 2.7 12.6 24.1"
+      fill="none"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={styles.glyph}
+    >
+      <path d={LIMIT_CHEVRON} className={styles.limitTrack} />
       <path
-        d="M4.46 12.02a5.4 5.4 0 1 1 7.08 0"
-        stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
+        d={LIMIT_CHEVRON}
+        className={styles.limitFill}
+        pathLength={1}
+        // Each arm is half the path, and both fill away from the vertex
+        // the two meet at, so the visible run is centred on it.
+        strokeDasharray={`${filled} ${1 - filled}`}
+        strokeDashoffset={(filled / 2 - 0.5).toFixed(4)}
       />
+      <path d="M9 18 L14 13 L19 18" className={styles.spend} />
+      <path d="M9 25.5 L14 20.5 L19 25.5" className={styles.spend} />
     </svg>
   )
 }
+
+const LIMIT_CHEVRON = 'M9 4 L14 9 L19 4'
+// The mark's own ink box on its 28-unit grid, round caps included; the
+// viewBox above is that box, so the drawn width follows from it.
+const MARK_ASPECT = 12.6 / 24.1
 
 function AttentionMark() {
   return (
@@ -46,6 +71,16 @@ export interface MenuBarTileProps {
   style?: React.CSSProperties
 }
 
+// The gauge's own default source: the arithmetic mean of every figure
+// that reports one.
+function meanUsed(pins: PinnedFigure[]): number {
+  const figures = pins
+    .map((pin) => pin.used)
+    .filter((used): used is number => typeof used === 'number')
+  if (figures.length === 0) return 0
+  return Math.round(figures.reduce((sum, used) => sum + used, 0) / figures.length)
+}
+
 function tintLevel(pin: PinnedFigure): 'amber' | 'red' | null {
   if (pin.state === 'broken' || pin.state === 'behind') return 'amber'
   if (typeof pin.used === 'number' && pin.used >= 90) return 'red'
@@ -56,7 +91,7 @@ function tintLevel(pin: PinnedFigure): 'amber' | 'red' | null {
 export function MenuBarTile({ pins = [], onClick, showStrip = true, style }: MenuBarTileProps) {
   const tile = (
     <button type="button" onClick={onClick} className={styles.tile}>
-      <QuotaGlyph />
+      <QuotaGlyph used={meanUsed(pins)} />
       {pins.map((pin, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: PinnedFigure has no stable id, and each pin's span carries no internal state, so index-keyed reuse is safe.
         <span key={i} className={styles.pin} data-attention={tintLevel(pin) ?? undefined}>

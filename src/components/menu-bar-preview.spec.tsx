@@ -58,7 +58,7 @@ describe('the menu bar preview', () => {
     const painted = stubCanvas()
     renderStatusItemPreview.mockResolvedValue(IMAGE)
 
-    render(<MenuBarPreview segments={[figure('18%')]} worstUsedPercent={18} />)
+    render(<MenuBarPreview segments={[figure('18%')]} iconFillPercent={18} />)
 
     await waitFor(() => expect(painted).toHaveLength(1))
     expect(painted[0].width).toBe(WIDTH)
@@ -70,7 +70,7 @@ describe('the menu bar preview', () => {
     stubCanvas()
     renderStatusItemPreview.mockResolvedValue(IMAGE)
 
-    render(<MenuBarPreview segments={[figure('18%')]} worstUsedPercent={18} />)
+    render(<MenuBarPreview segments={[figure('18%')]} iconFillPercent={18} />)
 
     const canvas = await waitFor(() => {
       const found = screen.getByLabelText('Menu bar preview').querySelector('canvas')
@@ -87,17 +87,17 @@ describe('the menu bar preview', () => {
     stubCanvas()
     renderStatusItemPreview.mockResolvedValue(IMAGE)
 
-    const { rerender } = render(<MenuBarPreview segments={[figure('18%')]} worstUsedPercent={18} />)
+    const { rerender } = render(<MenuBarPreview segments={[figure('18%')]} iconFillPercent={18} />)
     await waitFor(() => expect(renderStatusItemPreview).toHaveBeenCalledTimes(1))
 
     // A new array holding the same arrangement is the same arrangement.
-    rerender(<MenuBarPreview segments={[figure('18%')]} worstUsedPercent={18} />)
+    rerender(<MenuBarPreview segments={[figure('18%')]} iconFillPercent={18} />)
     await waitFor(() => expect(renderStatusItemPreview).toHaveBeenCalledTimes(1))
 
     rerender(
       <MenuBarPreview
         segments={[figure('18%'), { kind: 'chip', slug: 'FAB', color: 'blue', groupId: 'g1' }]}
-        worstUsedPercent={18}
+        iconFillPercent={18}
       />,
     )
     await waitFor(() => expect(renderStatusItemPreview).toHaveBeenCalledTimes(2))
@@ -109,7 +109,7 @@ describe('the menu bar preview', () => {
     stubCanvas()
     renderStatusItemPreview.mockResolvedValue(null)
 
-    render(<MenuBarPreview segments={[figure('18%')]} worstUsedPercent={18} />)
+    render(<MenuBarPreview segments={[figure('18%')]} iconFillPercent={18} />)
 
     await waitFor(() => expect(renderStatusItemPreview).toHaveBeenCalled())
     const strip = screen.getByLabelText('Menu bar preview')

@@ -240,15 +240,29 @@ reads the stylesheet's own text through `?raw`, the same as a token file.
 
 ## App icons
 
-`src/design-system/assets/app-icon.svg` is the source vector behind
-`src-tauri/icons/icon.icns`; `menubar-glyph.svg` in the same directory
-is the source behind the procedurally rendered status item glyph in
-`status_item_render.rs`, so a glyph change only needs that file's
-constants updated, never a new raster export. Regenerating the app icon
-itself has no automated pipeline: rasterize the SVG at each of the
-standard icon sizes, 16 through 1024, pack the results into a standard
-`.iconset` directory, and convert with `iconutil -c icns`, which ships
-with Xcode's command line tools.
+`docs/brand/` holds the brand assets the product presents itself with
+outside the interface: `quotos-lockup-light.svg` and
+`quotos-lockup-dark.svg`, the mark plus the `supolka(quotos)│` wordmark,
+which `README.md` embeds as a `<picture>` per colour scheme, and
+`quotos-mark-light.svg` / `quotos-mark-dark.svg`, the mark on its own.
+Nothing in the application imports them; they are documentation assets.
+
+Inside the application there are two source vectors.
+`src/design-system/assets/app-icon.svg` is the one behind
+`src-tauri/icons/icon.icns` and the PNGs beside it;
+`menubar-glyph.svg` in the same directory is the one behind the
+procedurally rendered status item mark in `status_item_render.rs`, so a
+change to the mark only needs that file's constants updated, never a new
+raster export. The panel's own header sets the wordmark as live text
+through the design system's `Wordmark`, not as an asset.
+
+Regenerating the app icon has no automated pipeline: rasterize the SVG
+at each of the standard icon sizes, 16 through 1024, pack the results
+into a standard `.iconset` directory, and convert with `iconutil -c
+icns`, which ships with Xcode's command line tools. Whatever does the
+rasterizing must not write metadata of its own into the result; the
+brand SVGs are tracked with theirs stripped, and a PNG in
+`src-tauri/icons/` should carry nothing but `IHDR`, `IDAT` and `IEND`.
 
 ## Screenshots
 

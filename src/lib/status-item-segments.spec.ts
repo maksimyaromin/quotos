@@ -4,7 +4,7 @@ import { pinMemberKey } from './pin-groups'
 import {
   buildStatusItemSegments,
   buildStatusItemTooltip,
-  computeWorstActiveLimitPercent,
+  computeIconFillPercent,
 } from './status-item-segments'
 
 function window(overrides: Partial<LimitWindowEntity> & { id: string }): LimitWindowEntity {
@@ -224,24 +224,54 @@ describe('buildStatusItemTooltip', () => {
   })
 })
 
-describe('computeWorstActiveLimitPercent', () => {
-  test('is 0 when nothing tracked has any active numeric window', () => {
-    expect(computeWorstActiveLimitPercent([])).toBe(0)
-    expect(computeWorstActiveLimitPercent([subscription({ id: 'a' })])).toBe(0)
+describe('computeIconFillPercent', () => {
+  const twoHeadlines = [
+    subscription({ id: 'a', used: 20, windows: [window({ id: 'w1', used: 61 })] }),
+    subscription({ id: 'b', used: 50, windows: [window({ id: 'w2', used: 74 })] }),
+  ]
+
+  test('is 0 when nothing tracked reports a headline figure', () => {
+    expect(computeIconFillPercent([])).toBe(0)
+    expect(computeIconFillPercent([subscription({ id: 'a' })])).toBe(0)
   })
 
-  test('is the max used% across every active window, pinned or not', () => {
+  test('defaults to the arithmetic mean of every headline figure', () => {
+    expect(computeIconFillPercent(twoHeadlines)).toBe(35)
+  })
+
+  test('skips a subscription with no headline figure rather than counting it as zero', () => {
+    expect(computeIconFillPercent([...twoHeadlines, subscription({ id: 'c' })])).toBe(35)
+  })
+
+  test('rounds the mean to a whole percent', () => {
     const subs = [
-      subscription({ id: 'a', windows: [window({ id: 'w1', used: 61, isActive: true })] }),
-      subscription({
-        id: 'b',
-        windows: [
-          window({ id: 'w2', used: 74, isActive: true }),
-          window({ id: 'w3', used: 99, isActive: false }),
-        ],
-      }),
+      subscription({ id: 'a', used: 10 }),
+      subscription({ id: 'b', used: 10 }),
+      subscription({ id: 'c', used: 11 }),
     ]
-    expect(computeWorstActiveLimitPercent(subs)).toBe(74)
+    expect(computeIconFillPercent(subs)).toBe(10)
+  })
+
+  test('a designated window overrides the mean', () => {
+    expect(computeIconFillPercent(twoHeadlines, pinMemberKey('b', 'w2'))).toBe(74)
+  })
+
+  test('a designated window need not be pinned', () => {
+    const subs = [subscription({ id: 'a', used: 20, windows: [window({ id: 'w1', used: 61 })] })]
+    expect(computeIconFillPercent(subs, pinMemberKey('a', 'w1'))).toBe(61)
+  })
+
+  test('falls back to the mean when the designated window reports nothing', () => {
+    expect(computeIconFillPercent(twoHeadlines, pinMemberKey('b', 'missing'))).toBe(35)
+    expect(computeIconFillPercent(twoHeadlines, pinMemberKey('gone', 'w2'))).toBe(35)
+    const noFigure = [
+      subscription({ id: 'a', used: 20, windows: [window({ id: 'w1', used: null })] }),
+    ]
+    expect(computeIconFillPercent(noFigure, pinMemberKey('a', 'w1'))).toBe(20)
+  })
+
+  test('a malformed key falls back to the mean rather than throwing', () => {
+    expect(computeIconFillPercent(twoHeadlines, 'not-a-member-key')).toBe(35)
   })
 })
 

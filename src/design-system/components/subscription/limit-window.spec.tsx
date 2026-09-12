@@ -56,3 +56,44 @@ describe("the pin button is a plain toggle: where a pin sits is the customize sc
     expect(onTogglePin).toHaveBeenCalledWith('w1')
   })
 })
+
+describe("the menu bar mark's fill source is its own toggle beside the pin", () => {
+  test('choosing this window reports its id and nothing else', () => {
+    const onToggleIconSource = vi.fn()
+    render(
+      <LimitWindow id="weekly" name="Weekly" used={45} onToggleIconSource={onToggleIconSource} />,
+    )
+    fireEvent.click(screen.getByLabelText('Fill the menu bar icon from this'))
+    expect(onToggleIconSource).toHaveBeenCalledWith('weekly')
+  })
+
+  test('the chosen window says so, and offers to stop rather than to start', () => {
+    render(<LimitWindow id="weekly" name="Weekly" used={45} iconSource />)
+    const button = screen.getByLabelText('Stop filling the menu bar icon from this')
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('it is a separate affordance from the pin, not the same button twice', () => {
+    const onTogglePin = vi.fn()
+    const onToggleIconSource = vi.fn()
+    render(
+      <LimitWindow
+        id="weekly"
+        name="Weekly"
+        used={45}
+        onTogglePin={onTogglePin}
+        onToggleIconSource={onToggleIconSource}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText('Show in menu bar'))
+    expect(onTogglePin).toHaveBeenCalledWith('weekly')
+    expect(onToggleIconSource).not.toHaveBeenCalled()
+  })
+
+  test('a window with no id cannot be chosen, the same as it cannot be pinned', () => {
+    const onToggleIconSource = vi.fn()
+    render(<LimitWindow name="Weekly" used={45} onToggleIconSource={onToggleIconSource} />)
+    fireEvent.click(screen.getByLabelText('Fill the menu bar icon from this'))
+    expect(onToggleIconSource).not.toHaveBeenCalled()
+  })
+})

@@ -1,15 +1,21 @@
-<div align="center">
-<img src="src-tauri/icons/128x128.png" width="96" height="96" alt="Quotos icon">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/brand/quotos-lockup-dark.svg" />
+    <img alt="supolka(quotos)" src="./docs/brand/quotos-lockup-light.svg" width="300" />
+  </picture>
+</p>
 
-# Quotos
+<p align="center">A macOS menu bar app that shows, at a glance, how much of each Claude subscription is left.</p>
 
-A macOS menu bar app that shows, at a glance, how much of each Claude
-subscription is left.
+<p align="center">
+  <a href="https://github.com/maksimyaromin/quotos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/maksimyaromin/quotos/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/maksimyaromin/quotos" /></a>
+  <img alt="macOS 15+" src="https://img.shields.io/badge/macOS-15%2B-lightgrey" />
+</p>
 
-[![CI](https://github.com/maksimyaromin/quotos/actions/workflows/ci.yml/badge.svg)](https://github.com/maksimyaromin/quotos/actions/workflows/ci.yml) [![License](https://img.shields.io/github/license/maksimyaromin/quotos)](LICENSE) ![macOS](https://img.shields.io/badge/macOS-15%2B-lightgrey)
-
-<img src="docs/images/panel.png" width="380" alt="The Quotos panel open, showing two tracked Claude accounts with their session and weekly usage">
-</div>
+<p align="center">
+  <img src="docs/images/panel.png" width="380" alt="The Quotos panel open, showing two tracked Claude accounts with their session and weekly usage" />
+</p>
 
 Quotos reads accounts directly from the machine, with no server and no
 account of its own. See [the design brief](docs/design/brief.md) for
@@ -66,7 +72,7 @@ only one.
 
 Quotos appears in the menu bar as a single status item:
 
-<img src="docs/images/menu-bar.png" alt="The Quotos status item in the menu bar, reading 25% 11% 0% and 0% 0% across two tracked accounts">
+<img src="docs/images/menu-bar.png" alt="The Quotos status item in the menu bar: the mark, then one pin group opened out to its two figures, a second group rolled up to its chip, and one standalone pin">
 
 Click it to open the panel; it starts empty, with an "Add subscription"
 button that lists every Claude Code account Quotos found on the Mac.

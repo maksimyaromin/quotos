@@ -128,6 +128,26 @@ pub(crate) fn save_pin_groups(
     })
 }
 
+/// Which single tracked window drives the menu bar mark's gauge; none
+/// is the arithmetic-mean default.
+#[tauri::command(async)]
+pub(crate) fn load_icon_fill_source(state: tauri::State<'_, AppState>) -> Option<String> {
+    state.tracked_store.icon_fill_source()
+}
+
+#[tauri::command(async)]
+pub(crate) fn save_icon_fill_source(
+    state: tauri::State<'_, AppState>,
+    key: Option<String>,
+) -> Result<(), String> {
+    state
+        .tracked_store
+        .save_icon_fill_source(key)
+        .inspect_err(|err| {
+            eprintln!("quotos: saving the menu bar icon's fill source failed: {err}");
+        })
+}
+
 #[tauri::command(async)]
 pub(crate) fn statusline_status(
     state: tauri::State<'_, AppState>,

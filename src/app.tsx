@@ -14,7 +14,7 @@ import {
 } from '@/components/icons'
 import { SubscriptionsScreen } from '@/components/subscriptions-screen'
 import { UndoRow } from '@/components/undo-row'
-import { Button, IconButton, Panel, SubscriptionRow } from '@/design-system'
+import { Button, IconButton, Panel, SubscriptionRow, Wordmark } from '@/design-system'
 import { usePinGroups } from '@/hooks/use-pin-groups'
 import { useSubscriptions } from '@/hooks/use-subscriptions'
 import { layoutPinnedEntries, type PinnedEntry, pinMemberKey } from '@/lib/pin-groups'
@@ -67,7 +67,9 @@ export default function App() {
     subscriptions,
     trackedSubscriptions,
     statusItemSegments,
-    worstUsedPercent,
+    iconFillPercent,
+    iconFillSource,
+    toggleIconFillSource,
     refreshAll,
     refreshAccountById,
     togglePin,
@@ -305,11 +307,13 @@ export default function App() {
   return (
     <Panel
       title={
-        screen === 'manage'
-          ? 'Subscriptions'
-          : screen === 'customize'
-            ? 'Customize display'
-            : 'Quotos'
+        screen === 'manage' ? (
+          'Subscriptions'
+        ) : screen === 'customize' ? (
+          'Customize display'
+        ) : (
+          <Wordmark />
+        )
       }
       docked={!detached}
       beakLeft={beakLeft ?? undefined}
@@ -369,7 +373,7 @@ export default function App() {
       ) : screen === 'customize' ? (
         <CustomizeDisplayScreen
           preview={statusItemSegments}
-          worstUsedPercent={worstUsedPercent}
+          iconFillPercent={iconFillPercent}
           groups={customizeGroups}
           standalone={customizeStandalone}
           onAddToGroup={addMemberToGroup}
@@ -405,6 +409,7 @@ export default function App() {
             resetLabel: formatExactReset(w.resetsAt, nowDate),
             scope: w.scope,
             pinned: sub.pinnedWindowIds.includes(w.id),
+            iconSource: iconFillSource === pinMemberKey(sub.id, w.id),
           }))
           const headlineId = sub.headlineWindowId
           return (
@@ -431,6 +436,9 @@ export default function App() {
               onReadNow={() => refreshAccountById(sub.id)}
               onTogglePin={() => headlineId && togglePinnedWindow(sub.id, headlineId)}
               onToggleWindowPin={(windowId: string) => togglePinnedWindow(sub.id, windowId)}
+              onToggleWindowIconSource={(windowId: string) =>
+                toggleIconFillSource(sub.id, windowId)
+              }
               onToggleExpand={() => toggleExpand(sub.id)}
               onToggleMenu={() => setOpenMenuId((prev) => (prev === sub.id ? null : sub.id))}
               onRename={(next: string | null) => renameSubscription(sub.id, next)}

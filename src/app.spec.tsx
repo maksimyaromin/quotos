@@ -103,6 +103,8 @@ vi.mock('./lib/persistence', () => ({
   saveTracked: () => Promise.resolve(),
   loadPinGroups: () => Promise.resolve([]),
   savePinGroups: () => Promise.resolve(),
+  loadIconFillSource: () => Promise.resolve(null),
+  saveIconFillSource: () => Promise.resolve(),
 }))
 
 import App from './app'

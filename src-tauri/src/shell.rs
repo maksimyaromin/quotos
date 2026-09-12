@@ -79,13 +79,13 @@ pub(crate) fn to_segments(
 pub(crate) fn set_status_item_state(
     app: tauri::AppHandle,
     segments: Vec<StatusItemSegmentDto>,
-    worst_used_percent: u8,
+    icon_fill_percent: u8,
     tooltip: String,
 ) -> Result<(), String> {
     let Some(status_item) = app.tray_by_id("main-status-item") else {
         return Ok(());
     };
-    if !record_if_changed(&app, segments, worst_used_percent, tooltip) {
+    if !record_if_changed(&app, segments, icon_fill_percent, tooltip) {
         return Ok(());
     }
     repaint_status_item(&app, &status_item)
@@ -107,12 +107,12 @@ pub(crate) struct StatusItemImage {
 #[tauri::command]
 pub(crate) fn render_status_item_preview(
     segments: Vec<StatusItemSegmentDto>,
-    worst_used_percent: u8,
+    icon_fill_percent: u8,
 ) -> StatusItemImage {
     let (rgba, width, height) = status_item_render::render(
         &to_segments(&segments),
         false,
-        worst_used_percent,
+        icon_fill_percent,
         status_item_render::is_dark_mode(),
     );
     StatusItemImage {
@@ -125,7 +125,7 @@ pub(crate) fn render_status_item_preview(
 fn record_if_changed(
     app: &tauri::AppHandle,
     segments: Vec<StatusItemSegmentDto>,
-    worst_used_percent: u8,
+    icon_fill_percent: u8,
     tooltip: String,
 ) -> bool {
     let state = app.state::<AppState>();
@@ -133,19 +133,19 @@ fn record_if_changed(
         .last_status_item_segments
         .lock()
         .expect("last_status_item_segments mutex poisoned");
-    let mut last_worst = state
-        .last_status_item_worst_used_percent
+    let mut last_fill = state
+        .last_status_item_icon_fill_percent
         .lock()
-        .expect("last_status_item_worst_used_percent mutex poisoned");
+        .expect("last_status_item_icon_fill_percent mutex poisoned");
     let mut last_tooltip = state
         .last_status_item_tooltip
         .lock()
         .expect("last_status_item_tooltip mutex poisoned");
-    if *last == segments && *last_worst == worst_used_percent && *last_tooltip == tooltip {
+    if *last == segments && *last_fill == icon_fill_percent && *last_tooltip == tooltip {
         return false;
     }
     *last = segments;
-    *last_worst = worst_used_percent;
+    *last_fill = icon_fill_percent;
     *last_tooltip = tooltip;
     true
 }
@@ -217,10 +217,10 @@ fn repaint_status_item(
         .status_item_highlighted
         .lock()
         .expect("status_item_highlighted mutex poisoned");
-    let worst_used_percent = *state
-        .last_status_item_worst_used_percent
+    let icon_fill_percent = *state
+        .last_status_item_icon_fill_percent
         .lock()
-        .expect("last_status_item_worst_used_percent mutex poisoned");
+        .expect("last_status_item_icon_fill_percent mutex poisoned");
 
     status_item.set_title(Some("")).map_err(|e| e.to_string())?;
 
@@ -241,28 +241,19 @@ fn repaint_status_item(
         .last_status_item_chip_spans
         .lock()
         .expect("last_status_item_chip_spans mutex poisoned") =
-        status_item_render::chip_spans(&segs, worst_used_percent);
+        status_item_render::chip_spans(&segs, icon_fill_percent);
 
-    let icon_width_px = if segments.is_empty() && !highlighted {
-        let (rgba, w, h) = status_item_render::plain_glyph_rgba(worst_used_percent);
-        status_item
-            .set_icon(Some(Image::new_owned(rgba, w, h)))
-            .map_err(|e| e.to_string())?;
-        status_item
-            .set_icon_as_template(true)
-            .map_err(|e| e.to_string())?;
-        w
-    } else {
-        let dark = status_item_render::is_dark_mode();
-        let (rgba, w, h) = status_item_render::render(&segs, highlighted, worst_used_percent, dark);
-        status_item
-            .set_icon(Some(Image::new_owned(rgba, w, h)))
-            .map_err(|e| e.to_string())?;
-        status_item
-            .set_icon_as_template(false)
-            .map_err(|e| e.to_string())?;
-        w
-    };
+    // Never a template image: the mark is two-coloured and its gauge
+    // carries a third tone, all of which macOS would flatten to one.
+    let dark = status_item_render::is_dark_mode();
+    let (rgba, icon_width_px, h) =
+        status_item_render::render(&segs, highlighted, icon_fill_percent, dark);
+    status_item
+        .set_icon(Some(Image::new_owned(rgba, icon_width_px, h)))
+        .map_err(|e| e.to_string())?;
+    status_item
+        .set_icon_as_template(false)
+        .map_err(|e| e.to_string())?;
     let width_changed = {
         let mut last = state
             .last_icon_width_px

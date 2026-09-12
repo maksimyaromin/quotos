@@ -46,7 +46,7 @@ struct AppState {
     status_item_highlighted: Mutex<bool>,
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
     last_status_item_chip_spans: Mutex<Vec<status_item_render::ChipSpan>>,
-    last_status_item_worst_used_percent: Mutex<u8>,
+    last_status_item_icon_fill_percent: Mutex<u8>,
     last_status_item_tooltip: Mutex<String>,
     docked_target: Mutex<Option<DockedLayout>>,
     move_generation: Mutex<u64>,
@@ -64,6 +64,8 @@ pub fn run() {
             accounts::save_tracked,
             accounts::load_pin_groups,
             accounts::save_pin_groups,
+            accounts::load_icon_fill_source,
+            accounts::save_icon_fill_source,
             accounts::kick_scheduler,
             shell::hide_panel,
             shell::set_status_item_state,
@@ -90,7 +92,8 @@ pub fn run() {
             claim_single_instance_or_exit(&app_support_dir);
             migrate_legacy_statusline(&app_support_dir);
             let tracked_path = app_support_dir.join("tracked.json");
-            let (initial_rgba, initial_w, initial_h) = status_item_render::plain_glyph_rgba(0);
+            let (initial_rgba, initial_w, initial_h) =
+                status_item_render::render(&[], false, 0, status_item_render::is_dark_mode());
             let state = initial_app_state(app_support_dir, tracked_path, initial_w);
             idle::watch_screen_lock_state(state.screen_locked.clone());
             app.manage(state);
@@ -181,7 +184,7 @@ fn initial_app_state(
         status_item_highlighted: Mutex::new(false),
         last_status_item_segments: Mutex::new(Vec::new()),
         last_status_item_chip_spans: Mutex::new(Vec::new()),
-        last_status_item_worst_used_percent: Mutex::new(0),
+        last_status_item_icon_fill_percent: Mutex::new(0),
         last_status_item_tooltip: Mutex::new("Quotos".to_string()),
         docked_target: Mutex::new(None),
         move_generation: Mutex::new(0),

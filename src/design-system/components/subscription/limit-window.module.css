@@ -31,6 +31,17 @@
   color: var(--text-accent);
 }
 
+/* The second affordance on the row follows the pin button's own shape:
+   same frame, same selected treatment, a different mark. */
+.iconSourceButton {
+  composes: pinButton;
+}
+
+.iconSourceButton[data-selected="true"] {
+  background: var(--peach-muted);
+  color: var(--peach);
+}
+
 .name {
   flex: 1;
   min-width: 0;

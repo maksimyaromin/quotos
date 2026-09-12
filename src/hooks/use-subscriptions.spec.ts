@@ -30,10 +30,14 @@ const TRACKED = [
 
 const loadTracked = vi.fn(() => Promise.resolve(TRACKED))
 const saveTracked = vi.fn()
+const loadIconFillSource = vi.fn<() => Promise<string | null>>(() => Promise.resolve(null))
+const saveIconFillSource = vi.fn()
 
 vi.mock('@/lib/persistence', () => ({
   loadTracked: () => loadTracked(),
   saveTracked: (...args: unknown[]) => saveTracked(...args),
+  loadIconFillSource: () => loadIconFillSource(),
+  saveIconFillSource: (...args: unknown[]) => saveIconFillSource(...args),
 }))
 
 import { deriveAccountLabel, STOP_TRACKING_UNDO_MS, useSubscriptions } from './use-subscriptions'
@@ -1209,5 +1213,124 @@ describe('useSubscriptions display names are consistent between the panel and th
         config_dir: '~/.claude-team',
       }),
     ).toBe('Claude Team')
+  })
+})
+
+describe("the menu bar mark's fill source", () => {
+  const usage = (session: number, weekly: number) => ({
+    account_id: 'claude:claude',
+    provider: 'claude',
+    config_dir: '~/.claude',
+    fetched_at: new Date().toISOString(),
+    usage: {
+      limits: [
+        { kind: 'session', percent: session, is_active: true, resets_at: null, scope: null },
+        { kind: 'weekly', percent: weekly, is_active: true, resets_at: null, scope: null },
+      ],
+    },
+    profile: null,
+  })
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    fetchSnapshot.mockReset()
+    renderStatusItem.mockReset()
+    saveIconFillSource.mockReset()
+    loadIconFillSource.mockReset()
+    loadIconFillSource.mockResolvedValue(null)
+    fetchSnapshot.mockResolvedValue(usage(20, 60))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('with nothing chosen it is the mean of every headline figure', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.iconFillSource).toBeNull()
+    expect(result.current.iconFillPercent).toBe(result.current.trackedSubscriptions[0].used)
+  })
+
+  test('choosing a window overrides the mean and is saved', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    const windows = result.current.trackedSubscriptions[0].windows
+    const weekly = windows.find((w) => w.used === 60)
+    expect(weekly).toBeDefined()
+
+    act(() => {
+      result.current.toggleIconFillSource('claude:claude', weekly?.id as string)
+    })
+    await flush()
+
+    expect(result.current.iconFillPercent).toBe(60)
+    expect(saveIconFillSource).toHaveBeenLastCalledWith(result.current.iconFillSource)
+  })
+
+  test('choosing a second window replaces the first rather than adding to it', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    const windows = result.current.trackedSubscriptions[0].windows
+    const session = windows.find((w) => w.used === 20)?.id as string
+    const weekly = windows.find((w) => w.used === 60)?.id as string
+
+    act(() => {
+      result.current.toggleIconFillSource('claude:claude', session)
+    })
+    await flush()
+    expect(result.current.iconFillPercent).toBe(20)
+
+    act(() => {
+      result.current.toggleIconFillSource('claude:claude', weekly)
+    })
+    await flush()
+    expect(result.current.iconFillPercent).toBe(60)
+    expect(result.current.iconFillSource).toContain(weekly)
+    expect(result.current.iconFillSource).not.toContain(session)
+  })
+
+  test('choosing the same window again clears it back to the mean', async () => {
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    const weekly = result.current.trackedSubscriptions[0].windows.find((w) => w.used === 60)
+      ?.id as string
+
+    act(() => {
+      result.current.toggleIconFillSource('claude:claude', weekly)
+    })
+    await flush()
+    act(() => {
+      result.current.toggleIconFillSource('claude:claude', weekly)
+    })
+    await flush()
+
+    expect(result.current.iconFillSource).toBeNull()
+    expect(saveIconFillSource).toHaveBeenLastCalledWith(null)
+  })
+
+  test('a saved choice is loaded and drives the gauge from the first read', async () => {
+    loadIconFillSource.mockResolvedValue('claude%3Aclaude::weekly')
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+
+    expect(result.current.iconFillSource).toBe('claude%3Aclaude::weekly')
+    expect(result.current.iconFillPercent).toBe(60)
+    expect(saveIconFillSource).not.toHaveBeenCalled()
+  })
+
+  test('untracking the chosen window returns the gauge to the mean', async () => {
+    loadIconFillSource.mockResolvedValue('claude%3Aclaude::weekly')
+    const { result } = renderHook(() => useSubscriptions())
+    await flush()
+    expect(result.current.iconFillPercent).toBe(60)
+
+    act(() => {
+      result.current.stopTracking('claude:claude')
+    })
+    await flush()
+
+    expect(result.current.iconFillSource).toBeNull()
+    expect(saveIconFillSource).toHaveBeenLastCalledWith(null)
   })
 })
