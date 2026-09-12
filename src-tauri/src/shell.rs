@@ -24,6 +24,11 @@ pub(crate) struct StatusItemSegmentDto {
     text: String,
     color: String,
     group_start: bool,
+    /// Set when the figure stands for a pin group, or for one member of
+    /// an opened-out group; `group_at_click` reads it to tell a click on
+    /// a group apart from one that should open the panel.
+    #[serde(default)]
+    group_id: Option<String>,
 }
 
 #[tauri::command]
@@ -70,6 +75,38 @@ fn record_if_changed(
     true
 }
 
+/// Which pin group's figure a left click landed on, if any. `click_x`
+/// and the item's own `rect` arrive in the same units from the same
+/// event, so their ratio is all this needs.
+pub(crate) fn group_at_click(
+    app: &tauri::AppHandle,
+    click_x: f64,
+    item_x: f64,
+    item_width: f64,
+) -> Option<String> {
+    if item_width <= 0.0 {
+        return None;
+    }
+    let state = app.state::<AppState>();
+    let spans = state
+        .last_status_item_figure_spans
+        .lock()
+        .expect("last_status_item_figure_spans mutex poisoned")
+        .clone();
+    let icon_width_px = *state
+        .last_icon_width_px
+        .lock()
+        .expect("last_icon_width_px mutex poisoned");
+    let index =
+        status_item_render::figure_at(&spans, icon_width_px, (click_x - item_x) / item_width)?;
+    state
+        .last_status_item_segments
+        .lock()
+        .expect("last_status_item_segments mutex poisoned")
+        .get(index)
+        .and_then(|segment| segment.group_id.clone())
+}
+
 pub(crate) fn set_status_item_highlighted(app: &tauri::AppHandle, highlighted: bool) {
     let Some(status_item) = app.tray_by_id("main-status-item") else {
         return;
@@ -111,6 +148,27 @@ fn repaint_status_item(
         .set_tooltip(Some(&tooltip))
         .map_err(|e| e.to_string())?;
 
+    let segs: Vec<status_item_render::StatusItemSegment> = segments
+        .iter()
+        .map(|s| status_item_render::StatusItemSegment {
+            text: s.text.clone(),
+            color: match s.color.as_str() {
+                "amber" => status_item_render::StatusItemColor::Amber,
+                "red" => status_item_render::StatusItemColor::Red,
+                _ => status_item_render::StatusItemColor::Neutral,
+            },
+            group_start: s.group_start,
+        })
+        .collect();
+
+    // Cached from the same layout the figures were drawn at, so a click
+    // resolves against where they really landed.
+    *state
+        .last_status_item_figure_spans
+        .lock()
+        .expect("last_status_item_figure_spans mutex poisoned") =
+        status_item_render::figure_spans(&segs, worst_used_percent);
+
     let icon_width_px = if segments.is_empty() && !highlighted {
         let (rgba, w, h) = status_item_render::plain_glyph_rgba(worst_used_percent);
         status_item
@@ -121,18 +179,6 @@ fn repaint_status_item(
             .map_err(|e| e.to_string())?;
         w
     } else {
-        let segs: Vec<status_item_render::StatusItemSegment> = segments
-            .into_iter()
-            .map(|s| status_item_render::StatusItemSegment {
-                text: s.text,
-                color: match s.color.as_str() {
-                    "amber" => status_item_render::StatusItemColor::Amber,
-                    "red" => status_item_render::StatusItemColor::Red,
-                    _ => status_item_render::StatusItemColor::Neutral,
-                },
-                group_start: s.group_start,
-            })
-            .collect();
         let dark = status_item_render::is_dark_mode();
         let (rgba, w, h) = status_item_render::render(&segs, highlighted, worst_used_percent, dark);
         status_item

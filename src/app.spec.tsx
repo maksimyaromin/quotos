@@ -12,6 +12,11 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 
 const hidePanel = vi.fn()
 const fetchSnapshotSpy = vi.fn()
+const renderStatusItem = vi.fn()
+let trayGroupClick: ((groupId: string) => void) | null = null
+
+const ONE_LIMIT = [{ kind: 'session', percent: 10, is_active: true, resets_at: null, scope: null }]
+let usageLimits: unknown[] = ONE_LIMIT
 let visibilityCallback: ((visible: boolean) => void) | null = null
 
 vi.mock('./lib/tauri-client', () => ({
@@ -23,9 +28,7 @@ vi.mock('./lib/tauri-client', () => ({
       provider: 'claude',
       config_dir: '~/.claude',
       fetched_at: new Date().toISOString(),
-      usage: {
-        limits: [{ kind: 'session', percent: 10, is_active: true, resets_at: null, scope: null }],
-      },
+      usage: { limits: usageLimits },
       profile: null,
     })
   },
@@ -42,13 +45,22 @@ vi.mock('./lib/tauri-client', () => ({
   cancelSignIn: () => Promise.resolve(),
   forgetSignIn: () => Promise.resolve(),
   onSignInFinished: () => Promise.resolve(() => {}),
-  renderStatusItem: () => Promise.resolve(),
+  renderStatusItem: (...args: unknown[]) => {
+    renderStatusItem(...args)
+    return Promise.resolve()
+  },
   onQuotaRefresh: () => Promise.resolve(() => {}),
   kickScheduler: () => Promise.resolve(),
   statuslineStatus: () => Promise.resolve({ kind: 'not_installed' }),
   statuslineEnable: () => Promise.resolve(),
   statuslineDisable: () => Promise.resolve(),
   onPanelBeakOffset: () => Promise.resolve(() => {}),
+  onStatusItemGroupClicked: (callback: (groupId: string) => void) => {
+    trayGroupClick = callback
+    return Promise.resolve(() => {
+      trayGroupClick = null
+    })
+  },
 }))
 
 vi.mock('./lib/persistence', () => ({
@@ -63,6 +75,8 @@ vi.mock('./lib/persistence', () => ({
       },
     ]),
   saveTracked: () => Promise.resolve(),
+  loadPinGroups: () => Promise.resolve([]),
+  savePinGroups: () => Promise.resolve(),
 }))
 
 import App from './app'
@@ -189,5 +203,102 @@ describe('panel reopen refreshes the presentation clock', () => {
     })
 
     expect(fetchSnapshotSpy.mock.calls.length).toBe(callsBefore + 1)
+  })
+})
+
+describe('pinning a limit window into a group, end to end', () => {
+  beforeEach(() => {
+    renderStatusItem.mockReset()
+    trayGroupClick = null
+    usageLimits = [
+      ...ONE_LIMIT,
+      { kind: 'weekly_all', percent: 20, is_active: true, resets_at: null, scope: null },
+    ]
+  })
+
+  afterEach(() => {
+    usageLimits = ONE_LIMIT
+  })
+
+  function lastSegments() {
+    return renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]
+  }
+
+  async function pinSessionIntoNewGroup(name: string) {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /2 limits/ }))
+    fireEvent.click(screen.getAllByLabelText('Show in menu bar')[0])
+    fireEvent.click(screen.getByText('New group…'))
+    const field = screen.getByPlaceholderText('Group name')
+    fireEvent.change(field, { target: { value: name } })
+    await act(async () => {
+      fireEvent.keyDown(field, { key: 'Enter' })
+    })
+  }
+
+  test('the tray shows the new group as one rolled-up figure, tagged with the group', async () => {
+    await pinSessionIntoNewGroup('Money')
+
+    const segments = lastSegments()
+    expect(segments).toHaveLength(1)
+    expect(segments[0]).toMatchObject({ text: '10%', color: 'neutral' })
+    expect(segments[0].groupId).toBeTruthy()
+  })
+
+  test('the tooltip names the member under its group', async () => {
+    await pinSessionIntoNewGroup('Money')
+
+    const tooltip = renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[2]
+    expect(tooltip).toContain('Money: ')
+    expect(tooltip).toContain('Session 10%')
+  })
+
+  test('the panel itself grows no pinned section, just the row it always had', async () => {
+    await pinSessionIntoNewGroup('Money')
+
+    expect(screen.queryByText('Money')).toBeNull()
+    expect(screen.queryByText('PINNED')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^(Expand|Collapse) all$/ })).toBeNull()
+  })
+
+  test("a click on the group's figure in the menu bar opens it out to its members", async () => {
+    await pinSessionIntoNewGroup('Money')
+    fireEvent.click(screen.getAllByLabelText('Show in menu bar')[0])
+    fireEvent.click(screen.getByText('Add to Money'))
+    await act(async () => {})
+    expect(lastSegments()).toHaveLength(1)
+
+    const groupId = lastSegments()[0].groupId
+    await act(async () => {
+      trayGroupClick?.(groupId)
+    })
+
+    const segments = lastSegments()
+    expect(segments.map((s: { text: string }) => s.text)).toEqual(['10%', '20%'])
+    expect(segments.every((s: { groupId: string }) => s.groupId === groupId)).toBe(true)
+  })
+
+  test('clicking it again rolls the group back up to one figure', async () => {
+    await pinSessionIntoNewGroup('Money')
+    const groupId = lastSegments()[0].groupId
+
+    await act(async () => {
+      trayGroupClick?.(groupId)
+    })
+    await act(async () => {
+      trayGroupClick?.(groupId)
+    })
+
+    expect(lastSegments()).toHaveLength(1)
+  })
+
+  test('unpinning the window empties the tray again', async () => {
+    await pinSessionIntoNewGroup('Money')
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByLabelText('Remove from menu bar')[0])
+    })
+
+    expect(lastSegments()).toEqual([])
   })
 })

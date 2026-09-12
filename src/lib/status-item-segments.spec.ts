@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import type { LimitWindowEntity, Subscription } from '@/types/entities'
+import type { LimitWindowEntity, PinGroup, Subscription } from '@/types/entities'
+import { pinMemberKey } from './pin-groups'
 import {
   buildStatusItemSegments,
   buildStatusItemTooltip,
@@ -33,6 +34,10 @@ function subscription(overrides: Partial<Subscription> & { id: string }): Subscr
     pendingRemoval: false,
     ...overrides,
   }
+}
+
+function group(overrides: Partial<PinGroup> & { id: string }): PinGroup {
+  return { name: overrides.id, collapsed: true, order: 0, memberKeys: [], ...overrides }
 }
 
 describe('buildStatusItemSegments', () => {
@@ -77,9 +82,9 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '61%', color: 'neutral', groupStart: false },
-      { text: '74%', color: 'neutral', groupStart: false },
-      { text: '52%', color: 'neutral', groupStart: true },
+      { text: '61%', color: 'neutral', groupStart: false, groupId: null },
+      { text: '74%', color: 'neutral', groupStart: false, groupId: null },
+      { text: '52%', color: 'neutral', groupStart: true, groupId: null },
     ])
   })
 
@@ -93,7 +98,7 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '20%', color: 'neutral', groupStart: false },
+      { text: '20%', color: 'neutral', groupStart: false, groupId: null },
     ])
   })
 
@@ -135,7 +140,7 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '10%', color: 'neutral', groupStart: false },
+      { text: '10%', color: 'neutral', groupStart: false, groupId: null },
     ])
   })
 })
@@ -230,5 +235,162 @@ describe('computeWorstActiveLimitPercent', () => {
       }),
     ]
     expect(computeWorstActiveLimitPercent(subs)).toBe(74)
+  })
+})
+
+describe('buildStatusItemSegments with pin groups', () => {
+  const twoSubscriptions = [
+    subscription({
+      id: 'a',
+      label: 'Work',
+      pinnedWindowIds: ['session', 'weekly_all'],
+      windows: [
+        window({ id: 'session', name: 'Session', used: 99 }),
+        window({ id: 'weekly_all', name: 'Weekly', used: 12 }),
+      ],
+    }),
+    subscription({
+      id: 'b',
+      label: 'Home',
+      pinnedWindowIds: ['session'],
+      windows: [window({ id: 'session', name: 'Session', used: 47 })],
+    }),
+  ]
+
+  const currentLimit = group({
+    id: 'g1',
+    name: 'Current limit',
+    memberKeys: [pinMemberKey('a', 'session'), pinMemberKey('b', 'session')],
+  })
+
+  test("shows one rolled-up figure for a group, the worst member's, and none of its members", () => {
+    expect(buildStatusItemSegments(twoSubscriptions, [currentLimit])).toEqual([
+      { text: '99%', color: 'red', groupStart: false, groupId: 'g1' },
+      { text: '12%', color: 'neutral', groupStart: true, groupId: null },
+    ])
+  })
+
+  test("opens a group out to every member's own figure once it is not collapsed", () => {
+    const opened = { ...currentLimit, collapsed: false }
+    expect(buildStatusItemSegments(twoSubscriptions, [opened])).toEqual([
+      { text: '99%', color: 'red', groupStart: false, groupId: 'g1' },
+      { text: '47%', color: 'neutral', groupStart: false, groupId: 'g1' },
+      { text: '12%', color: 'neutral', groupStart: true, groupId: null },
+    ])
+  })
+
+  test("marks every one of an opened group's figures with the group, so any of them rolls it back up", () => {
+    const opened = { ...currentLimit, collapsed: false }
+    const grouped = buildStatusItemSegments(twoSubscriptions, [opened]).filter(
+      (s) => s.groupId !== null,
+    )
+    expect(grouped).toHaveLength(2)
+    expect(grouped.every((s) => s.groupId === 'g1')).toBe(true)
+  })
+
+  test('leaves a standalone pin carrying no group, so clicking it opens the panel', () => {
+    const segments = buildStatusItemSegments(twoSubscriptions, [currentLimit])
+    expect(segments[segments.length - 1].groupId).toBeNull()
+  })
+
+  test('leaves a pin in no group emitting its own figure, exactly as before', () => {
+    const grouped = buildStatusItemSegments(twoSubscriptions, [currentLimit])
+    const ungrouped = buildStatusItemSegments(twoSubscriptions, [])
+    expect(grouped[grouped.length - 1]).toEqual({
+      text: '12%',
+      color: 'neutral',
+      groupStart: true,
+      groupId: null,
+    })
+    expect(ungrouped).toHaveLength(3)
+  })
+
+  test('colors the rolled-up figure by the worst member, not by the first one', () => {
+    const money = group({
+      id: 'g2',
+      name: 'Money',
+      memberKeys: [pinMemberKey('a', 'weekly_all'), pinMemberKey('b', 'session')],
+    })
+    expect(buildStatusItemSegments(twoSubscriptions, [money])[0]).toEqual({
+      text: '47%',
+      color: 'neutral',
+      groupStart: false,
+      groupId: 'g2',
+    })
+  })
+
+  test('emits nothing for a group whose members are all unpinned or unread', () => {
+    const empty = group({ id: 'g3', memberKeys: [pinMemberKey('a', 'gone')] })
+    expect(buildStatusItemSegments(twoSubscriptions, [empty])).toHaveLength(3)
+  })
+
+  test('breaks between each group and again before the standalone pins', () => {
+    const groups = [
+      group({ id: 'g1', order: 1, memberKeys: [pinMemberKey('a', 'session')] }),
+      group({ id: 'g2', order: 2, memberKeys: [pinMemberKey('b', 'session')] }),
+    ]
+    expect(buildStatusItemSegments(twoSubscriptions, groups).map((s) => s.groupStart)).toEqual([
+      false,
+      true,
+      true,
+    ])
+  })
+
+  test('still turns every figure amber when a grouped member is behind', () => {
+    const stale = [
+      twoSubscriptions[0],
+      subscription({ ...twoSubscriptions[1], id: 'b', state: 'behind' }),
+    ]
+    expect(buildStatusItemSegments(stale, [currentLimit]).map((s) => s.color)).toEqual([
+      'amber',
+      'amber',
+    ])
+  })
+})
+
+describe('buildStatusItemTooltip with pin groups', () => {
+  const subs = [
+    subscription({
+      id: 'a',
+      label: 'Work',
+      pinnedWindowIds: ['session', 'weekly_all'],
+      windows: [
+        window({ id: 'session', name: 'Session', used: 99 }),
+        window({ id: 'weekly_all', name: 'Weekly', used: 12 }),
+      ],
+    }),
+    subscription({
+      id: 'b',
+      label: 'Home',
+      pinnedWindowIds: ['session'],
+      windows: [window({ id: 'session', name: 'Session', scope: 'Fable', used: 47 })],
+    }),
+  ]
+  const currentLimit = group({
+    id: 'g1',
+    name: 'Current limit',
+    memberKeys: [pinMemberKey('a', 'session'), pinMemberKey('b', 'session')],
+  })
+
+  test("names every member under its group's name, not just the rolled-up figure", () => {
+    expect(buildStatusItemTooltip(subs, [currentLimit])).toBe(
+      [
+        'Quotos',
+        'Current limit: Work — Session 99% · Home — Session (Fable) 47%',
+        'Work: Weekly 12%',
+      ].join('\n'),
+    )
+  })
+
+  test("marks a group whose member is behind, in the row badge's words", () => {
+    const stale = [subs[0], subscription({ ...subs[1], id: 'b', state: 'behind' })]
+    expect(buildStatusItemTooltip(stale, [currentLimit])).toContain(
+      'Current limit: Work — Session 99% · Home — Session (Fable) 47% — not current',
+    )
+  })
+
+  test('says nothing about a group with no contributing member', () => {
+    const empty = group({ id: 'g2', name: 'Money', memberKeys: [pinMemberKey('a', 'gone')] })
+    expect(buildStatusItemTooltip(subs, [empty])).not.toContain('Money')
   })
 })

@@ -1,4 +1,10 @@
-import type { StatusItemSegment, Subscription } from '@/types/entities'
+import type { PinGroup, StatusItemSegment, Subscription } from '@/types/entities'
+import {
+  collectPinnedEntries,
+  layoutPinnedEntries,
+  type PinnedEntry,
+  rollUpUsed,
+} from './pin-groups'
 
 function pickBaseFigureColor(used: number): StatusItemSegment['color'] {
   if (used >= 90) return 'red'
@@ -10,40 +16,98 @@ function pickFigureColor(used: number, anyContributingStale: boolean): StatusIte
   return anyContributingStale ? 'amber' : pickBaseFigureColor(used)
 }
 
-export function buildStatusItemSegments(subscriptions: Subscription[]): StatusItemSegment[] {
-  const entries: { sub: Subscription; used: number }[] = []
-  for (const sub of subscriptions) {
-    for (const w of sub.windows) {
-      if (typeof w.used !== 'number') continue
-      if (!sub.pinnedWindowIds.includes(w.id)) continue
-      entries.push({ sub, used: w.used })
-    }
-  }
-  const anyContributingStale = entries.some((e) => e.sub.state === 'behind')
-
-  const segments: StatusItemSegment[] = []
-  let lastSubId: string | null = null
-  for (const { sub, used } of entries) {
-    segments.push({
-      text: `${used}%`,
-      color: pickFigureColor(used, anyContributingStale),
-      groupStart: lastSubId !== null && lastSubId !== sub.id,
-    })
-    lastSubId = sub.id
-  }
-  return segments
+function withFigure(entries: PinnedEntry[]): PinnedEntry[] {
+  return entries.filter((entry) => typeof entry.window.used === 'number')
 }
 
-export function buildStatusItemTooltip(subscriptions: Subscription[]): string {
+function subscriptionLabel(entry: PinnedEntry): string {
+  return entry.subscription.labelOverride ?? entry.subscription.label
+}
+
+function windowLabel(entry: PinnedEntry): string {
+  const scope = entry.window.scope ? ` (${entry.window.scope})` : ''
+  return `${entry.window.name}${scope} ${entry.window.used}%`
+}
+
+interface Figure {
+  used: number
+  groupId: string | null
+  cluster: string
+}
+
+export function buildStatusItemSegments(
+  subscriptions: Subscription[],
+  groups: PinGroup[] = [],
+): StatusItemSegment[] {
+  const layout = layoutPinnedEntries(subscriptions, groups)
+  const anyContributingStale = withFigure(collectPinnedEntries(subscriptions)).some(
+    (entry) => entry.subscription.state === 'behind',
+  )
+
+  // A rolled-up group spends one figure's width for however many members
+  // it holds; opened out, it spends each member's own. Either way the
+  // group is one cluster, so a break falls between groups and again
+  // before the standalone pins.
+  const figures: Figure[] = []
+  for (const { group, members } of layout.groups) {
+    const cluster = `group:${group.id}`
+    if (group.collapsed) {
+      const used = rollUpUsed(members)
+      if (used === null) continue
+      figures.push({ used, groupId: group.id, cluster })
+      continue
+    }
+    for (const entry of withFigure(members)) {
+      figures.push({ used: entry.window.used as number, groupId: group.id, cluster })
+    }
+  }
+  for (const entry of withFigure(layout.standalone)) {
+    figures.push({
+      used: entry.window.used as number,
+      groupId: null,
+      cluster: `subscription:${entry.subscription.id}`,
+    })
+  }
+
+  let lastCluster: string | null = null
+  return figures.map(({ used, groupId, cluster }) => {
+    const segment: StatusItemSegment = {
+      text: `${used}%`,
+      color: pickFigureColor(used, anyContributingStale),
+      groupStart: lastCluster !== null && lastCluster !== cluster,
+      groupId,
+    }
+    lastCluster = cluster
+    return segment
+  })
+}
+
+export function buildStatusItemTooltip(
+  subscriptions: Subscription[],
+  groups: PinGroup[] = [],
+): string {
+  const layout = layoutPinnedEntries(subscriptions, groups)
   const lines: string[] = []
+
+  for (const { group, members } of layout.groups) {
+    const contributing = withFigure(members)
+    if (contributing.length === 0) continue
+    const figures = contributing.map(
+      (entry) => `${subscriptionLabel(entry)} — ${windowLabel(entry)}`,
+    )
+    const stale = contributing.some((entry) => entry.subscription.state === 'behind')
+    lines.push(`${group.name}: ${figures.join(' · ')}${stale ? ' — not current' : ''}`)
+  }
+
   for (const sub of subscriptions) {
-    const figures = sub.windows
-      .filter((w) => typeof w.used === 'number' && sub.pinnedWindowIds.includes(w.id))
-      .map((w) => `${w.name}${w.scope ? ` (${w.scope})` : ''} ${w.used}%`)
+    const figures = withFigure(layout.standalone)
+      .filter((entry) => entry.subscription.id === sub.id)
+      .map(windowLabel)
     if (figures.length === 0) continue
     const stale = sub.state === 'behind' ? ' — not current' : ''
     lines.push(`${sub.labelOverride ?? sub.label}: ${figures.join(' · ')}${stale}`)
   }
+
   return lines.length === 0 ? 'Quotos' : ['Quotos', ...lines].join('\n')
 }
 

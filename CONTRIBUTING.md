@@ -35,6 +35,12 @@ file or touches more than one part of the tree.
 Commit messages follow Conventional Commits: `type(scope): summary`,
 for example `fix(rust): correct the docked panel offset`.
 
+A commit message or pull request description never carries AI or agent
+attribution: no `Co-Authored-By` trailer naming a model or an assistant,
+no generated-with line, no session link. The author of a change is the
+person who decided to make it, whatever tools they reached for along the
+way.
+
 ## Opening a pull request
 
 Keep a pull request to one change, and fill in the template: what

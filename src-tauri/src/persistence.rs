@@ -18,52 +18,101 @@ pub struct TrackedAccount {
     pub pinned: Option<bool>,
 }
 
+/// One named collection of pinned limit windows, spanning any number of
+/// tracked accounts. Purely additive: a file written before pin groups
+/// shipped simply loads with none.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PinGroup {
+    pub id: String,
+    pub name: String,
+    pub collapsed: bool,
+    pub order: u32,
+    #[serde(default)]
+    pub member_keys: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Default)]
 struct PersistedShape {
     version: u32,
     tracked: Vec<TrackedAccount>,
+    #[serde(default)]
+    groups: Vec<PinGroup>,
+}
+
+#[derive(Default)]
+struct StoreContents {
+    tracked: Vec<TrackedAccount>,
+    groups: Vec<PinGroup>,
 }
 
 pub struct Store {
     path: PathBuf,
-    tracked: Mutex<Vec<TrackedAccount>>,
+    contents: Mutex<StoreContents>,
 }
 
 impl Store {
     pub fn load(path: PathBuf) -> Self {
-        let tracked = match fs::read_to_string(&path) {
-            Err(_) => Vec::new(),
+        let contents = match fs::read_to_string(&path) {
+            Err(_) => StoreContents::default(),
             Ok(raw) => match serde_json::from_str::<PersistedShape>(&raw) {
-                Ok(shape) => shape.tracked,
+                Ok(shape) => StoreContents {
+                    tracked: shape.tracked,
+                    groups: shape.groups,
+                },
                 Err(_) => {
                     let _ = fs::rename(&path, path.with_extension("json.corrupt"));
-                    Vec::new()
+                    StoreContents::default()
                 }
             },
         };
         Self {
             path,
-            tracked: Mutex::new(tracked),
+            contents: Mutex::new(contents),
         }
     }
 
     pub fn list(&self) -> Vec<TrackedAccount> {
-        self.tracked
+        self.contents
             .lock()
             .expect("tracked store mutex poisoned")
+            .tracked
+            .clone()
+    }
+
+    pub fn list_groups(&self) -> Vec<PinGroup> {
+        self.contents
+            .lock()
+            .expect("tracked store mutex poisoned")
+            .groups
             .clone()
     }
 
     pub fn save(&self, tracked: Vec<TrackedAccount>) -> Result<(), String> {
+        self.write(|contents| contents.tracked = tracked)
+    }
+
+    pub fn save_groups(&self, groups: Vec<PinGroup>) -> Result<(), String> {
+        self.write(|contents| contents.groups = groups)
+    }
+
+    /// Both halves of the file live under one lock, so writing either
+    /// one rewrites the whole shape without losing the other.
+    fn write(&self, apply: impl FnOnce(&mut StoreContents)) -> Result<(), String> {
+        let mut in_memory = self.contents.lock().expect("tracked store mutex poisoned");
+        let mut next = StoreContents {
+            tracked: in_memory.tracked.clone(),
+            groups: in_memory.groups.clone(),
+        };
+        apply(&mut next);
         let shape = PersistedShape {
             version: 1,
-            tracked: tracked.clone(),
+            tracked: next.tracked.clone(),
+            groups: next.groups.clone(),
         };
         let json = serde_json::to_string_pretty(&shape).map_err(|e| e.to_string())?;
-
-        let mut in_memory = self.tracked.lock().expect("tracked store mutex poisoned");
         atomic_write::write_string(&self.path, &json)?;
-        *in_memory = tracked;
+        *in_memory = next;
         Ok(())
     }
 }
@@ -260,6 +309,74 @@ mod tests {
             .filter(|name| name != "tracked.json")
             .collect();
         assert!(leftovers.is_empty(), "unexpected files: {leftovers:?}");
+    }
+
+    fn sample_group(name: &str) -> PinGroup {
+        PinGroup {
+            id: "g1".to_string(),
+            name: name.to_string(),
+            collapsed: true,
+            order: 0,
+            member_keys: vec!["claude%3Aclaude::weekly_all".to_string()],
+        }
+    }
+
+    #[test]
+    fn groups_round_trip_through_a_save_and_a_fresh_load() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+
+        let store = Store::load(path.clone());
+        store.save(vec![sample("Personal")]).unwrap();
+        store.save_groups(vec![sample_group("Money")]).unwrap();
+
+        let reloaded = Store::load(path);
+        assert_eq!(reloaded.list_groups(), vec![sample_group("Money")]);
+        assert_eq!(reloaded.list(), vec![sample("Personal")]);
+    }
+
+    #[test]
+    fn saving_one_half_of_the_file_never_drops_the_other() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+
+        let store = Store::load(path.clone());
+        store.save_groups(vec![sample_group("Money")]).unwrap();
+        store.save(vec![sample("Personal")]).unwrap();
+
+        let reloaded = Store::load(path);
+        assert_eq!(
+            reloaded.list_groups(),
+            vec![sample_group("Money")],
+            "saving the tracked list must not erase the groups beside it"
+        );
+    }
+
+    #[test]
+    fn a_file_written_before_pin_groups_shipped_loads_with_none() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"tracked":[{"id":"claude:claude","provider":"claude","config_dir":"~/.claude","label":null,"pinnedWindowIds":["weekly_all"]}]}"#,
+        )
+        .unwrap();
+
+        let store = Store::load(path);
+        assert!(store.list_groups().is_empty());
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn a_group_serializes_its_member_keys_in_the_frontend_spelling() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        let store = Store::load(path.clone());
+        store.save_groups(vec![sample_group("Money")]).unwrap();
+
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("memberKeys"), "unexpected shape: {raw}");
+        assert!(!raw.contains("member_keys"));
     }
 
     #[test]

@@ -19,7 +19,7 @@ this page is the map between them.
 | `accounts.rs` | The account-data plane: discovery, the one real fetch path, the native refresh scheduler and its idle/lock pause, and the IPC commands for the tracked list, statusline integration, and sign-in. |
 | `idle.rs` | Read-only queries for system idle time and screen-lock state, and the pure decision of whether automatic reads should pause. |
 | `scheduler.rs` | The native one-read-per-account-per-minute timer. |
-| `persistence.rs` / `atomic_write.rs` | The tracked-subscriptions list as a durable JSON file, and the fsync-then-rename write helper it shares with `statusline.rs`. |
+| `persistence.rs` / `atomic_write.rs` | The tracked-subscriptions list and the pin groups as one durable JSON file, and the fsync-then-rename write helper it shares with `statusline.rs`. |
 | `providers/mod.rs` | The provider trait and the typed `FetchError` every provider returns on failure. |
 | `providers/claude.rs` | The Claude Code adapter: Keychain reads, the usage and profile HTTP calls, credential renewal. |
 | `signin.rs` | Drives Claude Code's own `claude setup-token` login over a pty. Quotos never touches or writes a credential itself. |
@@ -56,10 +56,12 @@ established, tool-recognized spelling this repository already keeps for
 | `hooks/use-subscriptions.ts` | The state machine: tracked-subscription membership, refresh, the rate-limit interception rule, persistence, and status item segment derivation. |
 | `providers/registry.ts` | The frontend half of the provider seam: dispatches normalization and outcome mapping to the right provider by its slug. |
 | `providers/claude/` | The Claude adapter: usage and profile normalization, headline selection, outcome-to-state mapping, statusline reconciliation. |
-| `lib/persistence.ts` | The frontend seam to the tracked list: the native IPC commands on a real build, `localStorage` as a fallback in the browser harness. |
+| `lib/persistence.ts` | The frontend seam to the tracked list and the pin groups: the native IPC commands on a real build, `localStorage` as a fallback in the browser harness. |
 | `lib/tauri-client.ts` | Swaps between the real Tauri IPC client and a mock client based on whether `__TAURI_INTERNALS__` exists, so every UI state stays reviewable from a plain browser. |
+| `hooks/use-pin-groups.ts` | Pin group membership, naming, ordering, and each group's rolled-up-or-opened state in the menu bar, with its own persistence. |
+| `lib/pin-groups.ts` | The composite member key, and how pinned windows resolve into groups and standalone pins. |
 | `lib/row-presentation.ts` | What a row shows besides its numbers: the badge, the one action offered, and the footer note. |
-| `lib/status-item-segments.ts` | Turns tracked subscriptions into the status item's digit segments, tooltip, and worst-active-limit percentage. |
+| `lib/status-item-segments.ts` | Turns tracked subscriptions and pin groups into the status item's digit segments, tooltip, and worst-active-limit percentage. |
 | `types/entities.ts` | The provider-agnostic entities. Nothing above its own dividing line, and nothing that renders UI, references a specific provider by name. |
 | `src/design-system/` | The component library the app builds against. See its own `index.ts` barrel and [contributing.md](contributing.md) for the module-layout rule that keeps consumers on it. |
 
@@ -196,6 +198,81 @@ the very next save; it appears only on the one load that still has the
 old shape to read. Any time an entity's wire shape changes, check
 whether this struct still mirrors it, since a mismatched Rust struct
 does not error; it silently reshapes the JSON in transit.
+
+## Pin groups
+
+A pin group collects pinned limit windows from any subscription, any
+provider, under one name, so the status item can spend one rolled-up
+figure on the group rather than one per member. Groups live in a
+top-level `groups` array beside `tracked` in the same file, not inside
+any `TrackedAccount`, since one group spans several; `PinGroup` is the
+shape on both sides, and `#[serde(default)]` is the whole of its
+migration story, a file written before groups shipped simply loads with
+none. `Store::save` and `Store::save_groups` both rewrite the whole
+shape under one mutex, so writing either half never drops the other.
+
+A group names its members by composite key, not by bare window id, since
+a window id is only unique within its own subscription.
+`lib/pin-groups.ts`'s `pinMemberKey` percent-encodes the subscription id
+before joining it to the window id with `::`. Both halves can contain a
+colon of their own, a subscription id is `provider:slug` and a window id
+can be `kind:scope`, so encoding the left half is what keeps the first
+`::` the real boundary and the join reversible.
+`layoutPinnedEntries` resolves those keys against the live windows every
+render rather than pruning them: a key naming a window the latest read
+no longer reports is inert, exactly as a stale `pinnedWindowIds` entry
+is, and comes back if the window does.
+
+Membership never survives unpinning, and unpinning is never a side
+effect of anything a group does: `app.tsx`'s `unpinWindow` is the one
+path that does both.
+
+A group lives in the menu bar, not in the panel. The panel lists pins
+the way it always has, flat and per subscription; the only thing it adds
+is where a pin gets filed, `PinDestinationItems` on both the row menu's
+"Show in menu bar" entry and a limit window's own pin button, which is
+also the only place a group is named. There is no group browser in the
+panel to keep in step with the menu bar.
+
+`collapsed` is that group's state in the menu bar: rolled up to one
+figure, or opened out so every member shows its own. It is persisted in
+the group's own record rather than held in memory, so the arrangement
+survives a restart, and it is per group, so several can stand open at
+once. A new group starts rolled up, since spending less menu bar width
+is the reason to make one.
+
+## Clicking a figure in the menu bar
+
+A left click on a pin group's own figure belongs to that group: it
+toggles `collapsed` in place, with no panel involved. A click anywhere
+else on the status item opens the panel exactly as it always did.
+
+Telling the two apart needs the click's offset inside the item.
+`TrayIconEvent::Click` carries both `position`, the click point, and
+`rect`, the item's own box. `tray-icon`'s macOS backend converts both
+with the same window backing scale factor, so they share units and their
+ratio is the fraction of the item's width the click landed at, with no
+points-versus-pixels conversion involved at all. That ratio is also why
+the display's scale never enters the picture: the same fraction maps
+onto the rendered bitmap whether the screen draws it at 1x or 2x.
+
+`shell.rs` caches each figure's rendered pixel span in
+`last_status_item_figure_spans` on every repaint, beside the segments
+themselves, and turns a fraction back into an index; see "Resolving a
+click back to a figure" in
+[status-item-rendering.md](status-item-rendering.md#resolving-a-click-back-to-a-figure)
+for how those spans are derived and padded.
+
+Which figures are a group's is the frontend's business, not the native
+side's: `StatusItemSegment.groupId` rides along with each segment, set on
+a group's rolled-up figure and on every member's figure while it is
+opened out, so clicking any of them rolls that group back up. A
+standalone pin carries `null` and falls through to opening the panel.
+When a click does resolve to a group, the native side emits
+`status-item-group-clicked` with the id and does nothing else;
+`use-pin-groups.ts` flips that group's flag, and the segment list is
+rebuilt and pushed back down through the same `set_status_item_state`
+path as any other change.
 
 ## Refresh scheduling and pausing when nobody is looking
 

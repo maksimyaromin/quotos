@@ -43,6 +43,7 @@ struct AppState {
     last_icon_width_px: Mutex<u32>,
     status_item_highlighted: Mutex<bool>,
     last_status_item_segments: Mutex<Vec<shell::StatusItemSegmentDto>>,
+    last_status_item_figure_spans: Mutex<Vec<status_item_render::FigureSpan>>,
     last_status_item_worst_used_percent: Mutex<u8>,
     last_status_item_tooltip: Mutex<String>,
     docked_target: Mutex<Option<DockedLayout>>,
@@ -59,6 +60,8 @@ pub fn run() {
             accounts::fetch_snapshot,
             accounts::load_tracked,
             accounts::save_tracked,
+            accounts::load_pin_groups,
+            accounts::save_pin_groups,
             accounts::kick_scheduler,
             shell::hide_panel,
             shell::set_status_item_state,
@@ -174,6 +177,7 @@ fn initial_app_state(
         last_icon_width_px: Mutex::new(initial_icon_width),
         status_item_highlighted: Mutex::new(false),
         last_status_item_segments: Mutex::new(Vec::new()),
+        last_status_item_figure_spans: Mutex::new(Vec::new()),
         last_status_item_worst_used_percent: Mutex::new(0),
         last_status_item_tooltip: Mutex::new("Quotos".to_string()),
         docked_target: Mutex::new(None),
@@ -363,12 +367,25 @@ fn build_status_item(
                 TrayIconEvent::Click {
                     button: tauri::tray::MouseButton::Left,
                     button_state: tauri::tray::MouseButtonState::Up,
+                    position,
+                    rect,
                     ..
                 },
                 Some((item_x, item_y)),
             ) = (&event, item_xy)
                 && let Some(window) = app.get_webview_window("main")
             {
+                // A click on a pin group's own figure toggles that group
+                // instead of opening the panel; see "Clicking a figure in
+                // the menu bar" in docs/architecture.md.
+                let item_width = match rect.size {
+                    tauri::Size::Physical(s) => s.width as f64,
+                    tauri::Size::Logical(s) => s.width,
+                };
+                if let Some(group_id) = shell::group_at_click(app, position.x, item_x, item_width) {
+                    let _ = app.emit("status-item-group-clicked", group_id);
+                    return;
+                }
                 let detached = app
                     .state::<AppState>()
                     .detached

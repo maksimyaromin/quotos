@@ -20,6 +20,7 @@ export {
 } from './components/shell/menu-bar-tile'
 export { Panel, type PanelProps } from './components/shell/panel'
 export { LimitWindow, type LimitWindowProps } from './components/subscription/limit-window'
+export type { PinDestinationGroup } from './components/subscription/pin-destination-items'
 export {
   SubscriptionRow,
   type SubscriptionRowProps,

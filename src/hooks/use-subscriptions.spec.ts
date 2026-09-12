@@ -13,6 +13,7 @@ const onSignInFinished = vi.fn((_callback: (event: unknown) => void) => Promise.
 
 vi.mock('@/lib/tauri-client', () => ({
   fetchSnapshot: (...args: unknown[]) => fetchSnapshot(...args),
+  onStatusItemGroupClicked: () => Promise.resolve(() => {}),
   renderStatusItem: (...args: unknown[]) => renderStatusItem(...args),
   onQuotaRefresh: (...args: unknown[]) => onQuotaRefresh(...args),
   kickScheduler: (...args: unknown[]) => kickScheduler(...args),
@@ -550,7 +551,7 @@ describe('useSubscriptions status item segments', () => {
 
     const calls = renderStatusItem.mock.calls
     const lastCall = calls[calls.length - 1]?.[0]
-    expect(lastCall).toEqual([{ text: '40%', color: 'neutral', groupStart: false }])
+    expect(lastCall).toEqual([{ text: '40%', color: 'neutral', groupStart: false, groupId: null }])
     for (const call of renderStatusItem.mock.calls) {
       for (const segment of call[0]) {
         expect(segment.text).not.toBe('!')
@@ -592,8 +593,8 @@ describe('useSubscriptions status item segments', () => {
     await flush()
     expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual(
       expect.arrayContaining([
-        { text: '10%', color: 'neutral', groupStart: false },
-        { text: '20%', color: 'neutral', groupStart: true },
+        { text: '10%', color: 'neutral', groupStart: false, groupId: null },
+        { text: '20%', color: 'neutral', groupStart: true, groupId: null },
       ]),
     )
 
@@ -608,8 +609,8 @@ describe('useSubscriptions status item segments', () => {
     const segments = statusItemCalls[statusItemCalls.length - 1]?.[0]
     expect(segments).toEqual(
       expect.arrayContaining([
-        { text: '10%', color: 'amber', groupStart: false },
-        { text: '20%', color: 'amber', groupStart: true },
+        { text: '10%', color: 'amber', groupStart: false, groupId: null },
+        { text: '20%', color: 'amber', groupStart: true, groupId: null },
       ]),
     )
 
@@ -663,7 +664,7 @@ describe('useSubscriptions pin migration from a legacy pinned boolean', () => {
     expect(result.current.subscriptions[0].headlineWindowId).toBe('weekly_all')
     expect(result.current.subscriptions[0].pinnedWindowIds).toEqual(['weekly_all'])
     expect(renderStatusItem.mock.calls[renderStatusItem.mock.calls.length - 1]?.[0]).toEqual([
-      { text: '33%', color: 'neutral', groupStart: false },
+      { text: '33%', color: 'neutral', groupStart: false, groupId: null },
     ])
   })
 
