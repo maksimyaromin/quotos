@@ -111,12 +111,24 @@ export function CustomizeDisplayScreen({
     return () => window.removeEventListener('mouseup', finish)
   }, [drag, target, onAddToGroup, onGroupTogether, onMakeStandalone, onMoveGroup])
 
+  const commitRename = () => {
+    const id = renamingId
+    setRenamingId(null)
+    if (id === null) return
+    const trimmed = draft.trim()
+    if (trimmed.length > 0) onRenameGroup(id, trimmed)
+  }
+
   const startDrag = (next: Drag) => (event: React.MouseEvent) => {
     if (event.button !== 0) return
     // The name reads as a button but is still part of the grab surface:
     // a press that never moves ends as a no-op drag and goes on to open
     // the rename. Only the header's own actions are excluded.
     if ((event.target as HTMLElement).closest('[data-no-drag], input')) return
+    // The press cannot blur an open rename field, since preventing the
+    // default is what stops the drag selecting text, so commit it here
+    // the way a blur would.
+    commitRename()
     event.preventDefault()
     setDrag(next)
     setTarget(null)
@@ -129,14 +141,6 @@ export function CustomizeDisplayScreen({
   }
 
   const isTarget = (match: (t: DropTarget) => boolean) => target !== null && match(target)
-
-  const commitRename = () => {
-    const id = renamingId
-    setRenamingId(null)
-    if (id === null) return
-    const trimmed = draft.trim()
-    if (trimmed.length > 0) onRenameGroup(id, trimmed)
-  }
 
   const pinRow = (pin: CustomizePin, inGroup: string | null) => (
     <div
