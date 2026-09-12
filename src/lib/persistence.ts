@@ -11,6 +11,10 @@ interface PersistedShape {
   version: 1
   tracked: TrackedAccount[]
   groups?: PinGroup[]
+  // Which single tracked window drives the menu bar mark's gauge, as a
+  // `lib/pin-groups.ts` member key. Absent is the arithmetic mean of
+  // every subscription's own headline figure.
+  iconFillSource?: string | null
 }
 
 const LEGACY_KEY = 'quotos.tracked.v1'
@@ -38,6 +42,11 @@ function loadLocalStorageGroups(): PinGroup[] {
   return Array.isArray(parsed.groups) ? parsed.groups : []
 }
 
+function loadLocalStorageIconFillSource(): string | null {
+  const parsed = readLocalStorage()
+  return typeof parsed.iconFillSource === 'string' ? parsed.iconFillSource : null
+}
+
 // Read-modify-write, so saving one half of the payload never drops the
 // other; the native store keeps both under one lock for the same reason.
 function saveLocalStorage(patch: Partial<PersistedShape>): void {
@@ -47,6 +56,7 @@ function saveLocalStorage(patch: Partial<PersistedShape>): void {
       version: 1,
       tracked: Array.isArray(existing.tracked) ? existing.tracked : [],
       groups: Array.isArray(existing.groups) ? existing.groups : [],
+      iconFillSource: existing.iconFillSource ?? null,
       ...patch,
     }
     window.localStorage.setItem(LEGACY_KEY, JSON.stringify(payload))
@@ -111,4 +121,21 @@ export async function savePinGroups(groups: PinGroup[]): Promise<void> {
     return
   }
   await invoke('save_pin_groups', { groups })
+}
+
+export async function loadIconFillSource(): Promise<string | null> {
+  if (!isTauri()) return loadLocalStorageIconFillSource()
+  try {
+    return (await invoke<string | null>('load_icon_fill_source')) ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function saveIconFillSource(key: string | null): Promise<void> {
+  if (!isTauri()) {
+    saveLocalStorage({ iconFillSource: key })
+    return
+  }
+  await invoke('save_icon_fill_source', { key })
 }

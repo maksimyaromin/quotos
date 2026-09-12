@@ -16,7 +16,7 @@ export const dragWindowStep: () => Promise<void> = isTauri ? live.dragWindowStep
 export const endWindowDrag: () => Promise<void> = isTauri ? live.endWindowDrag : async () => {}
 export const renderStatusItem: (
   segments: StatusItemSegment[],
-  worstUsedPercent: number,
+  iconFillPercent: number,
   tooltip: string,
 ) => Promise<void> = isTauri ? live.renderStatusItem : async () => {}
 // Outside Tauri there is no compositor to ask, and nothing else may
@@ -25,7 +25,7 @@ export const renderStatusItem: (
 // docs/status-item-rendering.md.
 export const renderStatusItemPreview: (
   segments: StatusItemSegment[],
-  worstUsedPercent: number,
+  iconFillPercent: number,
 ) => Promise<StatusItemImage | null> = isTauri ? live.renderStatusItemPreview : async () => null
 export const onQuotaRefresh: (
   callback: (event: ScheduledRefreshEvent) => void,

@@ -63,7 +63,9 @@ export function buildPanelOutlinePath(width: number, height: number, beakLeft: n
 }
 
 export interface PanelProps {
-  title?: string
+  // A node, not a string: the panel's own header sets the product's
+  // wordmark, whose three parts are coloured apart from each other.
+  title?: React.ReactNode
   docked?: boolean
   beakLeft?: number
   dragging?: boolean

@@ -23,10 +23,10 @@ function decodeRgba(base64: string): Uint8ClampedArray {
 // two surfaces" in docs/status-item-rendering.md.
 export function MenuBarPreview({
   segments,
-  worstUsedPercent,
+  iconFillPercent,
 }: {
   segments: StatusItemSegment[]
-  worstUsedPercent: number
+  iconFillPercent: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [image, setImage] = useState<StatusItemImage | null>(null)
@@ -38,7 +38,7 @@ export function MenuBarPreview({
       try {
         const rendered = await renderStatusItemPreview(
           JSON.parse(serialized) as StatusItemSegment[],
-          worstUsedPercent,
+          iconFillPercent,
         )
         if (!cancelled) setImage(rendered)
       } catch (error) {
@@ -48,7 +48,7 @@ export function MenuBarPreview({
     return () => {
       cancelled = true
     }
-  }, [serialized, worstUsedPercent])
+  }, [serialized, iconFillPercent])
 
   useEffect(() => {
     const canvas = canvasRef.current

@@ -15,7 +15,7 @@ this page is the map between them.
 | `shell.rs` | The interactive shell: the status item's repaint pipeline and the panel's show, hide, dock, detach, and drag lifecycle. See [panel-lifecycle.md](panel-lifecycle.md). |
 | `geometry.rs` | Pure placement math and read-only screen queries. No module here moves a window; `shell.rs` does that with these numbers. |
 | `panel_window.rs` | Turns the panel into a non-activating `NSPanel`, the AppKit window class that can hold keyboard focus without activating its application. |
-| `status_item_render.rs` | Composites the status item's glyph and colored percentage digits into an RGBA bitmap, since `tray-icon` has no colored-title path. See [status-item-rendering.md](status-item-rendering.md). |
+| `status_item_render.rs` | Composites the status item's mark and colored percentage digits into an RGBA bitmap, since `tray-icon` has no colored-title path. See [status-item-rendering.md](status-item-rendering.md). |
 | `accounts.rs` | The account-data plane: discovery, the one real fetch path, the native refresh scheduler and its idle/lock pause, and the IPC commands for the tracked list, statusline integration, and sign-in. |
 | `idle.rs` | Read-only queries for system idle time and screen-lock state, and the pure decision of whether automatic reads should pause. |
 | `scheduler.rs` | The native one-read-per-account-per-minute timer. |
@@ -71,7 +71,7 @@ exempts every `.rs` file under `src-tauri/` on that basis.
 | `components/customize-display-screen.tsx` | The screen groups are arranged on, built on `@dnd-kit`. See [customize-display.md](customize-display.md). |
 | `components/drag-motion.ts` | That screen's whole motion language: two springs, and what Reduce Motion answers instead. |
 | `lib/row-presentation.ts` | What a row shows besides its numbers: the badge, the one action offered, and the footer note. |
-| `lib/status-item-segments.ts` | Turns tracked subscriptions and pin groups into the status item's digit segments, tooltip, and worst-active-limit percentage. |
+| `lib/status-item-segments.ts` | Turns tracked subscriptions and pin groups into the status item's digit segments, tooltip, and the percentage the mark's gauge is drawn at. |
 | `types/entities.ts` | The provider-agnostic entities. Nothing above its own dividing line, and nothing that renders UI, references a specific provider by name. |
 | `src/design-system/` | The component library the app builds against. See its own `index.ts` barrel and [contributing.md](contributing.md) for the module-layout rule that keeps consumers on it. |
 

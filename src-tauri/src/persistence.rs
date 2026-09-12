@@ -38,17 +38,24 @@ pub struct PinGroup {
 }
 
 #[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct PersistedShape {
     version: u32,
     tracked: Vec<TrackedAccount>,
     #[serde(default)]
     groups: Vec<PinGroup>,
+    /// Which single tracked window drives the menu bar mark's gauge, as
+    /// `lib/pin-groups.ts`'s composite member key. None is the
+    /// arithmetic-mean default, and so is a file written before this.
+    #[serde(default)]
+    icon_fill_source: Option<String>,
 }
 
 #[derive(Default)]
 struct StoreContents {
     tracked: Vec<TrackedAccount>,
     groups: Vec<PinGroup>,
+    icon_fill_source: Option<String>,
 }
 
 pub struct Store {
@@ -64,6 +71,7 @@ impl Store {
                 Ok(shape) => StoreContents {
                     tracked: shape.tracked,
                     groups: shape.groups,
+                    icon_fill_source: shape.icon_fill_source,
                 },
                 Err(_) => {
                     let _ = fs::rename(&path, path.with_extension("json.corrupt"));
@@ -101,19 +109,33 @@ impl Store {
         self.write(|contents| contents.groups = groups)
     }
 
-    /// Both halves of the file live under one lock, so writing either
-    /// one rewrites the whole shape without losing the other.
+    pub fn icon_fill_source(&self) -> Option<String> {
+        self.contents
+            .lock()
+            .expect("tracked store mutex poisoned")
+            .icon_fill_source
+            .clone()
+    }
+
+    pub fn save_icon_fill_source(&self, key: Option<String>) -> Result<(), String> {
+        self.write(|contents| contents.icon_fill_source = key)
+    }
+
+    /// Every part of the file lives under one lock, so writing any one
+    /// of them rewrites the whole shape without losing the others.
     fn write(&self, apply: impl FnOnce(&mut StoreContents)) -> Result<(), String> {
         let mut in_memory = self.contents.lock().expect("tracked store mutex poisoned");
         let mut next = StoreContents {
             tracked: in_memory.tracked.clone(),
             groups: in_memory.groups.clone(),
+            icon_fill_source: in_memory.icon_fill_source.clone(),
         };
         apply(&mut next);
         let shape = PersistedShape {
             version: 1,
             tracked: next.tracked.clone(),
             groups: next.groups.clone(),
+            icon_fill_source: next.icon_fill_source.clone(),
         };
         let json = serde_json::to_string_pretty(&shape).map_err(|e| e.to_string())?;
         atomic_write::write_string(&self.path, &json)?;
@@ -398,6 +420,73 @@ mod tests {
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("memberKeys"), "unexpected shape: {raw}");
         assert!(!raw.contains("member_keys"));
+    }
+
+    #[test]
+    fn the_icon_fill_source_round_trips_and_clears_back_to_the_mean_default() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+
+        let store = Store::load(path.clone());
+        assert_eq!(store.icon_fill_source(), None, "the default is the mean");
+        store
+            .save_icon_fill_source(Some("claude%3Aclaude::weekly_all".to_string()))
+            .unwrap();
+        assert_eq!(
+            Store::load(path.clone()).icon_fill_source(),
+            Some("claude%3Aclaude::weekly_all".to_string())
+        );
+
+        store.save_icon_fill_source(None).unwrap();
+        assert_eq!(
+            Store::load(path).icon_fill_source(),
+            None,
+            "clearing the choice must return the gauge to the mean default"
+        );
+    }
+
+    #[test]
+    fn saving_the_icon_fill_source_never_drops_the_rest_of_the_file() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+
+        let store = Store::load(path.clone());
+        store.save(vec![sample("Personal")]).unwrap();
+        store.save_groups(vec![sample_group("Money")]).unwrap();
+        store
+            .save_icon_fill_source(Some("claude%3Aclaude::session".to_string()))
+            .unwrap();
+
+        let reloaded = Store::load(path);
+        assert_eq!(reloaded.list(), vec![sample("Personal")]);
+        assert_eq!(reloaded.list_groups(), vec![sample_group("Money")]);
+        assert_eq!(
+            reloaded.icon_fill_source(),
+            Some("claude%3Aclaude::session".to_string())
+        );
+    }
+
+    #[test]
+    fn a_file_written_before_the_icon_fill_source_shipped_loads_with_none() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        fs::write(&path, r#"{"version":1,"tracked":[],"groups":[]}"#).unwrap();
+
+        assert_eq!(Store::load(path).icon_fill_source(), None);
+    }
+
+    #[test]
+    fn the_icon_fill_source_serializes_in_the_frontend_spelling() {
+        let dir = TempDir::new();
+        let path = dir.path.join("tracked.json");
+        let store = Store::load(path.clone());
+        store
+            .save_icon_fill_source(Some("claude%3Aclaude::session".to_string()))
+            .unwrap();
+
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("iconFillSource"), "unexpected shape: {raw}");
+        assert!(!raw.contains("icon_fill_source"));
     }
 
     #[test]

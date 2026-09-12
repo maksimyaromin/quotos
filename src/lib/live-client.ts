@@ -50,10 +50,10 @@ export async function kickScheduler(): Promise<void> {
 
 export async function renderStatusItem(
   segments: StatusItemSegment[],
-  worstUsedPercent: number,
+  iconFillPercent: number,
   tooltip: string,
 ): Promise<void> {
-  return invoke('set_status_item_state', { segments, worstUsedPercent, tooltip })
+  return invoke('set_status_item_state', { segments, iconFillPercent, tooltip })
 }
 
 // The Customize display screen's preview, drawn by the same compositor
@@ -61,9 +61,9 @@ export async function renderStatusItem(
 // rather than the one the tray is currently set to.
 export async function renderStatusItemPreview(
   segments: StatusItemSegment[],
-  worstUsedPercent: number,
+  iconFillPercent: number,
 ): Promise<StatusItemImage> {
-  return invoke('render_status_item_preview', { segments, worstUsedPercent })
+  return invoke('render_status_item_preview', { segments, iconFillPercent })
 }
 
 export async function setDetached(detached: boolean): Promise<void> {

@@ -52,7 +52,7 @@ export interface CustomizeDisplayScreenProps {
   preview: StatusItemSegment[]
   // What the capacity glyph in that preview is filled to, the same
   // figure the live tray is drawn with.
-  worstUsedPercent: number
+  iconFillPercent: number
   groups: CustomizeGroup[]
   standalone: CustomizePin[]
   onAddToGroup: (key: string, groupId: string, beforeKey?: string) => void
@@ -376,7 +376,7 @@ function GroupSlot({ name, reduced }: { name: string; reduced: boolean }) {
 
 export function CustomizeDisplayScreen({
   preview,
-  worstUsedPercent,
+  iconFillPercent,
   groups,
   standalone,
   onAddToGroup,
@@ -496,7 +496,7 @@ export function CustomizeDisplayScreen({
   return (
     <div className={styles.screen}>
       <div className={styles.previewLabel}>In the menu bar</div>
-      <MenuBarPreview segments={preview} worstUsedPercent={worstUsedPercent} />
+      <MenuBarPreview segments={preview} iconFillPercent={iconFillPercent} />
 
       <p className={styles.description}>
         Drag a pin onto another to group them, or onto a group to join it. Grouping never unpins

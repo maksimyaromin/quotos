@@ -30,6 +30,7 @@ export interface SubscriptionRowProps {
   onAction?: () => void
   onTogglePin?: () => void
   onToggleWindowPin?: (id: string) => void
+  onToggleWindowIconSource?: (id: string) => void
   onToggleExpand?: () => void
   onToggleMenu?: () => void
   onRename?: (nextLabel: string | null) => void
@@ -67,6 +68,7 @@ export function SubscriptionRow({
   onAction,
   onTogglePin,
   onToggleWindowPin,
+  onToggleWindowIconSource,
   onToggleExpand,
   onToggleMenu,
   onRename,
@@ -303,7 +305,13 @@ export function SubscriptionRow({
           {hasWindows ? (
             <div className={styles.windowsList}>
               {windows.map((w, i) => (
-                <LimitWindow key={w.id ?? i} {...w} stale={stale} onTogglePin={onToggleWindowPin} />
+                <LimitWindow
+                  key={w.id ?? i}
+                  {...w}
+                  stale={stale}
+                  onTogglePin={onToggleWindowPin}
+                  onToggleIconSource={onToggleWindowIconSource}
+                />
               ))}
             </div>
           ) : null}

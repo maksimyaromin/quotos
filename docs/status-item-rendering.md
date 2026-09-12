@@ -32,37 +32,50 @@ image's leftmost 18pt.
 
 ## The capacity glyph
 
-`glyph_coverage` computes per-pixel alpha coverage for the
-capacity-gauge mark procedurally from its exact vector geometry,
-`src/design-system/assets/menubar-glyph.svg`: a faint full-circle track
-plus a bold, round-capped arc with a gap. Drawing the exact shape at
-the target resolution means there is no raster source to be too small
-or too soft, and the target ink size, `TARGET_INK_DIAMETER_CSS_PX`, is
-a direct, tunable parameter instead of whatever a fixed asset happened
-to contain.
+`glyph_coverage` computes per-pixel alpha coverage for the brand mark
+procedurally from its exact vector geometry,
+`src/design-system/assets/menubar-glyph.svg`: three chevrons on a
+28-unit grid, 2.6 units of stroke, round caps and joins. Drawing the
+exact shape at the target resolution means there is no raster source to
+be too small or too soft, and the target ink size,
+`TARGET_INK_HEIGHT_CSS_PX`, is a direct, tunable parameter instead of
+whatever a fixed asset happened to contain. The mark's own ink box is
+tall and narrow, 12.6 by 24.1 units, so the target is set on its height
+and the width follows; `INK_CENTER_Y_SVG` is what centres it in the
+square canvas, since the mark's ink is not centred in its own grid.
 
-The SVG's path, `M4.46 12.02 a5.4 5.4 0 1 1 7.08 0`, was converted to
-the two gap-endpoint angles in the code by hand: the vector from the
-center `(8,8)` to each endpoint, through `atan2`. Both are in the
-module's plain math convention, y-down, 0 at the +x axis, which already
-matches the SVG's own y-down convention with no flip needed, since this
-buffer is top-left-origin throughout.
+The mark says two things at once, and only one of them is a gauge. The
+two grey chevrons pointing up are spend rising: `SPEND_CHEVRONS`, drawn
+at full colour whatever the reading is, identical at 0% and at 100%. The
+one peach chevron pointing down is the limit pressing back, and it is
+the gauge. It is drawn twice, the way the ring it replaced was: once as
+a track at `LIMIT_TRACK_OPACITY`, at full extent, so the mark always
+reads as three chevrons even at 0%, and once fully saturated over the
+part `used_fraction` has reached.
 
-The mark reads as a Q, not an O: a ring with a gap, plus a second
-stroke, the tail, through the gap's own diagonal, which is what a
-counter needs to read as a Q rather than a bare ring. The gap is 62
-degrees wide, centered at 45 degrees, lower-right, where the tail sits.
-The tail is a second capsule, radius 3.2 to 8.0 along that same
-45-degree diagonal, same stroke weight as the arc, round caps, drawn
-unconditionally, even at 0% used, since the tail is what reads as a Q
-rather than an O regardless of fill state. Its own reach at 45 degrees,
-outer radius plus half-stroke, projected onto either axis, stays just
-inside the ring's own axis-aligned reach, so it needs no separate
-accounting in `natural_outer_diameter` or `scale`. The arc's own end
-angle is data, `used_fraction`, clamped to `0.0..=1.0`, rather than a
-constant 100%. It starts right where the gap ends, sweeps forward by
-`used_fraction` of the maximum possible sweep, `TAU` minus the gap's
-own width, and lands exactly on the gap's other edge at 100%.
+That bright pass runs from the chevron's own vertex, the bottom of its
+wedge, up toward its two arm-tips, so at 0% only the vertex is lit and
+at 100% the whole chevron is. `Chevron::nearest` is what clips it:
+a pixel belongs to the fill when the nearest point on the chevron's
+centreline is at or above the threshold `used_fraction` sets. Measuring
+along the centreline rather than slicing the rendered stroke by y keeps
+the cut perpendicular to the arm it lands on, and keeps the round join
+at the vertex whole at 0%.
+
+`used_fraction` is `icon_fill_percent`, whatever the frontend has
+decided that should be: `lib/status-item-segments.ts`'s
+`computeIconFillPercent` reads it from the one window a person has
+designated, and otherwise from the arithmetic mean of every tracked
+subscription's headline figure. Nothing in this module knows which.
+
+`GlyphCoverage` carries those three layers separately rather than one
+buffer, because the mark is not painted in a single colour; `draw_glyph`
+stacks them, track then fill then spend. That is also why the status
+item is never a template image any more: macOS would flatten the two
+inks and the gauge to one tone. The colours come from `spend_rgb` and
+`limit_rgb`, which mirror `tokens/colors.css`'s own `--spend` and
+`--peach`, read per appearance at each repaint rather than watched for,
+the same as every other colour in this image.
 
 ## What the item is made of
 

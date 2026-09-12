@@ -43,3 +43,24 @@ export function MenuDotsGlyph() {
     </svg>
   )
 }
+
+// The brand mark itself, one-colour: what a row points at when it says
+// its own figure is the one the menu bar draws.
+export function MarkGlyph({ size = 13 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="1.95 2.7 24.1 24.1"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 4 L14 9 L19 4" />
+      <path d="M9 18 L14 13 L19 18" />
+      <path d="M9 25.5 L14 20.5 L19 25.5" />
+    </svg>
+  )
+}

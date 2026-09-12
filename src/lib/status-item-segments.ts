@@ -4,6 +4,7 @@ import {
   groupSlug,
   layoutPinnedEntries,
   type PinnedEntry,
+  splitPinMemberKey,
 } from './pin-groups'
 
 type FigureColor = Extract<StatusItemSegment, { kind: 'figure' }>['color']
@@ -100,13 +101,31 @@ export function buildStatusItemTooltip(
   return lines.length === 0 ? 'Quotos' : ['Quotos', ...lines].join('\n')
 }
 
-export function computeWorstActiveLimitPercent(subscriptions: Subscription[]): number {
-  let worst = 0
-  for (const sub of subscriptions) {
-    for (const w of sub.windows) {
-      if (!w.isActive || typeof w.used !== 'number') continue
-      if (w.used > worst) worst = w.used
-    }
-  }
-  return worst
+function chosenWindowPercent(subscriptions: Subscription[], source: string): number | null {
+  const split = splitPinMemberKey(source)
+  if (split === null) return null
+  const used = subscriptions
+    .find((sub) => sub.id === split.subscriptionId)
+    ?.windows.find((window) => window.id === split.windowId)?.used
+  return typeof used === 'number' ? used : null
+}
+
+// How full the menu bar mark's limit chevron is drawn. One designated
+// window drives it when one is chosen; otherwise it is the arithmetic
+// mean of every tracked subscription's own headline figure, which is a
+// blunt summary but the one the mark defaults to. A chosen window that
+// no longer reports a figure falls back to that mean rather than
+// freezing on its last value.
+export function computeIconFillPercent(
+  subscriptions: Subscription[],
+  source: string | null = null,
+): number {
+  const chosen = source === null ? null : chosenWindowPercent(subscriptions, source)
+  if (chosen !== null) return chosen
+
+  const headlines = subscriptions
+    .map((sub) => sub.used)
+    .filter((used): used is number => typeof used === 'number')
+  if (headlines.length === 0) return 0
+  return Math.round(headlines.reduce((sum, used) => sum + used, 0) / headlines.length)
 }

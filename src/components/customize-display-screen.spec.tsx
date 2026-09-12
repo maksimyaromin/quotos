@@ -61,7 +61,7 @@ function setup(overrides: Partial<CustomizeDisplayScreenProps> = {}) {
   for (const handler of Object.values(HANDLERS)) handler.mockClear()
   const props: CustomizeDisplayScreenProps = {
     preview: [],
-    worstUsedPercent: 0,
+    iconFillPercent: 0,
     groups: [
       {
         id: 'g1',
@@ -488,7 +488,7 @@ describe('an empty group can be made and named before anything goes in it', () =
 
 describe('the preview strip', () => {
   test("asks the menu bar's own compositor for the arrangement it is showing", async () => {
-    setup({ preview: [figure('99%'), figure('12%')], worstUsedPercent: 99 })
+    setup({ preview: [figure('99%'), figure('12%')], iconFillPercent: 99 })
 
     await waitFor(() => expect(renderStatusItemPreview).toHaveBeenCalled())
     expect(renderStatusItemPreview).toHaveBeenLastCalledWith([figure('99%'), figure('12%')], 99)

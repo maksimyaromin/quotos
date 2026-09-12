@@ -1,0 +1,16 @@
+.root {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+.name {
+  color: var(--peach);
+}
+
+.bar {
+  color: var(--rosewater);
+}

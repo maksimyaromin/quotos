@@ -19,6 +19,7 @@ export {
   QuotaGlyph,
 } from './components/shell/menu-bar-tile'
 export { Panel, type PanelProps } from './components/shell/panel'
+export { Wordmark } from './components/shell/wordmark'
 export { LimitWindow, type LimitWindowProps } from './components/subscription/limit-window'
 export {
   SubscriptionRow,

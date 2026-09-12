@@ -25,6 +25,13 @@
   --blue-muted: #1b2740;
   --violet: #8b7ad8;
 
+  /* Brand accents, from docs/brand/. They identify the product; the
+     severity colours above mean a state. Never one for the other. */
+  --peach: #ffab7f;
+  --peach-muted: #3a2418;
+  --rosewater: #fbd8d1;
+  --spend: #8a91ad;
+
   --bg-base: var(--graphite-0);
   --bg-panel: rgba(19, 21, 24, 0.86);
   --bg-row: transparent;
@@ -81,6 +88,11 @@
   --blue: #3a6fd8;
   --blue-muted: #e3ebfb;
   --violet: #5f4bbd;
+
+  --peach: #ed5700;
+  --peach-muted: #fbe6da;
+  --rosewater: #d37e6c;
+  --spend: #676a80;
 
   --border-subtle: rgba(0, 0, 0, 0.06);
   --border-default: rgba(0, 0, 0, 0.11);

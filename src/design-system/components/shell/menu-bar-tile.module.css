@@ -2,6 +2,19 @@
   flex: 0 0 auto;
 }
 
+.spend {
+  stroke: var(--spend);
+}
+
+.limitTrack {
+  stroke: var(--peach);
+  opacity: 0.3;
+}
+
+.limitFill {
+  stroke: var(--peach);
+}
+
 .tile {
   display: inline-flex;
   align-items: center;
