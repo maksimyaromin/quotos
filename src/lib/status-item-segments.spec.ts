@@ -89,9 +89,9 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '61%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
-      { text: '74%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
-      { text: '52%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
+      { text: '61%', color: 'neutral', groupStart: false, groupId: null, slug: null },
+      { text: '74%', color: 'neutral', groupStart: false, groupId: null, slug: null },
+      { text: '52%', color: 'neutral', groupStart: true, groupId: null, slug: null },
     ])
   })
 
@@ -105,7 +105,7 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '20%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+      { text: '20%', color: 'neutral', groupStart: false, groupId: null, slug: null },
     ])
   })
 
@@ -147,7 +147,7 @@ describe('buildStatusItemSegments', () => {
       }),
     ]
     expect(buildStatusItemSegments(subs)).toEqual([
-      { text: '10%', color: 'neutral', groupStart: false, groupId: null, groupColor: null },
+      { text: '10%', color: 'neutral', groupStart: false, groupId: null, slug: null },
     ])
   })
 })
@@ -272,17 +272,17 @@ describe('buildStatusItemSegments with pin groups', () => {
 
   test("shows one rolled-up figure for a group, the worst member's, and none of its members", () => {
     expect(buildStatusItemSegments(twoSubscriptions, [currentLimit])).toEqual([
-      { text: '99%', color: 'red', groupStart: false, groupId: 'g1', groupColor: 'teal' },
-      { text: '12%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
+      { text: '99%', color: 'red', groupStart: false, groupId: 'g1', slug: 'CUR' },
+      { text: '12%', color: 'neutral', groupStart: true, groupId: null, slug: null },
     ])
   })
 
   test("opens a group out to every member's own figure once it is not collapsed", () => {
     const opened = { ...currentLimit, collapsed: false }
     expect(buildStatusItemSegments(twoSubscriptions, [opened])).toEqual([
-      { text: '99%', color: 'red', groupStart: false, groupId: 'g1', groupColor: 'teal' },
-      { text: '47%', color: 'neutral', groupStart: false, groupId: 'g1', groupColor: 'teal' },
-      { text: '12%', color: 'neutral', groupStart: true, groupId: null, groupColor: null },
+      { text: '99%', color: 'red', groupStart: false, groupId: 'g1', slug: 'CUR' },
+      { text: '47%', color: 'neutral', groupStart: false, groupId: 'g1', slug: null },
+      { text: '12%', color: 'neutral', groupStart: true, groupId: null, slug: null },
     ])
   })
 
@@ -295,19 +295,28 @@ describe('buildStatusItemSegments with pin groups', () => {
     expect(grouped.every((s) => s.groupId === 'g1')).toBe(true)
   })
 
-  test("carries the group's own colour on its figure, and none on a standalone pin", () => {
-    const coloured = { ...currentLimit, color: 'violet' as const }
-    const segments = buildStatusItemSegments(twoSubscriptions, [coloured])
-    expect(segments[0].groupColor).toBe('violet')
-    expect(segments[segments.length - 1].groupColor).toBeNull()
+  test("leads a group's figure with its name's first three letters, and a standalone pin with nothing", () => {
+    const segments = buildStatusItemSegments(twoSubscriptions, [currentLimit])
+    expect(segments[0].slug).toBe('CUR')
+    expect(segments[segments.length - 1].slug).toBeNull()
   })
 
-  test("every figure of an opened group carries the group's colour, not just the first", () => {
-    const opened = { ...currentLimit, collapsed: false, color: 'amber' as const }
+  test('derives the slug from whatever the group is called now, never from a stored one', () => {
+    const renamed = { ...currentLimit, name: 'Fable' }
+    expect(buildStatusItemSegments(twoSubscriptions, [renamed])[0].slug).toBe('FAB')
+  })
+
+  test('an opened group is named once, by the figure it leads, not by every member', () => {
+    const opened = { ...currentLimit, collapsed: false }
     const grouped = buildStatusItemSegments(twoSubscriptions, [opened]).filter(
       (s) => s.groupId !== null,
     )
-    expect(grouped.map((s) => s.groupColor)).toEqual(['amber', 'amber'])
+    expect(grouped.map((s) => s.slug)).toEqual(['CUR', null])
+  })
+
+  test('a group named in one or two characters keeps the whole of its name', () => {
+    const short = { ...currentLimit, name: 'Q' }
+    expect(buildStatusItemSegments(twoSubscriptions, [short])[0].slug).toBe('Q')
   })
 
   test("an opened group's members come out in the order the group holds them", () => {
@@ -336,7 +345,7 @@ describe('buildStatusItemSegments with pin groups', () => {
       color: 'neutral',
       groupStart: true,
       groupId: null,
-      groupColor: null,
+      slug: null,
     })
     expect(ungrouped).toHaveLength(3)
   })
@@ -352,7 +361,7 @@ describe('buildStatusItemSegments with pin groups', () => {
       color: 'neutral',
       groupStart: false,
       groupId: 'g2',
-      groupColor: 'teal',
+      slug: 'MON',
     })
   })
 

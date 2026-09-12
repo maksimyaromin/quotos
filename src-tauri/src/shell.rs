@@ -25,15 +25,15 @@ pub(crate) struct StatusItemSegmentDto {
     color: String,
     group_start: bool,
     /// Set when the figure stands for a pin group, or for one member of
-    /// an opened-out group; `group_at_click` reads it to tell a click on
-    /// a group apart from one that should open the panel.
+    /// an opened-out group; `group_at_click` reads it to name the group
+    /// whose slug was clicked.
     #[serde(default)]
     group_id: Option<String>,
-    /// That group's own colour, drawn as a bar under the figure. A name
-    /// from the palette in `lib/pin-groups.ts`; anything else, and a
-    /// standalone figure, draws no bar.
+    /// The group's slug, derived by `lib/pin-groups.ts` from its name
+    /// and carried only by the first figure of that group's cluster.
+    /// It is the one thing in the menu bar a click can fold a group by.
     #[serde(default)]
-    group_color: Option<String>,
+    slug: Option<String>,
 }
 
 #[tauri::command]
@@ -80,9 +80,9 @@ fn record_if_changed(
     true
 }
 
-/// Which pin group's figure a left click landed on, if any; see
-/// "Clicking a figure in the menu bar" in docs/architecture.md for the
-/// units the click and the item's box arrive in.
+/// Which pin group's slug a left click landed on, if any; see
+/// "Clicking a group's slug in the menu bar" in docs/architecture.md
+/// for the units the click and the item's box arrive in.
 pub(crate) fn group_at_click(
     app: &tauri::AppHandle,
     window: &tauri::WebviewWindow,
@@ -99,9 +99,9 @@ pub(crate) fn group_at_click(
     let scale = displays[index].scale;
     let state = app.state::<AppState>();
     let spans = state
-        .last_status_item_figure_spans
+        .last_status_item_slug_spans
         .lock()
-        .expect("last_status_item_figure_spans mutex poisoned")
+        .expect("last_status_item_slug_spans mutex poisoned")
         .clone();
     let icon_width_px = *state
         .last_icon_width_px
@@ -113,7 +113,7 @@ pub(crate) fn group_at_click(
         Some(item_width / scale),
         icon_width_px as f64,
     );
-    let index = status_item_render::figure_at(&spans, icon_width_px, click_in_icon_px)?;
+    let index = status_item_render::slug_at(&spans, icon_width_px, click_in_icon_px)?;
     state
         .last_status_item_segments
         .lock()
@@ -173,20 +173,17 @@ fn repaint_status_item(
                 _ => status_item_render::StatusItemColor::Neutral,
             },
             group_start: s.group_start,
-            group_color: s
-                .group_color
-                .as_deref()
-                .and_then(status_item_render::GroupColor::from_name),
+            slug: s.slug.clone(),
         })
         .collect();
 
-    // Cached from the same layout the figures were drawn at, so a click
+    // Cached from the same layout the slugs were drawn at, so a click
     // resolves against where they really landed.
     *state
-        .last_status_item_figure_spans
+        .last_status_item_slug_spans
         .lock()
-        .expect("last_status_item_figure_spans mutex poisoned") =
-        status_item_render::figure_spans(&segs, worst_used_percent);
+        .expect("last_status_item_slug_spans mutex poisoned") =
+        status_item_render::slug_spans(&segs, worst_used_percent);
 
     let icon_width_px = if segments.is_empty() && !highlighted {
         let (rgba, w, h) = status_item_render::plain_glyph_rgba(worst_used_percent);
@@ -226,12 +223,26 @@ fn repaint_status_item(
     Ok(())
 }
 
+/// Sets the item's own width, then re-fits the view that catches its
+/// clicks, which `tray-icon` re-fits only while setting an icon. See
+/// "Clicking a group's slug in the menu bar" in docs/architecture.md.
 #[cfg(target_os = "macos")]
 pub(crate) fn sync_status_item_length(status_item: &tauri::tray::TrayIcon, icon_width_px: u32) {
+    use objc2_foundation::MainThreadMarker;
+
     let width_points = icon_width_px as f64 / status_item_render::RENDER_SCALE;
     let _ = status_item.with_inner_tray_icon(move |inner| {
-        if let Some(ns_status_item) = inner.ns_status_item() {
-            ns_status_item.setLength(width_points);
+        let Some(ns_status_item) = inner.ns_status_item() else {
+            return;
+        };
+        ns_status_item.setLength(width_points);
+        let Some(button) = MainThreadMarker::new().and_then(|mtm| ns_status_item.button(mtm))
+        else {
+            return;
+        };
+        let bounds = button.bounds();
+        for view in button.subviews() {
+            view.setFrame(bounds);
         }
     });
 }

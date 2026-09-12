@@ -38,9 +38,9 @@ export interface Subscription {
 }
 
 // The palette a pin group's colour comes from, small and fixed so the
-// colour reads as an identity rather than a choice. The same names are
-// mirrored by `status_item_render.rs`'s `GroupColor`, which draws them
-// in the menu bar, and by `tokens/colors.css` for the panel's side.
+// colour reads as an identity rather than a choice. It belongs to the
+// customize screen's own boxes; the menu bar names a group by its slug
+// instead. `tokens/colors.css` holds the same names.
 export const GROUP_COLORS = ['teal', 'blue', 'violet', 'amber', 'red'] as const
 
 export type GroupColor = (typeof GROUP_COLORS)[number]
@@ -50,8 +50,8 @@ export type GroupColor = (typeof GROUP_COLORS)[number]
 // `lib/pin-groups.ts`'s `pinMemberKey`, not bare window ids, in the
 // order the group draws them; `collapsed` is how the group is drawn in
 // the menu bar, rolled up to one figure or opened out to every
-// member's own; `color` is its identity wherever it is drawn, one of
-// `lib/pin-groups.ts`'s palette names.
+// member's own; `color` is its identity on the customize screen, one
+// of `lib/pin-groups.ts`'s palette names.
 export interface PinGroup {
   id: string
   name: string
@@ -149,10 +149,11 @@ export interface StatusItemSegment {
   color: 'neutral' | 'amber' | 'red'
   groupStart: boolean
   // Set when this figure stands for a pin group, or for one member of an
-  // expanded one: the native side hit-tests a click against it to toggle
-  // that group in the menu bar instead of opening the panel.
+  // expanded one. Null for a standalone pin.
   groupId: string | null
-  // That group's colour, which the native side draws as a bar under the
-  // figure. Null for a standalone pin, which gets no bar.
-  groupColor: GroupColor | null
+  // That group's slug, from `lib/pin-groups.ts`'s `groupSlug`, drawn
+  // just before this figure. Only the first figure of a group's cluster
+  // carries one, and it is the only thing a click in the menu bar folds
+  // a group by; a standalone pin has none.
+  slug: string | null
 }

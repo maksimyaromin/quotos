@@ -59,7 +59,10 @@ established, tool-recognized spelling this repository already keeps for
 | `lib/persistence.ts` | The frontend seam to the tracked list and the pin groups: the native IPC commands on a real build, `localStorage` as a fallback in the browser harness. |
 | `lib/tauri-client.ts` | Swaps between the real Tauri IPC client and a mock client based on whether `__TAURI_INTERNALS__` exists, so every UI state stays reviewable from a plain browser. |
 | `hooks/use-pin-groups.ts` | Pin group membership, naming, ordering, and each group's rolled-up-or-opened state in the menu bar, with its own persistence. |
-| `lib/pin-groups.ts` | The composite member key, and how pinned windows resolve into groups and standalone pins. |
+| `lib/pin-groups.ts` | The composite member key, a group's derived slug, and how pinned windows resolve into groups and standalone pins. |
+| `lib/customize-drag.ts` | What a drag on the customize screen means: the library reports what the pointer is over, this says what dropping there would do. |
+| `components/customize-display-screen.tsx` | The screen groups are arranged on, built on `@dnd-kit`. See [customize-display.md](customize-display.md). |
+| `components/drag-motion.ts` | That screen's whole motion language: two springs, and what Reduce Motion answers instead. |
 | `lib/row-presentation.ts` | What a row shows besides its numbers: the badge, the one action offered, and the footer note. |
 | `lib/status-item-segments.ts` | Turns tracked subscriptions and pin groups into the status item's digit segments, tooltip, and worst-active-limit percentage. |
 | `types/entities.ts` | The provider-agnostic entities. Nothing above its own dividing line, and nothing that renders UI, references a specific provider by name. |
@@ -263,11 +266,12 @@ survives a restart, and it is per group, so several can stand open at
 once. A new group starts rolled up, since spending less menu bar width
 is the reason to make one.
 
-## Clicking a figure in the menu bar
+## Clicking a group's slug in the menu bar
 
-A left click on a pin group's own figure belongs to that group: it
-toggles `collapsed` in place, with no panel involved. A click anywhere
-else on the status item opens the panel exactly as it always did.
+A left click on a pin group's slug belongs to that group: it toggles
+`collapsed` in place, with no panel involved. A click anywhere else on
+the status item, a bare figure included, opens the panel exactly as it
+always did. The figure reports a number; the slug is the button.
 
 Telling the two apart needs the click's position inside the composited
 image. `TrayIconEvent::Click` carries both `position`, the click point,
@@ -281,31 +285,50 @@ positioning has to account for, so treating the click as a bare
 fraction of the button's width and scaling it back out by the image's
 width stretches and shifts it: at the measured eight points per side
 the error reaches about sixteen pixels at either end of the image, more
-than the dead gap between two figures, which is what made a click on a
-group's figure open the panel some of the time and toggle the group the
-rest. `group_at_click` takes both into points on the item's own display
-and calls `geometry.rs`'s `click_x_in_icon_px`, which subtracts the
-margin derived from the two widths — the same derivation
+than a slug is wide, which is what made a click on a group open the
+panel some of the time and fold the group the rest. `group_at_click`
+takes both into points on the item's own display and calls
+`geometry.rs`'s `click_x_in_icon_px`, which subtracts the margin derived
+from the two widths — the same derivation
 `glyph_center_offset_from_item_left_points` uses — and scales into the
 image's own pixels.
 
-`shell.rs` caches each figure's rendered pixel span in
-`last_status_item_figure_spans` on every repaint, beside the segments
+`shell.rs` caches each slug's rendered pixel span in
+`last_status_item_slug_spans` on every repaint, beside the segments
 themselves, and looks that pixel up; see "Resolving a click back to a
-figure" in
-[status-item-rendering.md](status-item-rendering.md#resolving-a-click-back-to-a-figure)
+slug" in
+[status-item-rendering.md](status-item-rendering.md#resolving-a-click-back-to-a-slug)
 for how those spans are derived and padded.
 
-Which figures are a group's is the frontend's business, not the native
-side's: `StatusItemSegment.groupId` rides along with each segment, set on
-a group's rolled-up figure and on every member's figure while it is
-opened out, so clicking any of them rolls that group back up. A
-standalone pin carries `null` and falls through to opening the panel.
-When a click does resolve to a group, the native side emits
-`status-item-group-clicked` with the id and does nothing else;
-`use-pin-groups.ts` flips that group's flag, and the segment list is
-rebuilt and pushed back down through the same `set_status_item_state`
+Which figure carries a group's slug is the frontend's business, not the
+native side's: `StatusItemSegment.groupId` rides along with each
+segment, and `slug` is set on the figure leading that group's cluster,
+rolled up or opened out. When a click does resolve to a slug, the native
+side emits `status-item-group-clicked` with the id and does nothing
+else; `use-pin-groups.ts` flips that group's flag, and the segment list
+is rebuilt and pushed back down through the same `set_status_item_state`
 path as any other change.
+
+### The view that catches those clicks
+
+`tray-icon` catches clicks with a view of its own, added over the status
+item's button, and re-fits that view to the button only while setting an
+icon. Quotos sets the item's length after the icon, from
+`sync_status_item_length`, so every repaint that widened the item left a
+strip of bare `NSStatusBarButton` on the right that the crate's view no
+longer covered: clicks there never reached `on_tray_icon_event` at all,
+and AppKit, which pops an `NSStatusItem`'s own `menu` on any click that
+reaches the button, showed the Launch at Login / Quit menu on a plain
+left click. `sync_status_item_length` now re-fits that view itself,
+after the length it just set, so the whole item is Quotos's to interpret
+however many figures it grew by.
+
+The menu is Quotos's to show for the same reason. Nothing is attached to
+the item at rest: `tray_click_intent` reads the button and its state
+from the click event, `show_status_item_menu` attaches the menu, shows
+it, and detaches it again once its own tracking loop returns. Whether
+the menu appears is then decided by the same event every other click is
+decided by, rather than by AppKit finding a menu hanging off the item.
 
 ## Refresh scheduling and pausing when nobody is looking
 

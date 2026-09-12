@@ -44,6 +44,15 @@ export function splitPinMemberKey(
   }
 }
 
+// What a group is called in the menu bar, where three letters is all
+// the width a name can have. Derived wherever it is drawn or clicked,
+// never stored: renaming a group renames its slug in the same breath.
+export const GROUP_SLUG_LENGTH = 3
+
+export function groupSlug(name: string): string {
+  return Array.from(name.trim()).slice(0, GROUP_SLUG_LENGTH).join('').toUpperCase()
+}
+
 export function isGroupColor(value: unknown): value is GroupColor {
   return typeof value === 'string' && (GROUP_COLORS as readonly string[]).includes(value)
 }

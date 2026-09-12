@@ -7,6 +7,7 @@ import {
 } from '@/types/entities'
 import {
   collectPinnedEntries,
+  groupSlug,
   isGroupColor,
   layoutPinnedEntries,
   nextGroupColor,
@@ -190,5 +191,32 @@ describe('group colours', () => {
     expect(isGroupColor('teal')).toBe(true)
     expect(isGroupColor('chartreuse')).toBe(false)
     expect(isGroupColor(undefined)).toBe(false)
+  })
+})
+
+describe('the slug a group is named by in the menu bar', () => {
+  test("is the first three characters of the group's own name, uppercased", () => {
+    expect(groupSlug('Fable')).toBe('FAB')
+    expect(groupSlug('Current limit')).toBe('CUR')
+    expect(groupSlug('money')).toBe('MON')
+  })
+
+  test('keeps the whole of a name too short to trim', () => {
+    expect(groupSlug('Q')).toBe('Q')
+    expect(groupSlug('Up')).toBe('UP')
+  })
+
+  test('is taken from the name as typed, spacing aside', () => {
+    expect(groupSlug('  fable  ')).toBe('FAB')
+    expect(groupSlug('a b c d')).toBe('A B')
+  })
+
+  test('counts characters as a reader does, not as UTF-16 does', () => {
+    expect(groupSlug('🎯🎲🎰🎪')).toBe('🎯🎲🎰')
+  })
+
+  test('a group named nothing at all is named nothing at all', () => {
+    expect(groupSlug('')).toBe('')
+    expect(groupSlug('   ')).toBe('')
   })
 })
