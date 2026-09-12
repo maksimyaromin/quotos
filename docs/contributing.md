@@ -177,7 +177,8 @@ React component's exported name still reads `PascalCase`; only its file,
 and its `.module.css`, `.prompt.md` and `.spec` siblings, move. `README.md`,
 `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md` and
 `.github/pull_request_template.md` keep the capitalization, or in the
-last case the underscores, that GitHub itself expects of them, and
+last case the underscores, that GitHub itself expects of them,
+`SKILL.md` keeps the name a skill directory is recognized by, and
 `Cargo.toml`, `Cargo.lock` and `Info.plist` keep the exact spelling
 their own tooling requires. A source file under `src-tauri/src`
 stays `snake_case`, matching the module identifier Rust derives from its

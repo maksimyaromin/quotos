@@ -1,0 +1,3 @@
+# A run's leavings, not the project's history.
+.lock
+*.tmp
