@@ -38,6 +38,8 @@ test commands.
 <!-- anb:begin -->- `.agent-notebook/` is the project notebook: the
   decisions and standing rules behind the code, as plain Markdown.
   `anb recall` reads it; so does opening the files.<!-- anb:end -->
+- [.agents/anb.md](.agents/anb.md) is how that notebook is kept here:
+  what earns a record, how it is named, and what must never go in one.
 
 ## Architecture
 
